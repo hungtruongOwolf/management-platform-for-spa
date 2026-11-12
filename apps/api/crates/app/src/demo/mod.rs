@@ -59,10 +59,11 @@ pub const DEFAULT_WORKERS: usize = 8;
 /// A leaver mid last month needs last month; reports compare up to two years.
 const MONTHS: std::ops::RangeInclusive<u32> = 2..=24;
 
-/// When back-filled history says it was written (ADR-0021): the use cases that take a clock
-/// (`*_as_of`) stamp their own audit entries; every other one runs as an actor carrying the
-/// instant the scenario has it done ([`Actor::at_clock`]), so "Nhật ký thao tác" shows a believable
-/// year instead of one burst at the run time. Rows' own `created_at` columns keep the real clock.
+/// When back-filled history says it was written (ADR-0021): every use case runs as an actor
+/// carrying the instant the scenario has it done ([`Actor::at_clock`], the only clock that stamps
+/// audit entries, ADR-0023), so "Nhật ký thao tác" shows a believable year instead of one burst at
+/// the run time; the `*_as_of` ones also take that instant as their business clock (day, rules).
+/// Rows' own `created_at` columns keep the real clock.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Clock {
     tz: Tz,
@@ -888,16 +889,9 @@ impl Ctx<'_> {
             .context("cancel body")?;
             let at = self.at(day, 16 * 60)?;
             let (key, hash) = idempotency();
+            let owner = self.owner.clone().at_clock(at);
             run::retry(|| {
-                packages::lifecycle::cancel_as_of(
-                    self.app,
-                    &self.owner,
-                    key,
-                    hash,
-                    p.id,
-                    &input,
-                    at,
-                )
+                packages::lifecycle::cancel_as_of(self.app, &owner, key, hash, p.id, &input, at)
             })
             .await
             .map_err(fail("cancel a package with refund"))?;

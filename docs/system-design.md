@@ -178,6 +178,7 @@ Không có cron ngoài. `app::jobs::spawn_maintenance` ([`jobs.rs`](../apps/api/
 | CLS / accessibility | ≤ 0,1 / ≥ 0,95 | Lighthouse CI |
 | API p95 tìm khách + catalog | < 300 ms | `apps/web/e2e/perf/api-latency.spec.ts` |
 | Báo cáo trên 3 năm dữ liệu | p95 ≤ 300 ms; báo cáo 3–5 năm của chủ spa ≤ 1,5 s | `app/tests/reports_bench.rs` (`--ignored`) |
+| Lịch sử trên từng bản ghi; lịch hẹn 14 ngày (tới / trước) | p95 ≤ 100 ms (ô ngày ≤ 50 ms); lịch p95 ≤ 150 ms (debug, in-process, thống kê cũ) | `app/tests/reports_bench.rs` `record_history_reads_within_budget` (`--ignored`) |
 | Một câu SQL / một request | `statement_timeout` 5 s; request timeout 10 s | `TenantTx`, middleware |
 | Thao tác quầy | < 30 giây một lượt, ≤ 4 thao tác cho đường nhanh | [front-desk-flows](../memory/wiki/design/front-desk-flows.md) |
 

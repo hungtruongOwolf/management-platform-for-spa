@@ -78,5 +78,9 @@ EM: "làm tiếp cho xong hết", không hỏi lại. Một PR web; không đụ
 - [x] **"bỏ 6" → K50:** `NULL_MEANS` ở `sentence.ts` (số khách tối đa, thời lượng, hạn mẫu gói, giờ vào ca, KTV lịch hẹn), hai chiều, cả màn Nhật ký thao tác.
 - Test: Vitest `RecordTrace.test.tsx` (+3: một request mỗi lần mở, mở lại sau / sau khi ghi, chữ giá trị rỗng; sửa ca cũ "bỏ 6"), `RecordTrace.wave2.test.tsx` (+6 sheet chỉ xem + đếm đúng request), `RecordTrace.wave3.test.tsx` (+2 form nhóm, đếm request không gộp trùng), `CatalogManage.test.tsx` (+2 đổi tên, lỗi), `Activity.test.tsx` (+1); e2e `record-history.spec.ts` (form nhóm 1280 + 360 + axe, "6 → không giới hạn", quản lý không có "Sửa nhóm" + API `403`). JS khởi động 124,90 / 125 KiB (K54).
 
+## Việc còn lại sau 3 đợt (backend) — ✅ đã làm (2026-11-12, K60–K67)
+- [x] **Thứ tự dòng của hai request gần nhau** (K60–K64, [ADR-0023](../decisions/ADR-0023-audit-instant-is-write-time.md), migration **0053**): giờ audit = lúc transaction ghi, một giờ cho cả transaction; route không còn đóng dấu bằng giờ của handler. Test: `kernel/tests/audit_order.rs` (chờ khóa thật, đỏ trước bản sửa), `record_history.rs` (đổi tên tranh nhau, Sửa lượt bị vượt, chuỗi Sửa lượt theo thứ tự).
+- [x] **`GET /appointments` 14 ngày** (K65–K67): tổng tiền theo chuỗi Sửa lượt tính một lần cho cả request thay vì mỗi hàng một câu con; số đo ở [architecture §6](../architecture/record-history.md).
+
 ## Không làm (đã có cách hiện riêng)
 Lịch sử hồ sơ nhân viên, đánh giá tháng, chốt lương, gọi lại khách (spec D11). Màn riêng cho việc của đội vận hành khi cờ tắt (LEAD: không làm).

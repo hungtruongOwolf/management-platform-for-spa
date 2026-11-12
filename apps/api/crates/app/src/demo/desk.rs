@@ -356,16 +356,9 @@ impl<'a> Chain<'a> {
         };
         let (key, hash) = idempotency();
         let ctx = self.ctx;
+        let manager = ctx.manager.clone().at_clock(at);
         let (_, body) = retry(|| {
-            sales::service::create_sale_as_of(
-                ctx.app,
-                ctx.cipher,
-                &ctx.manager,
-                key,
-                hash,
-                &input,
-                at,
-            )
+            sales::service::create_sale_as_of(ctx.app, ctx.cipher, &manager, key, hash, &input, at)
         })
         .await
         .map_err(fail("sell a package"))?;
@@ -523,16 +516,9 @@ impl<'a> Chain<'a> {
             companions: companions.clone(),
         };
         let (key, hash) = idempotency();
+        let manager = ctx.manager.clone().at_clock(at);
         let (_, body) = retry(|| {
-            operations::service::record_as_of(
-                ctx.app,
-                ctx.cipher,
-                &ctx.manager,
-                key,
-                hash,
-                &input,
-                at,
-            )
+            operations::service::record_as_of(ctx.app, ctx.cipher, &manager, key, hash, &input, at)
         })
         .await
         .map_err(fail("record a visit"))?;
@@ -562,11 +548,12 @@ impl<'a> Chain<'a> {
             Script::Void if upsell.is_none() => {
                 let reason = *self.rng.pick(data::VOID_REASONS).context("reasons")?;
                 let (key, hash) = idempotency();
+                let manager = ctx.manager.clone().at_clock(fixed_at);
                 retry(|| {
                     operations::service::void_as_of(
                         ctx.app,
                         ctx.cipher,
-                        &ctx.manager,
+                        &manager,
                         key,
                         hash,
                         visit,
@@ -752,11 +739,12 @@ impl<'a> Chain<'a> {
         };
         let reason = *self.rng.pick(data::CORRECTION_REASONS).context("reasons")?;
         let (key, hash) = idempotency();
+        let manager = ctx.manager.clone().at_clock(at);
         retry(|| {
             operations::service::correct_as_of(
                 ctx.app,
                 ctx.cipher,
-                &ctx.manager,
+                &manager,
                 key,
                 hash,
                 operations::service::Correction {

@@ -2,9 +2,18 @@
 //!
 //! Every action a spa's trail can hold is one [`Action`]: the owner's "Nhật ký thao tác"
 //! (`reporting::activity`, ADR-0021) groups and words each of them with an exhaustive `match`, so a
-//! new action does not compile until it has a place on that screen. An entry is stamped with the
-//! transaction's clock ([`TenantTx::clock`]): the database clock, or the `now` of a `*_as_of` use
-//! case.
+//! new action does not compile until it has a place on that screen.
+//!
+//! **When an entry says it happened (ADR-0023).** Every entry of one transaction carries one
+//! instant, so the readers can tell what one action wrote (the rows of one instant fold into one
+//! line, ADR-0021 D9; an edit of a bonus is the void + the new one of one instant). The instant is
+//! the database clock when the transaction writes its entries, which [`record`] defers to
+//! [`TenantTx::commit`] (or [`TenantTx::write_audit`]): after every row lock the use case took. A
+//! request that started first but waited on a lock held by another one therefore sorts after it,
+//! as its change did; the transaction's start (`now()`) or the handler's clock would sort it
+//! before. Inside one instant, entries keep the order they were recorded in (their ids are UUIDv7,
+//! monotonic within the process). Only a back-filling actor ([`Actor::at_clock`], `app seed-demo`)
+//! sets the instant up front.
 
 use crate::db::TenantTx;
 use crate::error::AppError;
@@ -124,31 +133,14 @@ pub struct AuditEntry<'a> {
     pub reason: Option<&'a str>,
 }
 
+/// Records `entry` as done by the signed-in `actor`; written with the transaction's other entries
+/// (module docs).
 pub async fn record(
     tx: &mut TenantTx,
     actor: &Actor,
     entry: AuditEntry<'_>,
 ) -> Result<(), AppError> {
-    let ip = actor.ip.map(sqlx::types::ipnetwork::IpNetwork::from);
-    let at = tx.clock();
-    sqlx::query!(
-        r#"INSERT INTO app.audit_log
-             (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, before, after, reason, ip, at)
-           VALUES ($1, $2, $3, 'user', $4, $5, $6, $7, $8, $9, $10, COALESCE($11, now()))"#,
-        Uuid::now_v7(),
-        tx.tenant().as_uuid(),
-        actor.user_id.as_uuid(),
-        entry.action.as_str(),
-        entry.entity_type,
-        entry.entity_id,
-        entry.before,
-        entry.after,
-        entry.reason,
-        ip,
-        at,
-    )
-    .execute(tx.conn())
-    .await?;
+    pend(tx, Some(actor.user_id.as_uuid()), "user", actor.ip, entry);
     Ok(())
 }
 
@@ -161,26 +153,7 @@ pub async fn record_platform(
     ip: Option<std::net::IpAddr>,
     entry: AuditEntry<'_>,
 ) -> Result<(), AppError> {
-    let ip = ip.map(sqlx::types::ipnetwork::IpNetwork::from);
-    let at = tx.clock();
-    sqlx::query!(
-        r#"INSERT INTO app.audit_log
-             (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, before, after, reason, ip, at)
-           VALUES ($1, $2, $3, 'platform_admin', $4, $5, $6, $7, $8, $9, $10, COALESCE($11, now()))"#,
-        Uuid::now_v7(),
-        tx.tenant().as_uuid(),
-        operator,
-        entry.action.as_str(),
-        entry.entity_type,
-        entry.entity_id,
-        entry.before,
-        entry.after,
-        entry.reason,
-        ip,
-        at,
-    )
-    .execute(tx.conn())
-    .await?;
+    pend(tx, Some(operator), "platform_admin", ip, entry);
     Ok(())
 }
 
@@ -191,25 +164,74 @@ pub async fn record_system(
     ip: Option<std::net::IpAddr>,
     entry: AuditEntry<'_>,
 ) -> Result<(), AppError> {
-    let ip = ip.map(sqlx::types::ipnetwork::IpNetwork::from);
-    let at = tx.clock();
-    sqlx::query!(
-        r#"INSERT INTO app.audit_log
-             (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, before, after, reason, ip, at)
-           VALUES ($1, $2, NULL, 'system', $3, $4, $5, $6, $7, $8, $9, COALESCE($10, now()))"#,
-        Uuid::now_v7(),
-        tx.tenant().as_uuid(),
-        entry.action.as_str(),
-        entry.entity_type,
-        entry.entity_id,
-        entry.before,
-        entry.after,
-        entry.reason,
-        ip,
-        at,
-    )
-    .execute(tx.conn())
-    .await?;
+    pend(tx, None, "system", ip, entry);
+    Ok(())
+}
+
+/// An entry recorded in a transaction, waiting for [`write_pending`]. Its id is taken when it is
+/// recorded, so entries of one instant read in the order they were recorded.
+#[derive(Debug)]
+pub(crate) struct Pending {
+    id: Uuid,
+    actor_user_id: Option<Uuid>,
+    actor_kind: &'static str,
+    action: Action,
+    entity_type: String,
+    entity_id: Uuid,
+    before: Option<Value>,
+    after: Option<Value>,
+    reason: Option<String>,
+    ip: Option<sqlx::types::ipnetwork::IpNetwork>,
+}
+
+fn pend(
+    tx: &mut TenantTx,
+    actor_user_id: Option<Uuid>,
+    actor_kind: &'static str,
+    ip: Option<std::net::IpAddr>,
+    entry: AuditEntry<'_>,
+) {
+    tx.audit.push(Pending {
+        id: Uuid::now_v7(),
+        actor_user_id,
+        actor_kind,
+        action: entry.action,
+        entity_type: entry.entity_type.to_owned(),
+        entity_id: entry.entity_id,
+        before: entry.before,
+        after: entry.after,
+        reason: entry.reason.map(str::to_owned),
+        ip: ip.map(sqlx::types::ipnetwork::IpNetwork::from),
+    });
+}
+
+/// Writes the transaction's pending entries in the order they were recorded. The first one takes
+/// the database clock of its insert unless the instant is already fixed (a back-filling actor, or
+/// an earlier write in this transaction); every other entry of the transaction carries the same.
+pub(crate) async fn write_pending(tx: &mut TenantTx) -> Result<(), AppError> {
+    for p in std::mem::take(&mut tx.audit) {
+        let at = sqlx::query_scalar!(
+            r#"INSERT INTO app.audit_log
+                 (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, before, after, reason, ip, at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, clock_timestamp()))
+               RETURNING at"#,
+            p.id,
+            tx.tenant().as_uuid(),
+            p.actor_user_id,
+            p.actor_kind,
+            p.action.as_str(),
+            p.entity_type,
+            p.entity_id,
+            p.before,
+            p.after,
+            p.reason,
+            p.ip,
+            tx.clock,
+        )
+        .fetch_one(tx.conn())
+        .await?;
+        tx.clock.get_or_insert(at);
+    }
     Ok(())
 }
 

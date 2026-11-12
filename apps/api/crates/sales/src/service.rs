@@ -315,7 +315,7 @@ pub async fn create_sale_as_of(
     }
     require_note_right(actor, order.package.note.as_ref())?;
 
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

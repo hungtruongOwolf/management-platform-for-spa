@@ -993,6 +993,18 @@ async fn a_correction_keeps_prices_and_the_package_sold_in_the_checkout(
         2,
         "the setup package and the checkout's"
     );
+    // The calendar shows the walk-in once (its newest version) with what the customer paid for
+    // it: the package sold in the replaced version's checkout and the new version's own sale.
+    let calendar = s.get("/appointments").await;
+    assert_eq!(calendar.status, StatusCode::OK, "{}", calendar.body);
+    let walk_ins = calendar.body["visits"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(walk_ins.len(), 1, "{}", calendar.body["visits"]);
+    assert_eq!(walk_ins[0]["id"], new["id"]);
+    assert_eq!(walk_ins[0]["payment_state"], "paid");
+    assert_eq!(walk_ins[0]["paid_amount"], 1_500_000 + 88_000);
     Ok(())
 }
 
@@ -1054,6 +1066,16 @@ async fn the_appointment_keeps_the_package_sold_at_its_checkout(pool: PgPool) ->
     let read = s.get(&format!("/appointments/{appointment}")).await;
     assert_eq!(read.body["visit_id"], r.body["visit"]["id"]);
     assert_eq!(read.body["payment_state"], "paid", "{}", read.body);
+    assert_eq!(
+        read.body["paid_amount"], 1_500_000,
+        "the package of the replaced version's checkout"
+    );
+    let calendar = s.get("/appointments?marks=true").await;
+    let listed = calendar.body["appointments"]
+        .as_array()
+        .and_then(|a| a.iter().find(|x| x["id"] == json!(appointment)).cloned())
+        .unwrap_or_default();
+    assert_eq!(listed["paid_amount"], 1_500_000, "{}", calendar.body);
     Ok(())
 }
 

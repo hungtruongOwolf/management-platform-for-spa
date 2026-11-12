@@ -15,6 +15,11 @@ use common::{
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
+use kernel::audit::{self, Action, AuditEntry};
+use kernel::idempotency::hash_request;
+use kernel::testing::app_pool;
+use kernel::{Actor, TenantId, TenantTx, UserId};
+use operations::dto::VisitCreate;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -246,9 +251,9 @@ impl Spa {
     }
 }
 
-/// The actions of the lines, sorted: lines of different requests are ordered by their audit
-/// instants, which some use cases take from the API's clock and others from the database's (a few
-/// ms apart on a dev machine), so tests compare the set unless one request wrote them all.
+/// The actions of the lines, sorted: for what a history holds. Where the order is the point,
+/// [`in_order`] (every request's lines carry the database clock of its writes, ADR-0023, so
+/// requests made one after the other read in that order).
 fn actions(history: &Value) -> Vec<String> {
     let mut all: Vec<String> = history["items"]
         .as_array()
@@ -610,8 +615,8 @@ async fn a_correction_chain_reads_as_one_story(pool: PgPool) -> TestResult {
     ];
     for story in &stories {
         assert_eq!(
-            actions(story),
-            ["visit.correct", "visit.correct", "visit.create"],
+            in_order(story),
+            ["visit.create", "visit.correct", "visit.correct"],
             "{story}"
         );
         assert_eq!(story["items"], stories[0]["items"]);
@@ -2217,5 +2222,179 @@ async fn the_spa_settings_count_every_save_after_the_first(pool: PgPool) -> Test
     ];
     expected.sort_by_key(Value::to_string);
     assert_eq!(changes, expected);
+    Ok(())
+}
+
+// ------------------------------------------------------------------- the order of the lines
+
+/// The actions of the lines in the order the history gives them (oldest first).
+fn in_order(history: &Value) -> Vec<String> {
+    history["items"]
+        .as_array()
+        .map(|i| i.iter().map(|e| str_of(&e["action"])).collect())
+        .unwrap_or_default()
+}
+
+/// The owner as a use case sees them, to write the way a request does.
+async fn owner_actor(s: &Spa, app: &PgPool) -> Setup<Actor> {
+    let e164 = kernel::PhoneE164::parse(OWNER_PHONE).map_err(|_| "phone")?;
+    let user: Uuid = sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = $1")
+        .bind(e164.as_str())
+        .fetch_one(&s.h.owner)
+        .await?;
+    let (t, u) = (TenantId::from_uuid(s.tenant), UserId::from_uuid(user));
+    let permissions = identity::service::tenant_permissions(app, u, t)
+        .await?
+        .ok_or("not a member")?;
+    Ok(Actor::new(u, t, permissions, None))
+}
+
+/// K60 / ADR-0023: request 1 began first but wrote later (it waited on the row lock request 2
+/// held), so its line reads after request 2's and a group's renames chain "A → B", "B → C" as the
+/// group went. Stamped with the transaction's start, request 1's line came first: "A → C",
+/// "C → B" (the name read last was not the group's). Request 2 is the route; request 1 writes as
+/// `catalog::commands::update_category` does, in a transaction opened before request 2.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn racing_edits_read_in_the_order_they_were_made(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let made = call(
+        &s.h.app,
+        "POST",
+        "/service-categories",
+        Some(&s.owner),
+        Some(json!({"name": "Nhóm A"})),
+    )
+    .await;
+    assert_eq!(made.status, StatusCode::CREATED, "{}", made.body);
+    let group = Uuid::parse_str(&str_of(&made.body["id"]))?;
+    let order = made.body["sort_order"].clone();
+    let app = app_pool(&s.h.owner).await?;
+    let owner = owner_actor(&s, &app).await?;
+
+    let mut first = TenantTx::for_actor(&app, &owner).await?;
+    let second = call(
+        &s.h.app,
+        "PUT",
+        &format!("/service-categories/{group}"),
+        Some(&s.owner),
+        Some(json!({"name": "Nhóm B", "sort_order": order})),
+    )
+    .await;
+    assert_eq!(second.status, StatusCode::OK, "{}", second.body);
+    sqlx::query("UPDATE app.service_category SET name = 'Nhóm C' WHERE id = $1")
+        .bind(group)
+        .execute(first.conn())
+        .await?;
+    audit::record(
+        &mut first,
+        &owner,
+        AuditEntry {
+            action: Action::CatalogCategoryUpdate,
+            entity_type: "service_category",
+            entity_id: group,
+            before: None,
+            after: Some(json!({"name": "Nhóm C", "sort_order": order})),
+            reason: None,
+        },
+    )
+    .await?;
+    first.commit().await?;
+
+    let story = s
+        .owner_history("service-category", &group.to_string())
+        .await;
+    assert_eq!(
+        in_order(&story),
+        [
+            "catalog.category_create",
+            "catalog.category_update",
+            "catalog.category_update"
+        ]
+    );
+    let renames: Vec<(&Value, &Value)> = story["items"]
+        .as_array()
+        .map(|i| {
+            i.iter()
+                .flat_map(|e| e["changes"].as_array().into_iter().flatten())
+                .filter(|c| c["field"] == "name")
+                .map(|c| (&c["old"], &c["new"]))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        renames,
+        [
+            (&json!("Nhóm A"), &json!("Nhóm B")),
+            (&json!("Nhóm B"), &json!("Nhóm C"))
+        ],
+        "{story}"
+    );
+    assert_eq!(story["summary"]["edits"], 2);
+    Ok(())
+}
+
+/// K60 / ADR-0023: a request's lines are stamped by the database clock when it writes, never by
+/// the clock its handler read on arrival (the `now` the routes pass to the `*_as_of` use cases):
+/// "Sửa lượt" whose handler started before a technician change committed reads after that change,
+/// as it was made after it. The replies still count their own edit (`edited`).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_request_reads_when_it_wrote_not_when_it_arrived(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let app = app_pool(&s.h.owner).await?;
+    let owner = owner_actor(&s, &app).await?;
+    let visit = s.simple_visit().await;
+    let id = str_of(&visit.body["id"]);
+    let line = str_of(&visit.body["lines"][0]["id"]);
+
+    let arrived = Utc::now();
+    let moved = s
+        .patch(
+            &s.owner,
+            &id,
+            1,
+            json!({"lines": [{"id": line, "staff_id": s.mai}]}),
+        )
+        .await;
+    assert_eq!(moved.status, StatusCode::OK, "{}", moved.body);
+    assert_eq!(moved.body["edited"], true, "the reply counts its own edit");
+    let fixed: VisitCreate = serde_json::from_value(json!({
+        "customer_id": s.ha, "lines": [s.one_off(&s.cheaper)],
+        "payments": [{"method": "cash", "amount": 39_000}],
+    }))?;
+    let k = Uuid::now_v7();
+    let (_, corrected) = operations::service::correct_as_of(
+        &app,
+        &s.h.cipher,
+        &owner,
+        k,
+        hash_request(k.as_bytes()),
+        operations::service::Correction {
+            id: Uuid::parse_str(&id)?,
+            version: moved.body["version"].as_i64().unwrap_or_default(),
+            reason: Some("ghi nhầm dịch vụ"),
+            note: None,
+            visit: &fixed,
+        },
+        arrived,
+    )
+    .await?;
+    assert_eq!(corrected["visit"]["edited"], true, "{corrected}");
+
+    let story = s.owner_history("visit", &id).await;
+    assert_eq!(
+        in_order(&story),
+        ["visit.create", "visit.update", "visit.correct"],
+        "{story}"
+    );
+    let stamped: Vec<chrono::DateTime<Utc>> = sqlx::query_scalar(
+        "SELECT at FROM app.audit_log WHERE action = 'visit.correct' AND entity_id = $1",
+    )
+    .bind(Uuid::parse_str(&id)?)
+    .fetch_all(&s.h.owner)
+    .await?;
+    assert!(
+        stamped.iter().all(|at| *at > arrived),
+        "{stamped:?} vs {arrived}"
+    );
     Ok(())
 }

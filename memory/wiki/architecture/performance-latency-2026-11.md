@@ -203,6 +203,8 @@ Mục tiêu đo lại (từ VN): số lượt nối tiếp mỗi màn ≤ 2, m�
 
 > Cập nhật 2026-11-08: phần DB (lượt đi về API↔DB mỗi request, ping ẩn của pool, câu chậm theo dữ liệu, index) đo lại ở [db-review-2026-11](db-review-2026-11.md).
 
+> Cập nhật 2026-11-12 — **`GET /appointments` 14 ngày** (lịch hẹn, ghi nhận ~450 ms trên debug từ đợt 2 lịch sử trên từng bản ghi). Không phải overhead của debug: request 9 câu (không N+1), nhưng tổng tiền theo chuỗi Sửa lượt là câu con cho từng hàng → chi phí ước tính vượt `jit_above_cost` (Postgres JIT +35–60 ms, lạnh tới ~400 ms) và, khi thống kê `sale.visit_id` cũ, mỗi hàng quét cả index (14 ngày trước: quá `statement_timeout` 5 s → 500). Sửa bằng một CTE cho cả request, không index mới. Server debug qua HTTP, dữ liệu 3 năm, thống kê mới: p95 14 ngày tới **85–111 → 54–58 ms**, 14 ngày trước **123–146 → 100–108 ms**; thống kê cũ: **710 ms → 47–51 ms**, **5 s / 500 → 86–87 ms**; bench debug in-process p95 **390–400 → 55 ms**. Chi tiết + EXPLAIN từng câu: [record-history §6](record-history.md), quyết định K65–K67 ở [spec](../product/specs/record-history.md). Bài học chung cho câu OLTP: câu con tương quan cho từng hàng làm chi phí ước tính phình (kéo theo JIT) và nhạy với thống kê; tính một lần theo tập.
+
 ## 6. Cần EM quyết vs engineering tự làm
 **Cần EM quyết (vendor / vùng / tiền):** *(2026-11-09: Q-P1 đã quyết ở §5b — staging ở lại Mỹ; Q-P2, Q-P3 còn mở, chuyển sang quyết định production ở [ADR-0012](../decisions/ADR-0012-colocate-api-db-singapore.md).)*
 - **Q-P1 Vùng:** đồng ý dời staging sang Singapore (Supabase project mới + API Singapore)? Dữ liệu demo tạo lại được; mật khẩu và URL DB mới thì EM giữ như lần trước. Cũng là bước chuẩn bị cho production (ADR-0002/0005 đã chọn Singapore).

@@ -1,0 +1,14 @@
+-- 0053: an audit entry's `at` is when it was written, not when its transaction began (ADR-0023,
+-- spec record-history K60).
+--
+-- The Rust writers (kernel::audit) pass `at` themselves: one instant per transaction, the
+-- database clock when the transaction writes its entries, after its row locks. This default only
+-- serves the writers that leave `at` out: the role-template function (0040, 0052) and the
+-- operator's account actions (platform::accounts), one entry per spa per transaction. `now()` is
+-- the transaction's start, so an operator action that waited on a lock held by another one was
+-- stamped before it; `clock_timestamp()` is the insert's own time. A writer of several entries
+-- that belong to one action passes one `at` for all of them (they read as one line, ADR-0021 D9).
+--
+-- Deploy: independent of the binary. Changing a default rewrites nothing (catalog only, a brief
+-- lock); the previous binary passes `at` on every Rust insert and is unaffected.
+ALTER TABLE app.audit_log ALTER COLUMN at SET DEFAULT clock_timestamp();

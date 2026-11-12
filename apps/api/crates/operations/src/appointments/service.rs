@@ -901,7 +901,7 @@ pub async fn book_as_of(
     let note = clean_note(input.note.as_ref())?;
     let companions = companions(&input.companions)?;
 
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1506,7 +1506,7 @@ pub async fn close_as_of(
 ) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
     let reason = kernel::corrections::reason(reason)?;
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     let spa = spa_at(&mut tx, now).await?;
     let current = lock_open(&mut tx, actor, &spa, id).await?;
     if outcome == Outcome::NoShow {
@@ -1607,7 +1607,7 @@ pub async fn complete_as_of(
         companions: input.companions,
     };
 
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

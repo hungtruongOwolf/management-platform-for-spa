@@ -1,0 +1,105 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH RECURSIVE walk_in AS MATERIALIZED (\n             SELECT v.id, v.business_date, v.check_in_at, v.customer_id, v.status\n             FROM app.visit v\n             WHERE v.tenant_id = $1 AND v.branch_id = $2 AND v.business_date BETWEEN $3 AND $4\n               AND NOT EXISTS (\n                 SELECT 1 FROM app.appointment a WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id)\n               -- A visit replaced by \"Sửa lượt\" is not a second customer: only its newest version shows.\n               AND NOT EXISTS (\n                 SELECT 1 FROM app.visit n WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id)\n             ORDER BY v.check_in_at, v.id\n             LIMIT 2000\n           ), lineage(root, customer_id, id) AS (\n             SELECT w.id, w.customer_id, w.id FROM walk_in w\n             UNION ALL\n             SELECT l.root, l.customer_id, p.corrects_visit_id FROM lineage l\n             JOIN app.visit p ON p.tenant_id = $1 AND p.id = l.id\n             WHERE p.corrects_visit_id IS NOT NULL\n           ), paid AS (\n             -- The visit's open sales, plus the packages that the visits it replaced (\"Sửa\n             -- lượt\") sold to the same customer: they stay with the corrected visit (D8).\n             SELECT l.root, sum(x.total)::bigint AS total\n             FROM lineage l\n             CROSS JOIN LATERAL (\n               SELECT sum(s.total) AS total FROM app.sale s\n               WHERE s.tenant_id = $1 AND s.visit_id = l.id AND s.status = 'open'\n                 AND s.customer_id = l.customer_id) x\n             GROUP BY l.root\n           )\n           SELECT w.id AS \"id!\", w.business_date AS \"business_date!\",\n                  w.check_in_at AS \"check_in_at!\", w.customer_id AS \"customer_id!\",\n                  app.customer_label(c.full_name) AS \"customer_name!\",\n                  c.gender AS \"customer_gender?\", w.status AS \"status!\",\n                  p.total AS \"sale_total?\"\n           FROM walk_in w\n           JOIN app.customer c ON c.tenant_id = $1 AND c.id = w.customer_id\n           LEFT JOIN paid p ON p.root = w.id\n           ORDER BY w.check_in_at, w.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "business_date!",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "business_date"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "check_in_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "check_in_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "customer_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "customer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "customer_name!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "customer_gender?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.customer",
+            "name": "gender"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.visit",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sale_total?",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "7c4fce08de5f898130eeb471bd9c839304a0ec67ae1727efcd16484bdb461f1a"
+}

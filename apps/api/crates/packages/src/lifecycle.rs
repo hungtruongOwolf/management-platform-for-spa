@@ -278,8 +278,9 @@ pub async fn cancel(
 /// [`cancel`] with `now` as the server clock: the refund is booked on the business day of `now`
 /// and the package's state is read as of that day. Operator tooling only (`app seed-demo` cancels
 /// packages on past days); no route reaches it — `POST /customer-packages/{id}/cancel` calls
-/// [`cancel`]. Audit rows and `created_at` keep the real time of the write. The caller picks a
-/// day on which the package was live and after its last used session.
+/// [`cancel`]. `now` never stamps the audit rows (ADR-0023: the time of the write, or the actor's
+/// back-fill clock). The caller picks a day on which the package was live and after its last used
+/// session.
 pub async fn cancel_as_of(
     pool: &PgPool,
     actor: &Actor,
@@ -292,7 +293,7 @@ pub async fn cancel_as_of(
     actor.require(Permission::PackageCancelRefund)?;
     let order = parse_cancel(input)?;
 
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

@@ -35,8 +35,13 @@ pub struct TenantTx {
     tenant: TenantId,
     /// The spa's settings when the request already read them with its permissions (db review A4).
     facts: Option<TenantFacts>,
-    /// The instant audit entries written in this transaction carry; `None` = the database clock.
-    clock: Option<DateTime<Utc>>,
+    /// The instant every audit entry of this transaction carries (ADR-0023): set up front only by
+    /// a back-filling actor ([`Actor::at_clock`]); otherwise fixed by the database clock when the
+    /// first entry is written, after the use case's writes.
+    pub(crate) clock: Option<DateTime<Utc>>,
+    /// Entries recorded but not written yet ([`crate::audit`]): [`Self::commit`] or
+    /// [`Self::write_audit`] writes them.
+    pub(crate) audit: Vec<crate::audit::Pending>,
 }
 
 impl TenantTx {
@@ -47,11 +52,13 @@ impl TenantTx {
             tenant,
             facts: None,
             clock: None,
+            audit: Vec::new(),
         })
     }
 
     /// The transaction of a request's use case: the actor's spa, and the spa settings the actor
-    /// carries, so `kernel::tenant::profile` needs no query.
+    /// carries, so `kernel::tenant::profile` needs no query. A back-filling actor's clock
+    /// ([`Actor::at_clock`], `app seed-demo`) stamps the audit entries; a request's never does.
     pub async fn for_actor(pool: &PgPool, actor: &Actor) -> Result<Self, AppError> {
         let mut tx = Self::begin(pool, actor.tenant_id).await?;
         tx.facts = actor.tenant_facts().copied();
@@ -59,22 +66,12 @@ impl TenantTx {
         Ok(tx)
     }
 
-    /// The transaction of a use case that runs on the clock `now` (the `*_as_of` forms, ADR-0021):
-    /// its audit entries are stamped `now`, so history back-filled by `app seed-demo` reads as
-    /// written on its own day. HTTP handlers pass the server clock.
-    pub async fn for_actor_at(
-        pool: &PgPool,
-        actor: &Actor,
-        now: DateTime<Utc>,
-    ) -> Result<Self, AppError> {
-        let mut tx = Self::for_actor(pool, actor).await?;
-        tx.clock = Some(now);
-        Ok(tx)
-    }
-
-    /// The instant this transaction's audit entries carry (`None`: the database clock).
-    pub const fn clock(&self) -> Option<DateTime<Utc>> {
-        self.clock
+    /// Writes the audit entries recorded so far. [`Self::commit`] does it; a query that reads this
+    /// transaction's own entries (a reply's "Đã sửa") calls it first, and only once the use case's
+    /// writes are done: the first write fixes the instant every entry of the transaction carries
+    /// (ADR-0023), so it must come after every row lock the use case takes.
+    pub async fn write_audit(&mut self) -> Result<(), AppError> {
+        crate::audit::write_pending(self).await
     }
 
     /// The spa settings carried in from the actor, if any.
@@ -91,7 +88,9 @@ impl TenantTx {
         &mut self.tx
     }
 
-    pub async fn commit(self) -> Result<(), AppError> {
+    /// Writes the pending audit entries, then commits.
+    pub async fn commit(mut self) -> Result<(), AppError> {
+        self.write_audit().await?;
         self.tx.commit().await.map_err(AppError::from)
     }
 }
