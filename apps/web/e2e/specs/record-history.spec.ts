@@ -703,7 +703,7 @@ test.describe("lịch sử trên từng bản ghi: ô ngày của tháng đã ch
         expect(await region.evaluate((el) => {
           const buttons = el.querySelectorAll("button");
           const last = buttons[buttons.length - 1];
-          return Boolean(last && el.lastElementChild?.contains(last) && last.textContent?.startsWith("Ghi bởi "));
+          return Boolean(last && el.lastElementChild?.contains(last) && last.textContent.startsWith("Ghi bởi "));
         })).toBe(true);
         await trace.click();
         await expect(trace).toHaveAttribute("aria-expanded", "true");

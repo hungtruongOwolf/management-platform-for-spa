@@ -82,5 +82,10 @@ EM: "làm tiếp cho xong hết", không hỏi lại. Một PR web; không đụ
 - [x] **Thứ tự dòng của hai request gần nhau** (K60–K64, [ADR-0023](../decisions/ADR-0023-audit-instant-is-write-time.md), migration **0053**): giờ audit = lúc transaction ghi, một giờ cho cả transaction; route không còn đóng dấu bằng giờ của handler. Test: `kernel/tests/audit_order.rs` (chờ khóa thật, đỏ trước bản sửa), `record_history.rs` (đổi tên tranh nhau, Sửa lượt bị vượt, chuỗi Sửa lượt theo thứ tự).
 - [x] **`GET /appointments` 14 ngày** (K65–K67): tổng tiền theo chuỗi Sửa lượt tính một lần cho cả request thay vì mỗi hàng một câu con; số đo ở [architecture §6](../architecture/record-history.md).
 
+## Xóa nhóm dịch vụ + e2e còn thiếu — ✅ đã làm (2026-11-12, K68–K73)
+- [x] **"Xóa nhóm"** (K68, K71): `DELETE /service-categories/{id}` (chủ spa; nhóm còn dịch vụ kể cả ngừng bán → `409`), migration **0054** (chỉ `GRANT DELETE`), khóa nhóm + FK, ghi dịch vụ giữ nhóm `FOR KEY SHARE`; audit `catalog.category_delete` (tên trong `before`), tên nhóm đã xóa vẫn hiện trên mọi dòng của Nhật ký thao tác. Web: nút trong form "Sửa nhóm", sheet xác nhận, focus sang nhóm kế / tiêu đề trang.
+- [x] **E2E không để lại nhóm thử** (K70): `afterAll` của khối đợt 3 xóa nhóm thử; `price-list.spec.ts` thêm rồi xóa nhóm qua UI (1280 + 360, axe).
+- [x] **E2E sheet chỉ xem của tháng đã chốt** (K69): tháng 06/2025 của spa e2e, chốt bằng một dòng `payroll_period`; quản lý được bật xem lịch sử vẫn chỉ ở Vitest (K72).
+
 ## Không làm (đã có cách hiện riêng)
 Lịch sử hồ sơ nhân viên, đánh giá tháng, chốt lương, gọi lại khách (spec D11). Màn riêng cho việc của đội vận hành khi cờ tắt (LEAD: không làm).
