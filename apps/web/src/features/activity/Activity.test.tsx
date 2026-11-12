@@ -218,6 +218,22 @@ describe("/nhat-ky-thao-tac", () => {
     ]);
   });
 
+  it("an empty value that is a setting reads as that setting, both ways (record-history K50)", async () => {
+    const slot = (old: string | undefined, now: string | undefined, time: string) =>
+      entry({
+        action: "appointment.settings",
+        kind: "settings",
+        actor: by("Chủ Spa"),
+        changes: [{ field: "max_per_slot", format: "number", ...(old ? { old } : {}), ...(now ? { new: now } : {}) }],
+        at: `${today}T${time}:00Z`,
+      });
+    serve(OWNER, { items: [slot("6", undefined, "09:00"), slot(undefined, "6", "08:00")] });
+    at("/nhat-ky-thao-tac");
+    expect(await screen.findByText("Số khách tối đa mỗi khung giờ: 6 → không giới hạn")).toBeInTheDocument();
+    expect(screen.getByText("Số khách tối đa mỗi khung giờ: không giới hạn → 6")).toBeInTheDocument();
+    expect(screen.queryByText(/bỏ 6/)).toBeNull();
+  });
+
   it("keeps filters in the URL and sends them to the API", async () => {
     const spy = serve(OWNER);
     const { search } = at("/nhat-ky-thao-tac");

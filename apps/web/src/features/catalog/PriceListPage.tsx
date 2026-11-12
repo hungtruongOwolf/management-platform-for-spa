@@ -1,4 +1,4 @@
-import type { Service } from "@vpyd/api-client";
+import type { Service, ServiceCategory } from "@vpyd/api-client";
 import {
   useMutation,
   useQueries,
@@ -15,6 +15,7 @@ import { usePreloadRecordHistory } from "../record-history/lazy";
 import { canTrace } from "../record-history/query";
 import { ErrorState } from "../reports/ui";
 import { categoriesQuery, createCategory, servicesQuery } from "./api";
+import { CategoryForm } from "./CategoryForm";
 import { describeDuration, describePrices } from "./prices";
 import { ServiceForm } from "./ServiceForm";
 import "../customers/khach.css";
@@ -22,6 +23,7 @@ import { CATALOG_FIELDS } from "./messages";
 
 type Editing =
   | { kind: "service"; service: Service }
+  | { kind: "category"; category: ServiceCategory }
   | { kind: "new-service"; categoryId: string }
   | { kind: "new-category" }
   | null;
@@ -30,12 +32,13 @@ type Editing =
  * /bang-gia — the spa's menu. Owners (catalog.manage) can add and edit; everyone else reads.
  * Round-5 layout (EM 2026-11-06 kept it): one card per group, services divided by hairlines.
  * "Thêm nhóm dịch vụ" sits in the page header, where "Mẫu gói liệu trình" has "Tạo mẫu gói", and
- * opens its form at the top of the page.
+ * opens its form at the top of the page; "Sửa nhóm" on a group's heading opens its rename form
+ * under the heading (spec record-history K39, K48).
  */
 export function PriceListPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const canManage = can(me, "catalog.manage");
-  // "Ai ghi, ai sửa" at the end of a service's edit form (ADR-0022 wave 3), never on the list.
+  // "Ai ghi, ai sửa" at the end of a service's and a group's edit form (ADR-0022 wave 3), never on the list.
   const traced = canTrace(me, "catalog");
   usePreloadRecordHistory(traced);
   const [categories, services] = useQueries({
@@ -108,6 +111,7 @@ export function PriceListPage() {
         const items = services.data.filter((s) => s.category_id === category.id);
         if (items.length === 0 && !canManage) return null;
         const adding = editing?.kind === "new-service" && editing.categoryId === category.id;
+        const renaming = editing?.kind === "category" && editing.category.id === category.id;
         return (
           <section key={category.id} aria-labelledby={`cat-${category.id}`} className="card p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -115,18 +119,32 @@ export function PriceListPage() {
                 {category.name}
               </h2>
               {canManage && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditing(adding ? null : { kind: "new-service", categoryId: category.id });
-                  }}
-                  aria-expanded={adding}
-                  className="btn btn-secondary"
-                >
-                  <Icon name="plus" className="size-4" /> Thêm dịch vụ
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(renaming ? null : { kind: "category", category });
+                    }}
+                    aria-label={`Sửa nhóm ${category.name}`}
+                    aria-expanded={renaming}
+                    className="btn btn-secondary"
+                  >
+                    Sửa nhóm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(adding ? null : { kind: "new-service", categoryId: category.id });
+                    }}
+                    aria-expanded={adding}
+                    className="btn btn-secondary"
+                  >
+                    <Icon name="plus" className="size-4" /> Thêm dịch vụ
+                  </button>
+                </div>
               )}
             </div>
+            {renaming && <CategoryForm category={category} onDone={done} traced={traced} />}
             {adding && <ServiceForm categories={categories.data} defaultCategoryId={category.id} onDone={done} />}
             {items.length === 0 && !adding && (
               <p className="py-2 text-sm text-text-muted">Nhóm này chưa có dịch vụ. Bấm “Thêm dịch vụ” để thêm dịch vụ đầu tiên.</p>

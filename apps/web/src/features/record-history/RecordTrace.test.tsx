@@ -1,5 +1,5 @@
 import type { ActivityEntry, AuditAction, RecordHistory } from "@vpyd/api-client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationObserver, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { ResponsiveTable } from "../../components/ResponsiveTable";
 import { createQueryClient } from "../../lib/queryClient";
 import { HISTORY, moneyOf } from "../activity/sentence";
 import { visitChip } from "./chip";
+import { LazyRecordTrace } from "./lazy";
 import { canTrace, recordHistoryQuery } from "./query";
 import { RecordTrace } from "./RecordTrace";
 import { changeLines, metaText } from "./text";
@@ -268,6 +269,55 @@ describe("RecordTrace", () => {
   });
 });
 
+describe("one request per open", () => {
+  /** Opens the record's history as a screen does (`LazyRecordTrace`: the prefetch, then the lazy chunk). */
+  async function open(client: QueryClient, meta: string) {
+    const view = render(
+      <QueryClientProvider client={client}>
+        <LazyRecordTrace record={{ type: "visit", id: VISIT }} noun="lượt 10:05 của chị Mai" day={DAY} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole("button", { name: meta })).toBeInTheDocument();
+    // Whatever the mount would ask has been asked by now.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    return view;
+  }
+
+  it("the prefetch's reply is the open's own: the mounted history does not ask again", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(Response.json(history())));
+    await open(createQueryClient(), "Ghi bởi Hà · 10:07 · đã sửa 1 lần");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("opened again later: asked again once (another browser may have written); after a write here: fresh, once", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(`${DAY}T04:00:00Z`));
+      const edited = (edits: number) => history({ summary: { created: { actor: HA, at: `${DAY}T03:07:00Z`, day: DAY, source: "audit" }, edits, state: "active" } });
+      const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(Response.json(edited(1))));
+      const client = createQueryClient();
+      (await open(client, "Ghi bởi Hà · 10:07 · đã sửa 1 lần")).unmount();
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      // A minute later someone else edited it: the cached line shows at once, the reply replaces it.
+      vi.setSystemTime(new Date(`${DAY}T04:01:00Z`));
+      fetch.mockImplementation(() => Promise.resolve(Response.json(edited(2))));
+      (await open(client, "Ghi bởi Hà · 10:07 · đã sửa 2 lần")).unmount();
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      // A write in this browser (any mutation, lib/queryClient.ts), then the same record at once.
+      fetch.mockImplementation(() => Promise.resolve(Response.json(edited(3))));
+      await new MutationObserver(client, { mutationFn: () => Promise.resolve("saved") }).mutate();
+      await open(client, "Ghi bởi Hà · 10:07 · đã sửa 3 lần");
+      expect(fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("metaText", () => {
   const base = history();
   it("a backdated visit says the day it was recorded", () => {
@@ -485,7 +535,28 @@ describe("HISTORY", () => {
       ]),
     ).toEqual(["Thưởng gắn bó tháng lẻ: Đủ tháng nếu làm từ 15 ngày → Theo số ngày làm", "Cách tính tiền ăn: Cố định mỗi tháng → Theo số ngày đi làm", "Tiền phạt đi muộn: 0đ → 30.000đ"]);
     expect(lines("appointment.settings", [{ field: "max_per_slot", format: "number", old: "4", new: "6" }])).toEqual(["Số khách tối đa mỗi khung giờ: 4 → 6"]);
-    expect(lines("appointment.settings", [{ field: "max_per_slot", format: "number", old: "6" }])).toEqual(["Số khách tối đa mỗi khung giờ: bỏ 6"]);
+  });
+
+  it("an empty value that is a setting of its own reads as that setting, both ways (K50); any other clear is 'bỏ'", () => {
+    const one = (action: AuditAction, change: ActivityEntry["changes"][number]) => changeLines(line({ action, changes: [change] }))[0];
+    // The slot limit: blank = no limit ("Để trống = không giới hạn").
+    expect(one("appointment.settings", { field: "max_per_slot", format: "number", old: "6" })).toBe("Số khách tối đa mỗi khung giờ: 6 → không giới hạn");
+    expect(one("appointment.settings", { field: "max_per_slot", format: "number", new: "6" })).toBe("Số khách tối đa mỗi khung giờ: không giới hạn → 6");
+    // The price list's own blanks: "theo tư vấn", "không thời hạn".
+    expect(one("catalog.service_update", { field: "duration_min", format: "number", old: "45" })).toBe("Thời lượng (phút): 45 → theo tư vấn");
+    expect(one("catalog.service_update", { field: "duration_min", format: "number", new: "60" })).toBe("Thời lượng (phút): theo tư vấn → 60");
+    expect(one("catalog.plan_update", { field: "validity_months", format: "number", old: "6" })).toBe("Hạn dùng (tháng): 6 → không thời hạn");
+    expect(one("catalog.plan_update", { field: "validity_months", format: "number", new: "12" })).toBe("Hạn dùng (tháng): không thời hạn → 12");
+    // A booking's technician: none = "Chưa gán KTV"; a staff profile's shift: the spa's.
+    expect(one("appointment.update", { field: "staff", format: "text", old: "Thu" })).toBe("KTV: Thu → chưa gán KTV");
+    expect(one("appointment.arrive", { field: "staff", format: "text", new: "Hoa" })).toBe("KTV: chưa gán KTV → Hoa");
+    expect(one("staff.update", { field: "shift_start", format: "time", old: "08:30:00" })).toBe("Giờ vào ca: 08:30 → theo giờ chung của spa");
+    // Generic clears keep their words; a gender price's blank is ambiguous (one price → two).
+    expect(one("catalog.service_update", { field: "price", format: "money", old: "49000" })).toBe("Giá: bỏ 49.000đ");
+    expect(one("catalog.service_update", { field: "price_female", format: "money", new: "60000" })).toBe("Giá Nữ: 60.000đ");
+    expect(one("attendance.record", { field: "check_out", format: "time", old: "17:00:00" })).toBe("Giờ ra: bỏ 17:00");
+    // A change with no value either side stays "(đã đổi)", meaning or not.
+    expect(one("appointment.settings", { field: "max_per_slot", format: "number" })).toBe("Số khách tối đa mỗi khung giờ (đã đổi)");
   });
 
   it("a cancel gives money back: 'Trả lại', not 'Đảo'", () => {

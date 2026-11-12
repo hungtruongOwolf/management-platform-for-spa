@@ -1,9 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField } from "../../components/DateField";
 import { messageFor } from "../../lib/errors";
 import { Icon } from "../../app/Icon";
+import { meQuery } from "../auth/session";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import { activeStaffQuery } from "../sales/api";
 import {
@@ -23,7 +24,7 @@ import { AdjustmentForm } from "./AdjustmentsTab";
 import { BookCard } from "./BookCard";
 import { putAttendance, putReviews } from "./cache";
 import { STATUS_LABEL, monthLabel, type AttendanceStatus } from "./labels";
-import { PersonDaySheet } from "./PersonDaySheet";
+import { PersonDaySheet, PersonDayView, tracesBooks } from "./PersonDaySheet";
 import { employedOn, evaluationDueMonth, incompleteDays, missingOn } from "./progress";
 import { ClosedBanner, dayLabel, lastDayOrToday } from "./ui";
 
@@ -55,6 +56,7 @@ export function DailyBook({
   onOpenEvaluation: (month: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: me } = useSuspenseQuery(meQuery);
   const attendance = useQuery({ ...attendanceQuery(month), enabled: canAttendance });
   const reviews = useQuery({ ...reviewsQuery(month), enabled: canReview });
   const adjustments = useQuery({ ...adjustmentsQuery(month), enabled: canReview });
@@ -62,6 +64,8 @@ export function DailyBook({
   const dueMonth = canReview ? evaluationDueMonth(today) : null;
   const due = useQuery({ ...evaluationsQuery(dueMonth ?? month), enabled: dueMonth !== null });
   const [details, setDetails] = useState<StaffSheet | null>(null);
+  // The same day read-only, for a card that cannot be written (spec record-history K30, K49).
+  const [viewing, setViewing] = useState<StaffSheet | null>(null);
   const [adjusting, setAdjusting] = useState<{ staff: StaffSheet; entry?: Adjustment } | null>(null);
   // A leave code for someone who served customers that day: confirm first (likely a mistake).
   const [confirmLeave, setConfirmLeave] = useState<{ staff: StaffSheet; status: AttendanceStatus } | null>(null);
@@ -116,6 +120,9 @@ export function DailyBook({
   const pastGaps = canAttendance ? incompleteDays(month, people, today).filter((d) => d !== date) : [];
   const future = date > today;
   const readOnly = closed || future;
+  // A card that cannot be written opens read-only: a closed month's day, or an open month's day of
+  // a person only the owner records when its history may be seen. A day to come has nothing yet.
+  const viewable = (s: StaffSheet) => !future && (closed || (!s.can_record && tracesBooks(me, canAttendance, canReview)));
   const reviewOf = (id: string): DailyReview | undefined =>
     reviews.data?.staff.find((s) => s.staff_id === id)?.days.find((d) => d.date === date);
   const adjustmentsOf = (id: string): Adjustment[] =>
@@ -289,6 +296,13 @@ export function DailyBook({
               onDetails={() => {
                 setDetails(s);
               }}
+              onView={
+                viewable(s)
+                  ? () => {
+                      setViewing(s);
+                    }
+                  : undefined
+              }
             />
           ))}
         </ul>
@@ -303,6 +317,18 @@ export function DailyBook({
           canReview={canReview}
           onClose={() => {
             setDetails(null);
+          }}
+        />
+      )}
+      {viewing && (
+        <PersonDayView
+          staff={viewing}
+          date={date}
+          review={reviewOf(viewing.staff_id)}
+          canAttendance={canAttendance}
+          canReview={canReview}
+          onClose={() => {
+            setViewing(null);
           }}
         />
       )}

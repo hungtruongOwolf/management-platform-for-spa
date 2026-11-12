@@ -1,4 +1,4 @@
-import type { CategoryCreate, PackagePlan, PlanWrite, Service, ServiceCategory, ServiceWrite } from "@vpyd/api-client";
+import type { CategoryCreate, CategoryUpdate, PackagePlan, PlanWrite, Service, ServiceCategory, ServiceWrite } from "@vpyd/api-client";
 import { queryOptions } from "@tanstack/react-query";
 import { api, ifMatch } from "../../lib/api";
 
@@ -28,6 +28,11 @@ export function plansQuery(includeInactive: boolean) {
 
 export async function createCategory(body: CategoryCreate): Promise<ServiceCategory> {
   return (await api("/service-categories", { method: "POST", body })) as ServiceCategory;
+}
+
+/** Rename / reorder a group of services (`catalog.manage`): the whole row, no version (last write wins). */
+export async function updateCategory(id: string, body: CategoryUpdate): Promise<ServiceCategory> {
+  return (await api(`/service-categories/${encodeURIComponent(id)}`, { method: "PUT", body })) as ServiceCategory;
 }
 
 /** Create when `existing` is undefined, otherwise full replace guarded by its version. */

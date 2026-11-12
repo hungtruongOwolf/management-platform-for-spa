@@ -203,6 +203,75 @@ describe("owner edits the price list", () => {
     expect(await screen.findByRole("button", { name: "Thêm nhóm dịch vụ" })).toBeInTheDocument();
   });
 
+  it("renames a service group from 'Sửa nhóm' on its heading: the name only, its place kept (K48)", async () => {
+    let renamed = false;
+    const calls = serve(OWNER, (c) => {
+      if (c.method === "PUT" && c.path === "/api/v1/service-categories/c1") {
+        renamed = true;
+        return Response.json({ id: "c1", name: "Gội đầu thảo dược", sort_order: 0 });
+      }
+      if (c.method === "GET" && c.path === "/api/v1/service-categories" && renamed)
+        return Response.json([{ id: "c1", name: "Gội đầu thảo dược", sort_order: 0 }]);
+      return undefined;
+    });
+    at("/bang-gia");
+    const user = userEvent.setup();
+    const open = await screen.findByRole("button", { name: "Sửa nhóm Gội đầu dưỡng sinh" });
+    expect(open).toHaveTextContent("Sửa nhóm");
+    await user.click(open);
+    expect(open).toHaveAttribute("aria-expanded", "true");
+    const form = screen.getByRole("form", { name: "Sửa nhóm: Gội đầu dưỡng sinh" });
+    // Under the group's heading, before its services.
+    expect(form.closest("section")).toBe(screen.getByRole("region", { name: "Gội đầu dưỡng sinh" }));
+    const name = within(form).getByLabelText("Tên nhóm dịch vụ");
+    expect(name).toHaveFocus();
+    expect(name).toHaveValue("Gội đầu dưỡng sinh");
+    await user.clear(name);
+    await user.type(name, "  Gội đầu thảo dược ");
+    await user.click(within(form).getByRole("button", { name: "Lưu nhóm dịch vụ" }));
+
+    const put = calls.find((c) => c.method === "PUT");
+    expect(put?.body).toEqual({ name: "Gội đầu thảo dược", sort_order: 0 });
+    // The list and every picker read the new name (["catalog"] invalidated), the form closes.
+    expect(await screen.findByRole("heading", { name: "Gội đầu thảo dược" })).toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: /^Sửa nhóm/ })).toBeNull();
+    expect(calls.filter((c) => c.path === "/api/v1/service-categories" && c.method === "GET").length).toBe(2);
+    expect(calls.filter((c) => c.path === "/api/v1/services" && c.method === "GET").length).toBe(2);
+  });
+
+  it("a group's name taken: said under the field; empty: said before any request; unchanged: closes without one", async () => {
+    const calls = serve(OWNER, (c) =>
+      c.method === "PUT"
+        ? Response.json({ status: 422, code: "validation.failed", errors: [{ field: "name", code: "taken" }] }, { status: 422 })
+        : undefined,
+    );
+    at("/bang-gia");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Sửa nhóm Gội đầu dưỡng sinh" }));
+    const form = screen.getByRole("form", { name: "Sửa nhóm: Gội đầu dưỡng sinh" });
+    const name = within(form).getByLabelText("Tên nhóm dịch vụ");
+    const save = within(form).getByRole("button", { name: "Lưu nhóm dịch vụ" });
+
+    await user.clear(name);
+    await user.click(save);
+    expect(within(form).getByText("Nhập tên nhóm.")).toBeInTheDocument();
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+
+    await user.type(name, "Massage body");
+    await user.click(save);
+    expect(await within(form).findByText("Tên này đã được dùng.")).toBeInTheDocument();
+    expect(name).toHaveAccessibleDescription("Tên này đã được dùng.");
+    expect(within(form).queryByRole("alert")).toBeNull();
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1);
+
+    await user.clear(name);
+    await user.type(name, "Gội đầu dưỡng sinh");
+    await user.click(save);
+    expect(screen.queryByRole("form", { name: /^Sửa nhóm/ })).toBeNull();
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1);
+  });
+
   it("blocks an active service without a price before calling the API", async () => {
     const calls = serve(OWNER);
     at("/bang-gia");

@@ -1,18 +1,21 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Icon } from "../../app/Icon";
+import { meQuery } from "../auth/session";
 import { ErrorState, RowsSkeleton } from "../reports/ui";
 import { AdjustmentLogSection } from "./AdjustmentsTab";
 import { adjustmentsQuery, attendanceQuery, reviewsQuery, type StaffReviews, type StaffSheet } from "./api";
 import { STATUS_LABEL, daysOf, weekdayShort } from "./labels";
-import { PersonDaySheet } from "./PersonDaySheet";
+import { PersonDaySheet, PersonDayView, tracesBooks } from "./PersonDaySheet";
 import { cellOf, employedOn } from "./progress";
 import { AttendanceLegend, ClosedBanner, StatusMark, dayLabel, vnd } from "./ui";
 
 /**
  * "Bảng công tháng" (spec §10 US8): the sheet's month grid — rows = staff, columns = days, totals
  * per person — usable at 390 px (horizontal scroll, sticky names), then the month's bonus/penalty
- * log. A cell opens the same person-day sheet as the daily book.
+ * log. A cell opens the same person-day sheet as the daily book; a cell that cannot be written
+ * opens it read-only (a closed month; a person only the owner records, when its history may be
+ * seen: spec record-history K30, K49).
  */
 export function MonthSheet({
   month,
@@ -28,9 +31,10 @@ export function MonthSheet({
   staffId?: string;
   onAll?: () => void;
 }) {
+  const { data: me } = useSuspenseQuery(meQuery);
   const attendance = useQuery(attendanceQuery(month));
   const reviews = useQuery({ ...reviewsQuery(month), enabled: canReview });
-  const [editing, setEditing] = useState<{ staff: StaffSheet; date: string } | null>(null);
+  const [editing, setEditing] = useState<{ staff: StaffSheet; date: string; view: boolean } | null>(null);
 
   if (attendance.isPending) return <RowsSkeleton rows={6} />;
   if (attendance.isError) return <ErrorState error={attendance.error} onRetry={() => void attendance.refetch()} />;
@@ -38,6 +42,19 @@ export function MonthSheet({
   const reviewsOf = (id: string) => reviews.data?.staff.find((s) => s.staff_id === id);
   const person = staffId ? sheet.staff.find((s) => s.staff_id === staffId) : undefined;
   const people = staffId ? (person ? [person] : []) : sheet.staff;
+  const writable = (s: StaffSheet) => !sheet.closed && s.can_record;
+  const traced = tracesBooks(me, true, canReview);
+  /** Whether a person's cells open at all: to write, else read-only (the grid's own rule for the days: none to come, none outside their work). */
+  const opens = (s: StaffSheet) => writable(s) || sheet.closed || traced;
+  const opening = people.filter(opens);
+  const hint =
+    opening.length === 0
+      ? ""
+      : opening.every(writable)
+        ? "Bấm một ô để sửa."
+        : opening.some(writable)
+          ? "Bấm một ô để sửa hoặc xem."
+          : "Bấm một ô để xem.";
 
   return (
     <div className="grid content-start gap-6">
@@ -59,25 +76,39 @@ export function MonthSheet({
           today={today}
           people={people}
           reviewsOf={canReview ? reviewsOf : undefined}
+          opens={opens}
+          hint={hint}
           onCell={(staff, date) => {
-            if (!sheet.closed && staff.can_record) setEditing({ staff, date });
+            if (opens(staff)) setEditing({ staff, date, view: !writable(staff) });
           }}
         />
       )}
       {person && <PersonDays person={person} reviews={reviewsOf(person.staff_id)} month={month} canReview={canReview} />}
       {canReview && !staffId && <AdjustmentLogSection month={month} today={today} canWrite={!sheet.closed} />}
-      {editing && (
-        <PersonDaySheet
-          staff={editing.staff}
-          date={editing.date}
-          review={reviewsOf(editing.staff.staff_id)?.days.find((d) => d.date === editing.date)}
-          canAttendance
-          canReview={canReview}
-          onClose={() => {
-            setEditing(null);
-          }}
-        />
-      )}
+      {editing &&
+        (editing.view ? (
+          <PersonDayView
+            staff={editing.staff}
+            date={editing.date}
+            review={reviewsOf(editing.staff.staff_id)?.days.find((d) => d.date === editing.date)}
+            canAttendance
+            canReview={canReview}
+            onClose={() => {
+              setEditing(null);
+            }}
+          />
+        ) : (
+          <PersonDaySheet
+            staff={editing.staff}
+            date={editing.date}
+            review={reviewsOf(editing.staff.staff_id)?.days.find((d) => d.date === editing.date)}
+            canAttendance
+            canReview={canReview}
+            onClose={() => {
+              setEditing(null);
+            }}
+          />
+        ))}
     </div>
   );
 }
@@ -87,12 +118,18 @@ export function MonthGrid({
   today,
   people,
   reviewsOf,
+  opens,
+  hint,
   onCell,
 }: {
   month: string;
   today: string;
   people: StaffSheet[];
   reviewsOf: ((id: string) => StaffReviews | undefined) | undefined;
+  /** Whether this person's days are buttons (to write or to view); otherwise shown, not opened. */
+  opens: (s: StaffSheet) => boolean;
+  /** "Bấm một ô để sửa." / "… để xem." / "… để sửa hoặc xem."; "" when no cell opens. */
+  hint: string;
   onCell: (s: StaffSheet, date: string) => void;
 }) {
   const days = daysOf(month);
@@ -149,8 +186,8 @@ export function MonthGrid({
                           <span className="text-text-muted" aria-hidden="true">
                             ·
                           </span>
-                        ) : !s.can_record ? (
-                          // Decision C: the owner's to write; shown, not editable.
+                        ) : !opens(s) ? (
+                          // Decision C: the owner's to write; shown, not opened (without its history to see).
                           <span className={`att-cell att-${cell?.status ?? "none"}${cell && cell.late_minutes > 0 ? " is-late" : ""}`}>
                             {cell ? <StatusMark status={cell.status} /> : <span aria-hidden="true">–</span>}
                             <span className="sr-only">{cellText(s, d, cell)}</span>
@@ -190,7 +227,7 @@ export function MonthGrid({
         </table>
       </div>
       <AttendanceLegend late="underline" />
-      <p className="text-sm text-text-muted">Bấm một ô để sửa.</p>
+      {hint && <p className="text-sm text-text-muted">{hint}</p>}
     </div>
   );
 }

@@ -40,6 +40,7 @@ export function BookCard({
   onReview,
   onAdjust,
   onDetails,
+  onView,
 }: {
   staff: StaffSheet;
   date: string;
@@ -59,6 +60,11 @@ export function BookCard({
   /** Without an entry: record a new one; with one: edit it. */
   onAdjust: (entry?: Adjustment) => void;
   onDetails: () => void;
+  /**
+   * A day the caller reads but cannot write (closed month; a person only the owner records):
+   * "Xem giờ & ghi chú" opens it read-only. Undefined: nothing to open (spec record-history K49).
+   */
+  onView?: (() => void) | undefined;
 }) {
   const cell = cellOf(s, date);
   // Decision C: a manager's own card and other managers' cards are the owner's to write.
@@ -124,7 +130,7 @@ export function BookCard({
         </p>
       )}
 
-      {(canReview || hasLog || !shut) && (
+      {(canReview || hasLog || !shut || onView) && (
         <section
           className="book-record"
           aria-label={`Ghi nhận trong ngày, ${s.full_name}`}
@@ -175,6 +181,14 @@ export function BookCard({
                   Ghi thưởng / phạt
                 </button>
               )}
+            </div>
+          )}
+          {shut && onView && (
+            <div className="book-actions">
+              <button type="button" className="btn btn-secondary" onClick={onView}>
+                <Icon name="clock" className="size-4" />
+                Xem giờ & ghi chú
+              </button>
             </div>
           )}
           {hasLog && (
