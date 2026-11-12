@@ -59,7 +59,8 @@ export function LoginPage({ next }: { next?: string | undefined }) {
   const passwordInput = useRef<HTMLInputElement>(null);
   const painted = useAfterFirstPaint();
   useEffect(() => {
-    if (painted) void loadErrors();
+    // A failed prefetch (offline) is not an error: `failureText` asks again when it needs them.
+    if (painted) loadErrors().catch(() => undefined);
   }, [painted]);
 
   const change = (field: keyof Values, value: string) => {

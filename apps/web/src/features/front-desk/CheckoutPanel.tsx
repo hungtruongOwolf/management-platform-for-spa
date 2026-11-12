@@ -214,7 +214,7 @@ export function CheckoutPanel({
   todayIso,
   staffSelectsRef: staffSelects,
   focusLineKeyRef: focusLineKey,
-  nextKeyRef: nextKey,
+  nextKeyRef,
   addLine,
   resetVisit,
   select,
@@ -541,7 +541,7 @@ export function CheckoutPanel({
             lines={lines}
             onAdd={(service, priceVariant, price, categoryName) => {
               addLine({
-                key: nextKey.current++,
+                key: nextKeyRef.current++,
                 source: "one_off",
                 serviceId: service.id,
                 serviceName: service.name,
@@ -582,7 +582,7 @@ export function CheckoutPanel({
             canWriteNote={can(me, "customer.health_notes.write")}
             onTodaySession={(saleRef, s) => {
               addLine({
-                key: nextKey.current++,
+                key: nextKeyRef.current++,
                 source: "new_package",
                 saleRef,
                 ...s,

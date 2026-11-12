@@ -31,13 +31,17 @@ export function startupScripts(html) {
   return paths;
 }
 
-/** path → files the route-preload script starts for it (empty when the build has no such script). */
+/** path → files (URLs) the route-preload script starts for it; {} when the build has no such script. */
 export function routeFiles(distDir, scripts) {
   const script = scripts.find((url) => url.replace(/^\//, "").startsWith(SCRIPT_PREFIX));
   if (!script) return {};
   const table = ROUTE_TABLE_PATTERN.exec(readFileSync(fileOf(distDir, script), "utf8"))?.[1];
   if (!table) throw new Error(`${script} has no route table: was it built by scripts/route-preload.mjs?`);
-  return JSON.parse(table);
+  // Names are relative to the script's own folder.
+  const folder = script.slice(0, script.lastIndexOf("/") + 1);
+  return Object.fromEntries(
+    Object.entries(JSON.parse(table)).map(([path, names]) => [path, names.map((n) => folder + n)]),
+  );
 }
 
 export function gzipKib(bytes) {

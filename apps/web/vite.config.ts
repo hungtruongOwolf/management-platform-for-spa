@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { routePreload } from "./scripts/route-preload.mjs";
+import { loadedDeps, routePreload } from "./scripts/route-preload.mjs";
 
 /**
  * First screens that are lazy chunks (src/app/screens.ts): opening the app on one of these paths
@@ -14,11 +14,13 @@ export const ROUTE_PRELOAD = {
   "/": "/src/app/HomePage.tsx",
 };
 
+const deps = loadedDeps();
+
 const uiSrc = fileURLToPath(new URL("../../packages/ui/src", import.meta.url));
 const apiClientSrc = fileURLToPath(new URL("../../packages/api-client/src", import.meta.url));
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), routePreload(ROUTE_PRELOAD)],
+  plugins: [react(), tailwindcss(), routePreload(ROUTE_PRELOAD), deps.plugin],
   resolve: {
     // Workspace packages are aliased rather than linked: the repo lives on an exFAT drive without symlinks.
     alias: [
@@ -38,7 +40,8 @@ export default defineConfig({
     // Every browser the spa uses honours <link rel="modulepreload"> natively (Safari 17+); an older
     // one still loads the module through its import, just without the head start. Dropping the
     // polyfill takes 0.25 KiB off the startup JS (frontend.md "Perf budget", ADR-0019 D21).
-    modulePreload: { polyfill: false },
+    // A lazy import does not preload what its importer already loaded (scripts/route-preload.mjs).
+    modulePreload: { polyfill: false, resolveDependencies: deps.resolveDependencies },
     rolldownOptions: {
       output: {
         // Everything the first screen needs in one chunk: left alone, the bundler splits modules

@@ -275,7 +275,8 @@ interface Call {
 
 function serve(
   permissions: string[],
-  onVisit: () => Response = () => Response.json(VISIT, { status: 201 }),
+  onVisit: () => Response | Promise<Response> = () =>
+    Response.json(VISIT, { status: 201 }),
   packages: CustomerPackage[] = [pkg("cp1")],
   dayVisits: Visit[] = [],
   daySales: DaySale[] = [],
@@ -409,6 +410,55 @@ describe("/quay", () => {
         screen.getByRole("combobox", { name: "Tìm khách theo SĐT hoặc tên" }),
       ).toHaveFocus();
     });
+  });
+
+  // The cart under its title is a lazy chunk (CheckoutPanel) that the calendar tab unmounts; the
+  // saves' state stays with the page, so coming back mid-save shows it and cannot send it twice.
+  it("a save in flight outlives the calendar tab: still “Đang lưu…” on return, sent once", async () => {
+    let release = () => {};
+    const calls = serve(
+      [...MANAGER, "appointment.manage"],
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => {
+            resolve(Response.json(VISIT, { status: 201 }));
+          };
+        }),
+    );
+    const posts = () =>
+      calls.filter((c) => c.method === "POST" && c.url === "/api/v1/visits");
+    const user = userEvent.setup();
+    at("/quay");
+    await user.type(
+      await screen.findByRole("combobox", {
+        name: "Tìm khách theo SĐT hoặc tên",
+      }),
+      "0905111",
+    );
+    await user.click(await screen.findByRole("option", { name: /Nguyễn Thị Hà/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Trừ 1 buổi Gói cp1" }),
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "KTV" }),
+      "st1",
+    );
+    await user.click(screen.getByRole("button", { name: "Lưu lượt khách" }));
+    await waitFor(() => {
+      expect(posts()).toHaveLength(1);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Lịch hẹn" }));
+    await user.click(screen.getByRole("button", { name: "Ghi lượt khách" }));
+    const pending = await screen.findByRole("button", { name: "Đang lưu…" });
+    await user.click(pending);
+    release();
+    expect(
+      await screen.findByText(
+        "Đã lưu lượt của Nguyễn Thị Hà · Gội đầu còn 4/12",
+      ),
+    ).toBeInTheDocument();
+    expect(posts()).toHaveLength(1);
   });
 
   it("renders the latest 30 visits of a busy day, the rest on request", async () => {
