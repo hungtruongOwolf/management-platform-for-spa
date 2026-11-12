@@ -9835,11 +9835,6 @@ export interface operations {
                 from?: string;
                 /** @description Last business day (inclusive); default `from`. At most 14 days. */
                 to?: string;
-                /**
-                 * @description `true`: each appointment says whether it was edited (`edited`, ADR-0022), for callers
-                 *     with `record.history.read`; the list view asks, the day and week grids do not.
-                 */
-                marks?: boolean;
             };
             header?: never;
             path?: never;

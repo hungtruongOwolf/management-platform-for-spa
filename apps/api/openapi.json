@@ -3547,15 +3547,6 @@
               "type": "string",
               "format": "date"
             }
-          },
-          {
-            "name": "marks",
-            "in": "query",
-            "description": "`true`: each appointment says whether it was edited (`edited`, ADR-0022), for callers\nwith `record.history.read`; the list view asks, the day and week grids do not.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
           }
         ],
         "responses": {
