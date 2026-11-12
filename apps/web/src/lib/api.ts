@@ -1,5 +1,8 @@
 /** Thin fetch wrapper: same-origin cookies, JSON bodies, RFC 9457 problems → ApiError. */
 
+/** What any failed request that never reached the server says (lib/errors.ts `messageFor`). */
+export const NETWORK_MESSAGE = "Không kết nối được máy chủ. Vui lòng kiểm tra mạng.";
+
 export interface FieldProblem {
   field: string;
   code: string;

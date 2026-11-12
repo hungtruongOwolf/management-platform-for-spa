@@ -12,24 +12,12 @@ import type {
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { spaTime } from "../../lib/format";
+import { VISITS_PEEK } from "./desk";
+
+// The first screen's part (today's visits, `inCart`) lives in desk.ts, outside this module's chunk.
+export { VISITS_PAGE, inCart, todayVisitsQuery } from "./desk";
 
 export type Gender = "female" | "male";
-
-/** Visits the day list shows before "Xem tất cả". */
-export const VISITS_PAGE = 30;
-/** Asked for: one more than shown tells whether the day has more (no count header needed). */
-const VISITS_PEEK = VISITS_PAGE + 1;
-
-/**
- * Today's newest visits (business day of the spa, decided by the server). A busy day's full list
- * is large; the peek keeps /quay's first screen light (Lighthouse LCP budget, testing.md §4).
- */
-export const todayVisitsQuery = queryOptions({
-  queryKey: ["visits", "today"],
-  queryFn: async () =>
-    (await api(`/visits?limit=${String(VISITS_PEEK)}`)) as Visit[],
-  staleTime: 15_000,
-});
 
 /** Every visit of today, once the user asks for all of them. */
 export const todayAllVisitsQuery = queryOptions({
@@ -224,12 +212,6 @@ export function amountDue(
 /** Usable for a deduction today: not cancelled, not expired, sessions left. */
 export function isUsable(p: CustomerPackage): boolean {
   return p.status === "active";
-}
-
-/** Sessions of an item already put in the cart (not saved yet). */
-export function inCart(lines: CartLine[], itemId: string): number {
-  return lines.filter((l) => l.source === "package" && l.itemId === itemId)
-    .length;
 }
 
 /**

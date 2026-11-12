@@ -1,13 +1,27 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Suspense, lazy, useRef, useState, type SyntheticEvent } from "react";
-import { safeNextPath } from "../../lib/api";
-import { messageFor } from "../../lib/errors";
+import { Suspense, lazy, useEffect, useRef, useState, type SyntheticEvent } from "react";
+import { preloadScreen } from "../../app/screens";
+import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
+import { NETWORK_MESSAGE, safeNextPath } from "../../lib/api";
 import { AuthFrame, bandTitle } from "./AuthFrame";
 import { login, setAuthState } from "./session";
 
 // "Quên mật khẩu?" (ADR-0016, option A): its own chunk, loaded when asked for.
 const ForgotPassword = lazy(() => import("./ForgotPassword").then((m) => ({ default: m.ForgotPassword })));
+
+// The error texts are not in the startup chunk (lib/errors.ts): fetched after the first paint, so a
+// refused sign-in still shows its message at once.
+const loadErrors = () => import("../../lib/errors");
+
+/** What a failed sign-in says. Texts that cannot even be fetched mean the network is down. */
+async function failureText(error: unknown): Promise<string> {
+  try {
+    return (await loadErrors()).messageFor(error);
+  } catch {
+    return NETWORK_MESSAGE;
+  }
+}
 
 // The login page is the public entry point, so it stays free of react-hook-form and zod: two
 // fields do not need them, and they would sit on its critical path (frontend.md, perf budget).
@@ -43,6 +57,11 @@ export function LoginPage({ next }: { next?: string | undefined }) {
   const [forgot, setForgot] = useState(false);
   const phoneInput = useRef<HTMLInputElement>(null);
   const passwordInput = useRef<HTMLInputElement>(null);
+  const painted = useAfterFirstPaint();
+  useEffect(() => {
+    // A failed prefetch (offline) is not an error: `failureText` asks again when it needs them.
+    if (painted) loadErrors().catch(() => undefined);
+  }, [painted]);
 
   const change = (field: keyof Values, value: string) => {
     const nextValues = { ...values, [field]: value };
@@ -65,6 +84,8 @@ export function LoginPage({ next }: { next?: string | undefined }) {
 
     setServerError(null);
     setSubmitting(true);
+    // The screen sign-in leads to is a lazy chunk (app/screens.ts): it downloads during the request.
+    preloadScreen(safeNextPath(next));
     try {
       const auth = await login(values.phone.trim(), values.password);
       setAuthState(queryClient, auth);
@@ -77,7 +98,7 @@ export function LoginPage({ next }: { next?: string | undefined }) {
         await navigate({ to: "/xac-thuc", search: next ? { next } : {} });
       }
     } catch (error) {
-      setServerError(messageFor(error));
+      setServerError(await failureText(error));
       setValues((v) => ({ ...v, password: "" }));
     } finally {
       setSubmitting(false);

@@ -12,6 +12,19 @@ import { applyTheme, readSidebarCollapsed, readTheme, saveSidebarCollapsed } fro
 import { ThemePicker } from "./ThemePicker";
 import { initialOf, roleLabel } from "./UserMenu";
 
+// Counts the front desk chunk's loads, the router's included; it still loads the real module.
+const desk = vi.hoisted(() => ({ loads: 0 }));
+vi.mock("./screens", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./screens")>();
+  return {
+    ...actual,
+    loadFrontDesk: () => {
+      desk.loads += 1;
+      return actual.loadFrontDesk();
+    },
+  };
+});
+
 const me = (permissions: string[]): Me => ({
   user: { id: "u1", full_name: "Nguyễn Thị Thu Hà", phone: "0905 123 456" },
   active_tenant: { id: "t1", name: "Viên Phúc Y Đường" },
@@ -233,6 +246,25 @@ describe("command palette", () => {
 });
 
 describe("app shell", () => {
+  // The front desk is a lazy chunk (app/screens.ts): every other screen fetches it after its first
+  // paint for those who may open it, so the nav item opens it at once; for no one else.
+  it("fetches the front desk chunk after the first paint, only for those who may open it", async () => {
+    serve(["catalog.read"]);
+    desk.loads = 0;
+    const first = at("/");
+    expect(await screen.findByRole("navigation", { name: "Chính" })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(desk.loads).toBe(0);
+    first.unmount();
+
+    serve(MANAGER);
+    at("/");
+    expect(await screen.findByRole("navigation", { name: "Chính" })).toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(desk.loads).toBe(1);
+    });
+  });
+
   it("starts with a skip link that moves focus to the main content (ADR-0019 D20)", async () => {
     serve(MANAGER);
     const user = userEvent.setup();
