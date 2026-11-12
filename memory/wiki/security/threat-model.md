@@ -205,7 +205,7 @@ Tài sản: tên người ghi / sửa, giá trị cũ → mới (tên, SĐT khá
 | I | Người có quyền của route (vd. `sale.read`) nhưng thiếu quyền loại neo (`visit.read`) phân biệt `404` / `403` cho một id hóa đơn | chấp nhận: id là UUIDv7 của spa mình, không lộ nội dung; người không có `record.history.read` hoặc quyền của route luôn `403`, kể cả id sai dạng (`Result<Path<Uuid>, _>`, build-time K1); có quyền thì id sai dạng `400` | `record_history.rs` (1a) |
 | I | Idempotent replay trả body có `edited` tính theo quyền người ghi | replay chỉ trả cho cùng người + cùng key (idempotency theo actor); `edited` không chứa tên | — (chấp nhận, ghi nhận) |
 | S | Lộ danh tính operator | người làm `platform` = "Đội vận hành", không id / tên | dùng lại `activity` test |
-| D | Quét lịch sử hàng loạt (vòng qua mọi id) | một bản ghi / request, ≤ 100 dòng, 3–4 câu SQL theo index; cùng giới hạn tần suất chung của API; dữ liệu đúng loại người đó vốn xem được | bench p95 ≤ 100 ms (1) |
+| D | Quét lịch sử hàng loạt (vòng qua mọi id) | một bản ghi / request, ≤ 100 dòng, 3–4 câu SQL theo index (chuỗi sửa thưởng / phạt: mỗi bước một câu, ≤ 20 bước mỗi chiều, đợt 2); cùng giới hạn tần suất chung của API; dữ liệu đúng loại người đó vốn xem được | bench p95 ≤ 100 ms (1) |
 | E | Màn Nhật ký thao tác bật lại ngoài ý muốn | cờ `activity_log` chỉ operator ghi (`app_rw` chỉ đọc `tenant_feature`); mặc định ở code là tắt, test khóa mặc định | `feature` unit + `platform.rs` (1) |
 
 ## Còn mở

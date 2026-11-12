@@ -311,8 +311,8 @@ test.describe("lịch sử trên từng bản ghi, đợt 2", () => {
       await expect(row.getByText("Đã sửa", { exact: true })).toBeVisible();
       await row.click();
       const sheet = page.getByRole("dialog", { name: new RegExp(GUEST) });
-      // Booked today for tomorrow: the meta says the day it was made.
-      const trace = sheet.getByRole("button", { name: new RegExp(`^Ghi bởi ${owner} · \\d{2}:\\d{2} \\d{2}/\\d{2} · đã sửa 1 lần$`) });
+      // Booked today for tomorrow: the meta says the day it was made (with the year on 31/12).
+      const trace = sheet.getByRole("button", { name: new RegExp(`^Ghi bởi ${owner} · \\d{2}:\\d{2} \\d{2}/\\d{2}(/\\d{4})? · đã sửa 1 lần$`) });
       await expect(trace).toHaveAttribute("aria-expanded", "false");
       await trace.click();
       const lines = sheet.getByRole("list", { name: /^Lịch sử lịch hẹn / });

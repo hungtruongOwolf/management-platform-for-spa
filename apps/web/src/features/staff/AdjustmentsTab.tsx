@@ -23,9 +23,6 @@ import {
 } from "./api";
 import { dayLabel, vnd } from "./ui";
 
-/** A log row's ⋯ button: where focus goes when the row's history hides. */
-const adjustmentMenuId = (id: string) => `adjustment-menu-${id}`;
-
 /** "Thưởng" / "Phạt" + amount and points, as the chips and the log show an entry. */
 export function adjustmentText(a: Adjustment): string {
   return [
@@ -189,7 +186,6 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
             className: "text-right",
             cell: (a: Adjustment) => (
               <RowMenu
-                id={adjustmentMenuId(a.id)}
                 label={`Thao tác ${adjustmentText(a)} của ${names.get(a.staff_id) ?? "nhân viên"}`}
                 items={[
                   {
@@ -210,7 +206,8 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
   return (
     <section className="grid content-start gap-3" aria-labelledby="adjustment-log-title">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="adjustment-log-title" className="panel-title">
+        {/* Programmatic focus target (tabIndex -1): where focus goes when a row's history hides on 403. */}
+        <h2 id="adjustment-log-title" className="panel-title" tabIndex={-1}>
           Sổ thưởng, phạt của tháng
         </h2>
         {canWrite && (
@@ -249,7 +246,8 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
                     day={a.occurred_on}
                     defaultOpen
                     autoFocus
-                    focusOnHide={() => document.getElementById(adjustmentMenuId(a.id))}
+                    // The ⋯ column leaves with the right: the log's heading stays (K31).
+                    focusOnHide={() => document.getElementById("adjustment-log-title")}
                   />
                 </div>
               ) : null

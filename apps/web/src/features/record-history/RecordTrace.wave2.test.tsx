@@ -60,7 +60,7 @@ const booking = (over: Partial<Appointment>): Appointment => ({
 });
 
 /** The fake API: `/me`, the calendar (marks only for the history right, as the server), the books, the histories. */
-function serve(permissions: string[]) {
+function serve(permissions: string[], { switchedOff = false }: { switchedOff?: boolean } = {}) {
   const shown = permissions.includes(HISTORY);
   return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -138,7 +138,8 @@ function serve(permissions: string[]) {
       return ok({ month, closed: false, items: [entry] } satisfies AdjustmentLog);
     }
     if (p.startsWith("/record-history/")) {
-      if (!shown) return ok({ code: "auth.forbidden" }, 403);
+      // `switchedOff`: the operator hid it mid-session; `/me` still says it until refetched.
+      if (!shown || switchedOff) return ok({ code: "auth.forbidden" }, 403);
       const [, , kind, id] = p.split("/");
       if (kind === "appointment") return ok(story({ type: "appointment", id: id ?? "" }, "appointment.create", 1));
       if (kind === "adjustment") return ok(story({ type: "adjustment", id: id ?? "" }, "staff.adjustment", 1));
@@ -254,6 +255,18 @@ describe("Sổ thưởng, phạt", () => {
     await user.click(screen.getByRole("button", { name: "Thao tác Thưởng 300.000đ của Lê Thị Lan" }));
     await user.click(screen.getByRole("menuitem", { name: "Ẩn ai ghi, ai sửa" }));
     expect(screen.queryByRole("button", { name: /^Ghi bởi Hà/ })).toBeNull();
+  });
+
+  it("switched off mid-session (403): the history hides and focus goes to the log's heading", async () => {
+    serve([...BOOKS, HISTORY], { switchedOff: true });
+    const user = userEvent.setup();
+    at("/nhan-vien?tab=month");
+    await user.click(await screen.findByRole("button", { name: "Thao tác Thưởng 300.000đ của Lê Thị Lan" }));
+    await user.click(screen.getByRole("menuitem", { name: "Xem ai ghi, ai sửa" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sổ thưởng, phạt của tháng" })).toHaveFocus();
+    });
+    expect(screen.queryByRole("button", { name: /^Ghi bởi|^Đang tải ai ghi/ })).toBeNull();
   });
 
   it("a manager by default: no ⋯ for it", async () => {
