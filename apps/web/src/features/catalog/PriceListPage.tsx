@@ -7,7 +7,6 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { Icon } from "../../app/Icon";
 import { PageHeader } from "../../app/PageHeader";
 import { fieldMessage, messageFor } from "../../lib/errors";
@@ -51,15 +50,21 @@ export function PriceListPage() {
     setEditing(null);
   };
   // After "Xóa nhóm" (K68/K71) the button that had focus is gone: focus the next group's heading,
-  // or the page's title when the deleted group was the last one, once the form has closed.
-  // `categories` is the list this form was opened from, the deleted group still in it.
+  // or the page's title when the deleted group was the last one, once the form has closed (the
+  // effect after that render). `categories` is the list the form was opened from, the deleted
+  // group still in it. A ref and an effect, not `flushSync`: `react-dom` exported to this chunk
+  // costs startup bytes on every path.
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (refocus.current === null) return;
+    focusHeading(refocus.current);
+    refocus.current = null;
+  });
   const deleted = (id: string) => {
     const order = categories.data?.map((c) => c.id) ?? [];
     const next = order[order.indexOf(id) + 1];
-    flushSync(() => {
-      setEditing(null);
-    });
-    focusHeading(next ? `cat-${next}` : "price-list-title");
+    refocus.current = next ? `cat-${next}` : "price-list-title";
+    setEditing(null);
   };
 
   const header = (

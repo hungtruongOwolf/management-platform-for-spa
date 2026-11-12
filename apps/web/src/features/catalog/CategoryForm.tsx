@@ -1,7 +1,6 @@
 import type { ServiceCategory } from "@vpyd/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { BottomSheet } from "../../components/BottomSheet";
 import { ApiError, api } from "../../lib/api";
 import { addMessages, fieldMessage, messageFor } from "../../lib/errors";
@@ -68,6 +67,15 @@ export function CategoryForm({
   useEffect(() => {
     input.current?.focus();
   }, []);
+  // The sheet is removed from the page when it closes, so the browser does not hand focus back:
+  // back on the button that opened it (gone after a refused delete that showed the group's new
+  // service: then the form's title).
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (confirming || !returnFocus.current) return;
+    returnFocus.current = false;
+    (removeButton.current ?? heading.current)?.focus();
+  }, [confirming]);
   const title = `Sửa nhóm: ${category.name}`;
   const nameError = fieldMessage(mutation.error, "name", CATALOG_FIELDS);
   const problem = (touched && name.trim() === "" ? "Nhập tên nhóm." : undefined) ?? nameError;
@@ -160,12 +168,8 @@ export function CategoryForm({
         <DeleteCategory
           category={category}
           onClose={() => {
-            // The sheet leaves the page open: back on the button that opened it (gone after a
-            // refused delete that showed the group's new service: then the form's title).
-            flushSync(() => {
-              setConfirming(false);
-            });
-            (removeButton.current ?? heading.current)?.focus();
+            returnFocus.current = true;
+            setConfirming(false);
           }}
           onDeleted={onDeleted ?? onDone}
         />
