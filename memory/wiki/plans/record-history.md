@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../architecture/record-history.md,
 
 # Plan: lịch sử trên từng bản ghi
 
-Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). **Đợt 1a đã build** (2026-11-11, PR #187; quyết định khi build K1–K11 ở [spec](../product/specs/record-history.md) Review log). **Đợt 1b đã build** (2026-11-11, PR #188; K12–K20). **Đã lên staging 2026-11-12** (migrate 0052 + deploy 16e788e cùng phiên). **Đợt 2 đã build** (2026-11-12, một PR API + web; K21–K34; không migration mới, chưa lên staging). Tiếp theo: deploy đợt 2 (chỉ binary + web), rồi đợt 3.
+Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). **Đợt 1a đã build** (2026-11-11, PR #187; quyết định khi build K1–K11 ở [spec](../product/specs/record-history.md) Review log). **Đợt 1b đã build** (2026-11-11, PR #188; K12–K20). **Đã lên staging 2026-11-12** (migrate 0052 + deploy 16e788e cùng phiên). **Đợt 2 đã build** (2026-11-12, một PR API + web; K21–K35; không migration mới, chưa lên staging). Tiếp theo: deploy đợt 2 (chỉ binary + web), rồi đợt 3.
 
 ## Đợt 1 = 1a + 1b — **lên staging cùng nhau**
 1a merge trước nhưng **không deploy staging** cho tới khi 1b merge (1a ẩn màn nhật ký; 1b mới hiện lịch sử tại chỗ). Deploy: migrate 0052 rồi deploy binary ngay; operator không ghi ở console trong khoảng hở ([architecture §8](../architecture/record-history.md)).

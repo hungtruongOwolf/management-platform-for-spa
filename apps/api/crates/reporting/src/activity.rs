@@ -1409,17 +1409,32 @@ mod tests {
             json!({"date": "2026-11-10", "status": "present", "check_in": check_in,
                    "check_out": null, "late_minutes": minutes, "has_note": note})
         };
-        let mut r = row(Action::AttendanceRecord, true, &[], Some(cell("09:20", 20, true)));
+        let mut r = row(
+            Action::AttendanceRecord,
+            true,
+            &[],
+            Some(cell("09:20", 20, true)),
+        );
         r.before = Some(cell("09:20", 20, true));
         assert_eq!(fields_of(&entry(r)), [("has_note", None, None)]);
-        let mut r = row(Action::AttendanceRecord, true, &[], Some(cell("09:30", 30, true)));
+        let mut r = row(
+            Action::AttendanceRecord,
+            true,
+            &[],
+            Some(cell("09:30", 30, true)),
+        );
         r.before = Some(cell("09:20", 20, true));
         assert_eq!(
             fields_of(&entry(r)),
             [("check_in", Some("09:20"), Some("09:30"))]
         );
         // The shift moved under the same check-in: no note was touched, nothing is said.
-        let mut r = row(Action::AttendanceRecord, true, &[], Some(cell("09:20", 5, true)));
+        let mut r = row(
+            Action::AttendanceRecord,
+            true,
+            &[],
+            Some(cell("09:20", 5, true)),
+        );
         r.before = Some(cell("09:20", 20, true));
         assert!(entry(r).changes.is_empty());
         // A cleared cell carries no values: "xóa chấm công" says it.
@@ -1434,15 +1449,26 @@ mod tests {
         assert!(cleared.changes.is_empty());
         assert_eq!(cleared.detail.as_deref(), Some("cleared"));
         // Praise / complaints: the same rule on their counts.
-        let review = |c: i64, note: bool| {
-            json!({"date": "2026-11-10", "compliments": c, "complaints": 0, "has_note": note})
-        };
-        let mut r = row(Action::EvaluationDailyReview, true, &[], Some(review(1, true)));
+        let review = |c: i64, note: bool| json!({"date": "2026-11-10", "compliments": c, "complaints": 0, "has_note": note});
+        let mut r = row(
+            Action::EvaluationDailyReview,
+            true,
+            &[],
+            Some(review(1, true)),
+        );
         r.before = Some(review(1, true));
         assert_eq!(fields_of(&entry(r)), [("has_note", None, None)]);
-        let mut r = row(Action::EvaluationDailyReview, true, &[], Some(review(2, true)));
+        let mut r = row(
+            Action::EvaluationDailyReview,
+            true,
+            &[],
+            Some(review(2, true)),
+        );
         r.before = Some(review(1, true));
-        assert_eq!(fields_of(&entry(r)), [("compliments", Some("1"), Some("2"))]);
+        assert_eq!(
+            fields_of(&entry(r)),
+            [("compliments", Some("1"), Some("2"))]
+        );
     }
 
     #[test]
@@ -1452,8 +1478,10 @@ mod tests {
             Action::AppointmentUpdate,
             true,
             &[],
-            Some(json!({"starts_at": "2026-11-10T03:00:00Z", "staff_id": null, "service_ids": ["s"],
-                        "note_changed": true, "companions": null})),
+            Some(
+                json!({"starts_at": "2026-11-10T03:00:00Z", "staff_id": null, "service_ids": ["s"],
+                        "note_changed": true, "companions": null}),
+            ),
         );
         r.before = Some(json!({"starts_at": "2026-11-10T03:00:00Z", "staff_id": staff}));
         r.staff_before = Some("Thu".to_owned());
@@ -1471,8 +1499,10 @@ mod tests {
             Action::AppointmentUpdate,
             true,
             &[],
-            Some(json!({"starts_at": "a", "staff_id": Uuid::now_v7().to_string(),
-                        "note_changed": false})),
+            Some(
+                json!({"starts_at": "a", "staff_id": Uuid::now_v7().to_string(),
+                        "note_changed": false}),
+            ),
         );
         r.before = Some(json!({"starts_at": "a", "staff_id": staff}));
         r.staff_before = Some("Hoa".to_owned());
@@ -1497,7 +1527,12 @@ mod tests {
             json!({"adjustment_id": id, "kind": "bonus", "amount": amount, "points": null,
                    "occurred_on": "2026-11-03", "corrects_month": null})
         };
-        let mut old = row(Action::StaffAdjustment, true, &[], Some(made(&was, 200_000)));
+        let mut old = row(
+            Action::StaffAdjustment,
+            true,
+            &[],
+            Some(made(&was, 200_000)),
+        );
         old.entity_id = lan;
         old.target_name = Some("KTV Lan".to_owned());
         old.reason = Some("Khách khen".to_owned());
@@ -1510,10 +1545,18 @@ mod tests {
         void.before = Some(json!({"adjustment_id": was, "occurred_on": "2026-11-03"}));
         void.entity_id = lan;
         void.target_name = Some("KTV Lan".to_owned());
-        let mut new = row(Action::StaffAdjustment, true, &[], Some(made(&now, 300_000)));
+        let mut new = row(
+            Action::StaffAdjustment,
+            true,
+            &[],
+            Some(made(&now, 300_000)),
+        );
         new.entity_id = lan;
         new.reason = Some("Khách khen".to_owned());
-        assert_eq!(void.adjustment_id().map(|u| u.to_string()), Some(was.clone()));
+        assert_eq!(
+            void.adjustment_id().map(|u| u.to_string()),
+            Some(was.clone())
+        );
         let e = replaced_adjustment(&void, Some(&old), new);
         assert_eq!(e.action, "staff.adjustment");
         assert_eq!(e.folded, ["staff.adjustment_void"]);
@@ -1521,7 +1564,12 @@ mod tests {
         assert_eq!((e.amount, e.reason.as_deref()), (None, None));
         // Moved to someone else, with another reason; without the replaced entry's own row, the
         // void still tells the person and the day.
-        let mut moved = row(Action::StaffAdjustment, true, &[], Some(made(&now, 300_000)));
+        let mut moved = row(
+            Action::StaffAdjustment,
+            true,
+            &[],
+            Some(made(&now, 300_000)),
+        );
         moved.entity_id = mai;
         moved.target_name = Some("KTV Mai".to_owned());
         moved.reason = Some("Khách khen đích danh".to_owned());
@@ -1534,11 +1582,19 @@ mod tests {
                 ("reason", Some("Khách khen"), Some("Khách khen đích danh"))
             ]
         );
-        let mut bare = row(Action::StaffAdjustment, true, &[], Some(made(&now, 300_000)));
+        let mut bare = row(
+            Action::StaffAdjustment,
+            true,
+            &[],
+            Some(made(&now, 300_000)),
+        );
         bare.entity_id = mai;
         bare.target_name = Some("KTV Mai".to_owned());
         let e = replaced_adjustment(&void, None, bare);
-        assert_eq!(fields_of(&e), [("person", Some("KTV Lan"), Some("KTV Mai"))]);
+        assert_eq!(
+            fields_of(&e),
+            [("person", Some("KTV Lan"), Some("KTV Mai"))]
+        );
     }
 
     #[test]

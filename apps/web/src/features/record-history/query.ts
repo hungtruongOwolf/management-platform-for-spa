@@ -12,9 +12,22 @@ import { can, type Me } from "../auth/session";
  * refund's is the package's), so the reply's `record` may be another kind. A cell of a staff book
  * is a person and a day.
  */
-export type RecordRef =
-  | { type: "visit" | "sale" | "refund" | "customer_package" | "customer" | "appointment" | "adjustment"; id: string }
-  | { type: "attendance" | "daily_review"; staffId: string; date: string };
+export type RecordRef = RecordIdRef | StaffDayRef;
+
+/** A record named by its id: every kind but a staff-book cell. */
+export interface RecordIdRef {
+  type: "visit" | "sale" | "refund" | "customer_package" | "customer" | "appointment" | "adjustment";
+  id: string;
+}
+
+/** One person's cell of one staff book on one day (`YYYY-MM-DD`). */
+export interface StaffDayRef {
+  type: "attendance" | "daily_review";
+  staffId: string;
+  date: string;
+}
+
+const isStaffDay = (ref: RecordRef): ref is StaffDayRef => ref.type === "attendance" || ref.type === "daily_review";
 
 const ROUTE = {
   visit: "visit",
@@ -31,13 +44,12 @@ const ROUTE = {
  * opened, and every write in this browser invalidates `["record-history"]` (lib/queryClient.ts).
  */
 export function recordHistoryQuery(ref: RecordRef) {
-  const [key, path] =
-    ref.type === "attendance" || ref.type === "daily_review"
-      ? [
-          [ref.staffId, ref.date],
-          `/record-history/staff-day/${encodeURIComponent(ref.staffId)}/${encodeURIComponent(ref.date)}?book=${ref.type}`,
-        ]
-      : [[ref.id], `/record-history/${ROUTE[ref.type]}/${encodeURIComponent(ref.id)}`];
+  const [key, path] = isStaffDay(ref)
+    ? [
+        [ref.staffId, ref.date],
+        `/record-history/staff-day/${encodeURIComponent(ref.staffId)}/${encodeURIComponent(ref.date)}?book=${ref.type}`,
+      ]
+    : [[ref.id], `/record-history/${ROUTE[ref.type]}/${encodeURIComponent(ref.id)}`];
   return queryOptions({
     queryKey: ["record-history", ref.type, ...key],
     queryFn: async () => (await api(path)) as RecordHistory,

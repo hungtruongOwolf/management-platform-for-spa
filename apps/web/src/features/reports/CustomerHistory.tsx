@@ -13,7 +13,7 @@ import { mayCorrectVisit, mayEditSaleNote } from "../corrections/api";
 import { customerQuery } from "../customers/api";
 import { visitChip } from "../record-history/chip";
 import { LazyRecordTrace, usePreloadRecordHistory } from "../record-history/lazy";
-import { canTrace, type RecordRef, type TraceAnchor } from "../record-history/query";
+import { canTrace, type RecordIdRef, type TraceAnchor } from "../record-history/query";
 import { CHANNEL_LABEL, OUTCOME_LABEL, followUpsQuery } from "../customers/followUps";
 import { FollowUpForm } from "../customers/FollowUpForm";
 import { HISTORY_KINDS, historySearch } from "../customers/search";
@@ -84,7 +84,7 @@ const DOT: Record<HistoryKind, [IconName, string]> = {
  * a visit (kept or voided, one story with its "Sửa lượt" chain), a package sale (the package's
  * history), a cancelled or extended package.
  */
-function traceOf(e: HistoryEvent): { ref: RecordRef; anchor: TraceAnchor; through?: "sale" } | null {
+function traceOf(e: HistoryEvent): { ref: RecordIdRef; anchor: TraceAnchor; through?: "sale" } | null {
   switch (e.kind) {
     case "visit":
     case "visit_voided":

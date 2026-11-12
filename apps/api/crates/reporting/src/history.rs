@@ -37,6 +37,9 @@ const MAX_LINES: usize = 100;
 /// Longest "Sửa lượt" chain followed each way; also a bonus / penalty's chain of edits.
 const MAX_CHAIN: i32 = 20;
 
+/// One line of a history: the row it is, the rows folded into it, and the entry.
+type Line = (Uuid, Vec<Uuid>, ActivityEntry);
+
 /// The record a route names by its id, before re-anchoring. A staff-book cell is named by a
 /// person and a day ([`read_staff_day`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -589,10 +592,11 @@ async fn adjustment(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<Select
     .await?;
     // The chain grew both ways from `id`: an entry after it exists exactly when it was edited.
     let replaced = chain.last().is_some_and(|e| e.id != id);
-    let (first_id, fallback) = chain.first().map_or(
-        (id, (Some(this.created_by), this.created_at)),
-        |e| (e.id, (Some(e.created_by), e.created_at)),
-    );
+    let (first_id, fallback) = chain
+        .first()
+        .map_or((id, (Some(this.created_by), this.created_at)), |e| {
+            (e.id, (Some(e.created_by), e.created_at))
+        });
     Ok(Selected {
         kind: RecordKind::Adjustment,
         id: Some(id),
@@ -812,9 +816,7 @@ async fn history(
         Anchor::Customer(c) => customer(&mut tx, c).await?,
         Anchor::Appointment(a) => appointment(&mut tx, a).await?,
         Anchor::Adjustment(a) => adjustment(&mut tx, actor, a).await?,
-        Anchor::StaffDay(staff, date, book) => {
-            staff_day(&mut tx, actor, staff, date, book).await?
-        }
+        Anchor::StaffDay(staff, date, book) => staff_day(&mut tx, actor, staff, date, book).await?,
     };
     let record = RecordRef {
         kind: selected.kind,
@@ -940,10 +942,7 @@ async fn history(
 /// The edits of a bonus / penalty as one line each (`edits`: replaced entry → its replacement):
 /// the void of the replaced entry and the `staff.adjustment` of the new one leave `rows` and come
 /// back as one "sửa" line with what changed. A pair missing a row stays as two lines.
-fn edits_of_adjustment(
-    mut rows: Vec<Row>,
-    edits: &[(Uuid, Uuid)],
-) -> (Vec<Row>, Vec<(Uuid, Vec<Uuid>, ActivityEntry)>) {
+fn edits_of_adjustment(mut rows: Vec<Row>, edits: &[(Uuid, Uuid)]) -> (Vec<Row>, Vec<Line>) {
     let mut lines = Vec::with_capacity(edits.len());
     for (was, now) in edits {
         let find = |rows: &[Row], action: Action, about: Uuid| {
@@ -979,7 +978,7 @@ fn edits_of_adjustment(
 /// line when it is a member and folds into no other selected row; the others go into the line they
 /// fold into, and an extra row that folds into none is dropped. Oldest first, each with the ids of
 /// its root and folded rows.
-fn fold(rows: Vec<Row>, members: &HashSet<Uuid>) -> Vec<(Uuid, Vec<Uuid>, ActivityEntry)> {
+fn fold(rows: Vec<Row>, members: &HashSet<Uuid>) -> Vec<Line> {
     let covered: HashSet<Uuid> = rows
         .iter()
         .filter(|r| rows.iter().any(|o| o.id != r.id && r.folds_into(o)))
@@ -993,7 +992,7 @@ fn fold(rows: Vec<Row>, members: &HashSet<Uuid>) -> Vec<(Uuid, Vec<Uuid>, Activi
             r
         })
         .collect();
-    let mut lines: Vec<(Uuid, Vec<Uuid>, ActivityEntry)> = activity::fold(rows, usize::MAX)
+    let mut lines: Vec<Line> = activity::fold(rows, usize::MAX)
         .into_iter()
         .map(|(root, folded)| {
             let id = root.id;
@@ -1104,7 +1103,10 @@ mod tests {
             assert!(!edit(K::Visit, &entry(a, &[])), "{a:?}");
         }
         assert!(edit(K::Customer, &entry(Action::CustomerUpdate, &[])));
-        assert!(!edit(K::Customer, &entry(Action::CustomerHealthNoteSet, &[])));
+        assert!(!edit(
+            K::Customer,
+            &entry(Action::CustomerHealthNoteSet, &[])
+        ));
         for a in [
             Action::CustomerPackageExtend,
             Action::CustomerPackageCancel,
@@ -1115,7 +1117,10 @@ mod tests {
         }
         // A booking: moved or another technician; not its services, note, companions, nor its
         // life (arrival with the serving technician, completion, a miss, a cancellation).
-        let moved = entry(Action::AppointmentUpdate, &[("starts_at", Some("a"), Some("b"))]);
+        let moved = entry(
+            Action::AppointmentUpdate,
+            &[("starts_at", Some("a"), Some("b"))],
+        );
         let other_staff = entry(Action::AppointmentUpdate, &[("staff", Some("Thu"), None)]);
         let services = entry(Action::AppointmentUpdate, &[("services", None, None)]);
         let note = entry(Action::AppointmentUpdate, &[("booking_note", None, None)]);
@@ -1123,7 +1128,10 @@ mod tests {
         assert!(edit(K::Appointment, &other_staff));
         assert!(!edit(K::Appointment, &services));
         assert!(!edit(K::Appointment, &note));
-        let arrived = entry(Action::AppointmentArrive, &[("staff", Some("Thu"), Some("Hoa"))]);
+        let arrived = entry(
+            Action::AppointmentArrive,
+            &[("staff", Some("Thu"), Some("Hoa"))],
+        );
         assert!(!edit(K::Appointment, &arrived));
         for a in [
             Action::AppointmentCreate,
@@ -1146,7 +1154,10 @@ mod tests {
         replaced.folded = vec![Action::StaffAdjustmentVoid.as_str().to_owned()];
         assert!(edit(K::Adjustment, &replaced));
         assert!(!edit(K::Adjustment, &entry(Action::StaffAdjustment, &[])));
-        assert!(!edit(K::Adjustment, &entry(Action::StaffAdjustmentVoid, &[])));
+        assert!(!edit(
+            K::Adjustment,
+            &entry(Action::StaffAdjustmentVoid, &[])
+        ));
     }
 
     #[test]
@@ -1224,7 +1235,11 @@ mod tests {
             assert!(require_route(&no_switch, route).is_err(), "{route:?}");
         }
         // The staff books: the switch, then a book's right (either one before the book is known).
-        let books = actor(&[P::AttendanceRecord, P::EvaluationRecord, P::AppointmentManage]);
+        let books = actor(&[
+            P::AttendanceRecord,
+            P::EvaluationRecord,
+            P::AppointmentManage,
+        ]);
         assert!(require_staff_book(&books, None).is_err());
         assert!(require_route(&books, RecordRoute::Appointment).is_err());
         let attendance = actor(&[P::RecordHistoryRead, P::AttendanceRecord]);

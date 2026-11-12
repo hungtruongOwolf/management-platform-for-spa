@@ -17,11 +17,11 @@ use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use chrono::NaiveDate;
 use identity::AuthUser;
 use kernel::crypto::FieldCipher;
 use kernel::http::invalid_query;
 use kernel::{AppError, Permission};
-use chrono::NaiveDate;
 use serde::Serialize;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -55,10 +55,7 @@ where
             "/record-history/customer/{id}",
             get(customer_record_history),
         )
-        .route(
-            "/record-history/appointment/{id}",
-            get(appointment_history),
-        )
+        .route("/record-history/appointment/{id}", get(appointment_history))
         .route(
             "/record-history/staff-day/{staff_id}/{date}",
             get(staff_day_history),

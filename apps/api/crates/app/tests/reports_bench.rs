@@ -510,11 +510,10 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
         ));
     }
     // `/appointments` over 14 days: the list view's `marks=true` within +10 ms of the grids.
-    let (from, to): (String, String) = sqlx::query_as(
-        "SELECT current_date::text, (current_date + 13)::text",
-    )
-    .fetch_one(&h.owner)
-    .await?;
+    let (from, to): (String, String) =
+        sqlx::query_as("SELECT current_date::text, (current_date + 13)::text")
+            .fetch_one(&h.owner)
+            .await?;
     let grid = format!("/appointments?from={from}&to={to}");
     let (mut with, mut without) = (Vec::new(), Vec::new());
     for round in 0..(EDITED_ROUNDS * 2) {

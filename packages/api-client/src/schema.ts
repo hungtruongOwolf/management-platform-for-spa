@@ -1364,6 +1364,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/record-history/adjustment/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adjustment_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/record-history/appointment/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["appointment_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/record-history/customer-package/{id}": {
         parameters: {
             query?: never;
@@ -1420,6 +1452,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["sale_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/record-history/staff-day/{staff_id}/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["staff_day_history"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2260,6 +2308,12 @@ export interface components {
             customer_phone?: string | null;
             /** Format: int64 */
             duration_min: number;
+            /**
+             * @description "Đã sửa" (ADR-0022 D9): moved or given another technician since it was booked. Only for
+             *     callers with `record.history.read`, on `GET /appointments?marks=true`, `GET
+             *     /appointments/{id}` and the answers of the appointment actions; absent otherwise.
+             */
+            edited?: boolean | null;
             /** Format: date-time */
             ends_at: string;
             /**
@@ -4709,10 +4763,10 @@ export interface components {
         };
         /**
          * @description The kind of record a history is about, after re-anchoring (a sale's history is its visit's or
-         *     its package's; a refund's is its package's). Later waves add the other kinds.
+         *     its package's; a refund's is its package's). Wave 3 adds the catalogue and the settings.
          * @enum {string}
          */
-        RecordKind: "visit" | "customer_package" | "customer";
+        RecordKind: "visit" | "customer_package" | "customer" | "appointment" | "attendance" | "daily_review" | "adjustment";
         /** @description The latest change, when it is not the creation itself. */
         RecordLast: {
             actor: components["schemas"]["ActivityActor"];
@@ -4722,8 +4776,11 @@ export interface components {
             day: string;
         };
         RecordRef: {
-            /** Format: uuid */
-            id: string;
+            /**
+             * Format: uuid
+             * @description Absent for a cell of a staff book (`attendance`, `daily_review`): it is a person and a day.
+             */
+            id?: string | null;
             type: components["schemas"]["RecordKind"];
         };
         /**
@@ -5092,6 +5149,11 @@ export interface components {
              */
             user_id?: string | null;
         };
+        /**
+         * @description Which staff book a day's cell is read from.
+         * @enum {string}
+         */
+        StaffBook: "attendance" | "daily_review";
         StaffChangeDto: {
             after: Record<string, never>;
             before: Record<string, never>;
@@ -7552,6 +7614,11 @@ export interface operations {
                 from?: string;
                 /** @description Last business day (inclusive); default `from`. At most 14 days. */
                 to?: string;
+                /**
+                 * @description `true`: each appointment says whether it was edited (`edited`, ADR-0022), for callers
+                 *     with `record.history.read`; the list view asks, the day and week grids do not.
+                 */
+                marks?: boolean;
             };
             header?: never;
             path?: never;
@@ -9768,6 +9835,11 @@ export interface operations {
                 from?: string;
                 /** @description Last business day (inclusive); default `from`. At most 14 days. */
                 to?: string;
+                /**
+                 * @description `true`: each appointment says whether it was edited (`edited`, ADR-0022), for callers
+                 *     with `record.history.read`; the list view asks, the day and week grids do not.
+                 */
+                marks?: boolean;
             };
             header?: never;
             path?: never;
@@ -10484,6 +10556,103 @@ export interface operations {
             };
         };
     };
+    adjustment_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A bonus / penalty and the entries its edits replaced, as one story */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordHistory"];
+                };
+            };
+            /** @description id is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs record.history.read + evaluation.record */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not this spa's, or a person of its chain is not in the caller's books (their own profile) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    appointment_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The booking's history: made, moved, arrived, done, missed, cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordHistory"];
+                };
+            };
+            /** @description id is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs record.history.read + appointment.manage; feature.disabled when the spa has appointments off */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     customer_package_history: {
         parameters: {
             query?: never;
@@ -10667,6 +10836,59 @@ export interface operations {
                 };
                 content?: never;
             };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    staff_day_history: {
+        parameters: {
+            query: {
+                book: components["schemas"]["StaffBook"];
+            };
+            header?: never;
+            path: {
+                staff_id: string;
+                /** @description YYYY-MM-DD */
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One person's cell of one staff book on one day: only that day's rows, never a note's text */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordHistory"];
+                };
+            };
+            /** @description query.invalid (book missing or unknown), or the path is not an id and a date */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description auth.forbidden: needs record.history.read + attendance.record (book=attendance) or evaluation.record (book=daily_review) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not this spa's staff member, the caller's own profile, or a month the person did not work */
             404: {
                 headers: {
                     [name: string]: unknown;

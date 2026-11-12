@@ -2,7 +2,7 @@
 // sheet (last element) and "Đã sửa" in the calendar's list view only; the person-day sheet (last
 // element of each fieldset, one request per book); the bonus / penalty log (⋯ → under the row).
 // The owner sees them; a manager by default does not, and sends no request for them.
-import type { Adjustment, AdjustmentLog, Appointment, AttendanceSheet, Calendar, RecordHistory, ReviewSheet } from "@vpyd/api-client";
+import type { Appointment, Calendar, RecordHistory } from "@vpyd/api-client";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
 import { spaToday } from "../../lib/format";
 import { ME } from "../reports/testServer";
+import type { Adjustment, AdjustmentLog, AttendanceSheet, ReviewSheet } from "../staff/api";
 
 const today = spaToday();
 const month = today.slice(0, 7);
@@ -164,7 +165,8 @@ describe("Lịch hẹn", () => {
     await waitFor(() => {
       expect(within(list).getAllByText("Đã sửa")).toHaveLength(1);
     });
-    expect(within(list).getByRole("button", { name: /Lê Thị Mai Đã sửa/ })).toBeInTheDocument();
+    expect(within(list).getByRole("button", { name: /Lê Thị Mai.* Đã sửa/ })).toBeInTheDocument();
+    expect(within(list).getByRole("button", { name: /Trần Thị Hoa/ })).not.toHaveTextContent("Đã sửa");
     expect(urls(spy).some((u) => u.includes("/appointments?") && u.includes("marks=true"))).toBe(true);
 
     await user.click(within(list).getByRole("button", { name: /Lê Thị Mai/ }));

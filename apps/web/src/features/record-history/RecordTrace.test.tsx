@@ -314,8 +314,8 @@ describe("recordHistoryQuery / canTrace (wave 2)", () => {
   it("a staff-book cell is asked by person, day and book; the others by id", async () => {
     const fetch = serve(history({ record: { type: "attendance" } }), history({ record: { type: "adjustment", id: VISIT } }));
     const client = createQueryClient();
-    await client.fetchQuery(recordHistoryQuery({ type: "attendance", staffId: "s1", date: DAY }));
-    await client.fetchQuery(recordHistoryQuery({ type: "adjustment", id: VISIT }));
+    await client.query(recordHistoryQuery({ type: "attendance", staffId: "s1", date: DAY }));
+    await client.query(recordHistoryQuery({ type: "adjustment", id: VISIT }));
     expect(fetch.mock.calls.map(([url]) => url)).toEqual([`/api/v1/record-history/staff-day/s1/${DAY}?book=attendance`, `/api/v1/record-history/adjustment/${VISIT}`]);
     expect(recordHistoryQuery({ type: "daily_review", staffId: "s1", date: DAY }).queryKey).toEqual(["record-history", "daily_review", "s1", DAY]);
   });

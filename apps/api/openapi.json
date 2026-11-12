@@ -1475,6 +1475,15 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "marks",
+            "in": "query",
+            "description": "`true`: each appointment says whether it was edited (`edited`, ADR-0022), for callers\nwith `record.history.read`; the list view asks, the day and week grids do not.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -3538,6 +3547,15 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "marks",
+            "in": "query",
+            "description": "`true`: each appointment says whether it was edited (`edited`, ADR-0022), for callers\nwith `record.history.read`; the list view asks, the day and week grids do not.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -4220,6 +4238,86 @@
         }
       }
     },
+    "/api/v1/record-history/adjustment/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "adjustment_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A bonus / penalty and the entries its edits replaced, as one story",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + evaluation.record"
+          },
+          "404": {
+            "description": "not this spa's, or a person of its chain is not in the caller's books (their own profile)"
+          }
+        }
+      }
+    },
+    "/api/v1/record-history/appointment/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "appointment_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The booking's history: made, moved, arrived, done, missed, cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + appointment.manage; feature.disabled when the spa has appointments off"
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/v1/record-history/customer-package/{id}": {
       "get": {
         "tags": [
@@ -4372,6 +4470,65 @@
             "description": "auth.forbidden: needs record.history.read + sale.read, then visit.read (one-off sale) or customer.read (package sale)"
           },
           "404": {}
+        }
+      }
+    },
+    "/api/v1/record-history/staff-day/{staff_id}/{date}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "staff_day_history",
+        "parameters": [
+          {
+            "name": "staff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "path",
+            "description": "YYYY-MM-DD",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "book",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/StaffBook"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One person's cell of one staff book on one day: only that day's rows, never a note's text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "query.invalid (book missing or unknown), or the path is not an id and a date"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + attendance.record (book=attendance) or evaluation.record (book=daily_review)"
+          },
+          "404": {
+            "description": "not this spa's staff member, the caller's own profile, or a month the person did not work"
+          }
         }
       }
     },
@@ -7030,6 +7187,13 @@
           "duration_min": {
             "type": "integer",
             "format": "int64"
+          },
+          "edited": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "\"Đã sửa\" (ADR-0022 D9): moved or given another technician since it was booked. Only for\ncallers with `record.history.read`, on `GET /appointments?marks=true`, `GET\n/appointments/{id}` and the answers of the appointment actions; absent otherwise."
           },
           "ends_at": {
             "type": "string",
@@ -13342,11 +13506,15 @@
       },
       "RecordKind": {
         "type": "string",
-        "description": "The kind of record a history is about, after re-anchoring (a sale's history is its visit's or\nits package's; a refund's is its package's). Later waves add the other kinds.",
+        "description": "The kind of record a history is about, after re-anchoring (a sale's history is its visit's or\nits package's; a refund's is its package's). Wave 3 adds the catalogue and the settings.",
         "enum": [
           "visit",
           "customer_package",
-          "customer"
+          "customer",
+          "appointment",
+          "attendance",
+          "daily_review",
+          "adjustment"
         ]
       },
       "RecordLast": {
@@ -13374,13 +13542,16 @@
       "RecordRef": {
         "type": "object",
         "required": [
-          "type",
-          "id"
+          "type"
         ],
         "properties": {
           "id": {
-            "type": "string",
-            "format": "uuid"
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Absent for a cell of a staff book (`attendance`, `daily_review`): it is a person and a day."
           },
           "type": {
             "$ref": "#/components/schemas/RecordKind"
@@ -14294,6 +14465,14 @@
           }
         },
         "additionalProperties": false
+      },
+      "StaffBook": {
+        "type": "string",
+        "description": "Which staff book a day's cell is read from.",
+        "enum": [
+          "attendance",
+          "daily_review"
+        ]
       },
       "StaffChangeDto": {
         "type": "object",

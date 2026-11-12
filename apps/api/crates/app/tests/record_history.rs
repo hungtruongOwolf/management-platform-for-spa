@@ -1093,7 +1093,10 @@ const SECOND_MANAGER_PHONE: &str = "0912000444";
 
 /// `+7` business day `days` from today at `hm` (spa time).
 fn at(days: i64, hm: &str) -> String {
-    format!("{}T{hm}:00+07:00", spa_today() + chrono::Duration::days(days))
+    format!(
+        "{}T{hm}:00+07:00",
+        spa_today() + chrono::Duration::days(days)
+    )
 }
 
 impl Spa {
@@ -1109,10 +1112,11 @@ impl Spa {
 
     /// A staff profile linked to the login with this phone (a manager's own, the owner's).
     async fn link(&self, phone: &str, name: &str) -> Setup<String> {
-        let user: Uuid = sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = $1")
-            .bind(format!("+84{}", &phone[1..]))
-            .fetch_one(&self.h.owner)
-            .await?;
+        let user: Uuid =
+            sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = $1")
+                .bind(format!("+84{}", &phone[1..]))
+                .fetch_one(&self.h.owner)
+                .await?;
         let r = call(
             &self.h.app,
             "POST",
@@ -1257,7 +1261,10 @@ async fn a_bookings_history_and_its_list_mark(pool: PgPool) -> TestResult {
         lines(&story),
         [
             ("appointment.create".to_owned(), vec![]),
-            ("appointment.update".to_owned(), vec!["booking_note".to_owned()])
+            (
+                "appointment.update".to_owned(),
+                vec!["booking_note".to_owned()]
+            )
         ]
     );
     assert!(!story.to_string().contains("đỗ xe"), "{story}");
@@ -1322,7 +1329,9 @@ async fn a_bookings_history_and_its_list_mark(pool: PgPool) -> TestResult {
     );
     // With the rights: malformed → 400, unknown → 404.
     assert_eq!(
-        s.history(&s.owner, "appointment", "not-a-uuid").await.status,
+        s.history(&s.owner, "appointment", "not-a-uuid")
+            .await
+            .status,
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
@@ -1390,7 +1399,12 @@ async fn a_staff_day_cell_keeps_its_own_day_and_the_callers_books(pool: PgPool) 
         json!({"staff_id": s.lan, "date": d2s, "status": null}),
     ] {
         let r = s
-            .put(&s.manager, "/attendance", json!({"entries": [entry]}), false)
+            .put(
+                &s.manager,
+                "/attendance",
+                json!({"entries": [entry]}),
+                false,
+            )
             .await;
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     }
@@ -1475,12 +1489,7 @@ async fn a_staff_day_cell_keeps_its_own_day_and_the_callers_books(pool: PgPool) 
     assert!(!review.body.to_string().contains("tay nghề"));
     // A day nobody wrote: empty, nobody named.
     let empty = s
-        .staff_day(
-            &s.owner,
-            &s.mai,
-            &spa_today().to_string(),
-            "attendance",
-        )
+        .staff_day(&s.owner, &s.mai, &spa_today().to_string(), "attendance")
         .await;
     assert_eq!(empty.status, StatusCode::OK, "{}", empty.body);
     assert_eq!(empty.body["items"], json!([]));
@@ -1505,7 +1514,11 @@ async fn a_staff_day_cell_keeps_its_own_day_and_the_callers_books(pool: PgPool) 
         StatusCode::NOT_FOUND,
         "their own cell is not in their books"
     );
-    for (who, staff) in [("another manager", &thu), ("the owner", &boss), ("a technician", &s.lan)] {
+    for (who, staff) in [
+        ("another manager", &thu),
+        ("the owner", &boss),
+        ("a technician", &s.lan),
+    ] {
         let r = s.staff_day(&s.manager, staff, &d1s, "attendance").await;
         assert_eq!(r.status, StatusCode::OK, "{who}: {}", r.body);
     }
@@ -1617,7 +1630,10 @@ async fn a_bonus_and_its_edits_read_as_one_chain(pool: PgPool) -> TestResult {
     );
     let edited = story["items"]
         .as_array()
-        .and_then(|i| i.iter().find(|e| e["folded"] == json!(["staff.adjustment_void"])))
+        .and_then(|i| {
+            i.iter()
+                .find(|e| e["folded"] == json!(["staff.adjustment_void"]))
+        })
         .cloned()
         .unwrap_or_default();
     assert_eq!(edited["action"], "staff.adjustment");
@@ -1637,8 +1653,10 @@ async fn a_bonus_and_its_edits_read_as_one_chain(pool: PgPool) -> TestResult {
     assert_eq!(story["items"].as_array().map(Vec::len), Some(3), "{story}");
     assert_eq!(story["summary"]["edits"], 2);
     assert!(
-        story["items"].as_array().is_some_and(|i| i.iter().any(|e| e["changes"]
-            == json!([{"field": "person", "format": "text", "old": "KTV Lan", "new": "KTV Mai"}]))),
+        story["items"].as_array().is_some_and(|i| {
+            i.iter().any(|e| e["changes"]
+            == json!([{"field": "person", "format": "text", "old": "KTV Lan", "new": "KTV Mai"}]))
+        }),
         "{story}"
     );
     // The scope covers every person of the chain (S13): through the manager's own profile → 404.

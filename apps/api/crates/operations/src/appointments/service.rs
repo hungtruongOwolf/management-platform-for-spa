@@ -12,7 +12,7 @@ use super::dto::{
     AppointmentGroupMoved, AppointmentServiceDto, AppointmentSettingsDto,
     AppointmentSettingsUpdate, AppointmentStatusDto, AppointmentUpdate, CalendarDto, CalendarQuery,
     CalendarTechnician, CalendarVisitDto, GuestCreate, MyCalendar, MyCalendarData, MyCalendarEntry,
-    MyEntryKind, MyEntryService, PaymentStateDto, PhaseDto,
+    MyCalendarQuery, MyEntryKind, MyEntryService, PaymentStateDto, PhaseDto,
 };
 use super::repo::{self, AppointmentInsert, AppointmentRow, Reschedule};
 use crate::dto::VisitCreate;
@@ -424,9 +424,9 @@ async fn load_one(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<Appointm
         None,
         actor.can(Permission::RecordHistoryRead),
     )
-        .await?
-        .pop()
-        .ok_or_else(|| AppError::Internal("appointment vanished".into()))
+    .await?
+    .pop()
+    .ok_or_else(|| AppError::Internal("appointment vanished".into()))
 }
 
 async fn record_audit(
@@ -509,7 +509,7 @@ pub async fn my_calendar(
     pool: &PgPool,
     cipher: &FieldCipher,
     actor: &Actor,
-    query: &CalendarQuery,
+    query: &MyCalendarQuery,
 ) -> Result<MyCalendar, AppError> {
     actor.require(Permission::StaffReadOwn)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;

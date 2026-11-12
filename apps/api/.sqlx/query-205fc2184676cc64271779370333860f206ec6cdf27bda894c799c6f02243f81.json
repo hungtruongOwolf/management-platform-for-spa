@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH own AS (\n             SELECT a.at, a.actor_kind, a.actor_user_id FROM app.audit_log a\n             WHERE a.tenant_id = $1 AND a.entity_type = 'staff' AND a.entity_id = $2\n               AND a.action = $4\n               AND coalesce(a.after ->> 'adjustment_id', a.before ->> 'adjustment_id') = $3\n             ORDER BY a.at, a.id LIMIT 1\n           ), moment AS (\n             SELECT a.action,\n                    coalesce(a.after ->> 'adjustment_id', a.before ->> 'adjustment_id') AS adjustment\n             FROM app.audit_log a JOIN own o ON a.at = o.at AND a.actor_kind = o.actor_kind\n               AND a.actor_user_id IS NOT DISTINCT FROM o.actor_user_id\n             WHERE a.tenant_id = $1 AND a.action IN ('staff.adjustment', 'staff.adjustment_void')\n           )\n           SELECT x.id, x.staff_id, x.created_by, x.created_at FROM app.staff_adjustment x\n           WHERE x.tenant_id = $1\n             AND (SELECT count(*) FROM moment m WHERE m.action = 'staff.adjustment') = 1\n             AND (SELECT count(*) FROM moment m WHERE m.action = 'staff.adjustment_void') = 1\n             AND x.id = (SELECT m.adjustment::uuid FROM moment m WHERE m.action = $5)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.staff_adjustment",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "staff_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.staff_adjustment",
+            "name": "staff_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "created_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.staff_adjustment",
+            "name": "created_by"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.staff_adjustment",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "205fc2184676cc64271779370333860f206ec6cdf27bda894c799c6f02243f81"
+}
