@@ -142,7 +142,10 @@ async fn one_transaction_writes_one_instant_in_recorded_order(owner: PgPool) -> 
     let pending: i64 = sqlx::query_scalar("SELECT count(*) FROM app.audit_log")
         .fetch_one(tx.conn())
         .await?;
-    assert_eq!(pending, 0, "recorded entries wait for the transaction's writes");
+    assert_eq!(
+        pending, 0,
+        "recorded entries wait for the transaction's writes"
+    );
     tx.write_audit().await?;
     for name in ["D", "E"] {
         audit::record(&mut tx, &who, renamed(category, name)).await?;
@@ -169,7 +172,10 @@ async fn one_transaction_writes_one_instant_in_recorded_order(owner: PgPool) -> 
 async fn a_back_filling_actor_stamps_its_own_instant(owner: PgPool) -> TestResult {
     let tenant = seed_tenant(&owner, "spa-a").await?;
     let pool = app_pool(&owner).await?;
-    let at = Utc.with_ymd_and_hms(2026, 3, 2, 3, 30, 0).single().ok_or("date")?;
+    let at = Utc
+        .with_ymd_and_hms(2026, 3, 2, 3, 30, 0)
+        .single()
+        .ok_or("date")?;
     let who = actor(tenant).at_clock(at);
     let category = new_category(&pool, tenant).await?;
 

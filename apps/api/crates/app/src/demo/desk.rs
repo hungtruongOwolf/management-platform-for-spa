@@ -358,15 +358,7 @@ impl<'a> Chain<'a> {
         let ctx = self.ctx;
         let manager = ctx.manager.clone().at_clock(at);
         let (_, body) = retry(|| {
-            sales::service::create_sale_as_of(
-                ctx.app,
-                ctx.cipher,
-                &manager,
-                key,
-                hash,
-                &input,
-                at,
-            )
+            sales::service::create_sale_as_of(ctx.app, ctx.cipher, &manager, key, hash, &input, at)
         })
         .await
         .map_err(fail("sell a package"))?;
@@ -526,15 +518,7 @@ impl<'a> Chain<'a> {
         let (key, hash) = idempotency();
         let manager = ctx.manager.clone().at_clock(at);
         let (_, body) = retry(|| {
-            operations::service::record_as_of(
-                ctx.app,
-                ctx.cipher,
-                &manager,
-                key,
-                hash,
-                &input,
-                at,
-            )
+            operations::service::record_as_of(ctx.app, ctx.cipher, &manager, key, hash, &input, at)
         })
         .await
         .map_err(fail("record a visit"))?;

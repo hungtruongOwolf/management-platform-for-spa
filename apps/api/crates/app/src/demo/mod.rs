@@ -891,15 +891,7 @@ impl Ctx<'_> {
             let (key, hash) = idempotency();
             let owner = self.owner.clone().at_clock(at);
             run::retry(|| {
-                packages::lifecycle::cancel_as_of(
-                    self.app,
-                    &owner,
-                    key,
-                    hash,
-                    p.id,
-                    &input,
-                    at,
-                )
+                packages::lifecycle::cancel_as_of(self.app, &owner, key, hash, p.id, &input, at)
             })
             .await
             .map_err(fail("cancel a package with refund"))?;

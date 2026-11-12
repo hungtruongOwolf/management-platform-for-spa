@@ -7,6 +7,8 @@ deciders: EM, agent
 
 # ADR-0021: "Nhật ký thao tác" cho chủ spa, audit giữ tên / SĐT cũ → mới của khách
 
+> **D8 sửa bởi [ADR-0023](ADR-0023-audit-instant-is-write-time.md) (2026-11-12):** `*_as_of` không còn đóng dấu giờ audit bằng `now` (route truyền `Utc::now()` làm dòng của request chờ khóa xếp sai thứ tự); giờ audit = lúc transaction ghi (sau mọi khóa), một giờ cho cả transaction; chỉ `Actor::at_clock` của seed đặt giờ trước; `TenantTx::for_actor_at` đã bỏ.
+>
 > **Sửa một phần bởi [ADR-0022](ADR-0022-inline-record-history.md) (2026-11-11 chiều, thiết kế):** D1 "Không cờ tính năng" → route `/audit-log` thuộc cờ `activity_log` **mặc định tắt** (`audit.read` giữ nguyên, owner-only + owner floor); bối cảnh "không hiện ai làm trên các màn hiện có" bị EM đảo: "ai ghi, ai sửa" hiện trên từng bản ghi, dùng lại read model + luật gộp D9 của ADR này.
 
 ## Context

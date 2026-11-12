@@ -70,5 +70,10 @@ Màn nhật ký tắt, nên chủ spa **không xem được trên UI** ai làm n
 - Web: phần tử cuối của `ServiceForm`, `PlanForm`, form nhóm, `RulesSheet`, sheet số khách tối đa.
 - Test: quản lý được bật nhưng không `catalog.manage` → `403`; cờ lương tắt → `GET /record-history/settings/payroll-rules` `403 feature.disabled` (guard route); giá Nữ / Nam cũ → mới.
 
+## Phần còn lại sau đợt 3 — backend (2026-11-12, EM "làm tiếp cho xong hết")
+- ✅ **Thứ tự dòng của hai request gần nhau** (K60–K64, [ADR-0023](../decisions/ADR-0023-audit-instant-is-write-time.md), migration **0053**): giờ audit = lúc transaction ghi, một giờ cho cả transaction; route không còn đóng dấu bằng giờ của handler. Test: `kernel/tests/audit_order.rs` (chờ khóa thật, đỏ trước bản sửa), `record_history.rs` (đổi tên tranh nhau, Sửa lượt bị vượt, chuỗi Sửa lượt theo thứ tự).
+- ✅ **`GET /appointments` 14 ngày** (K65–K67): xem kết quả ở [architecture §6](../architecture/record-history.md).
+- Web (agent khác, K48–K59): form sửa nhóm dịch vụ, sheet ô ngày chỉ đọc, gọi lịch sử 2 lần, chữ "bỏ 6".
+
 ## Không làm (đã có cách hiện riêng)
 Lịch sử hồ sơ nhân viên, đánh giá tháng, chốt lương, gọi lại khách (spec D11). Màn riêng cho việc của đội vận hành khi cờ tắt (LEAD: không làm).

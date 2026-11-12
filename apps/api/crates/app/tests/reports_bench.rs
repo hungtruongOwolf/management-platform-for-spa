@@ -416,13 +416,17 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
 /// trail (~60.000 rows a year × 3): one record's history p95 ≤ 100 ms (a three-version "Sửa lượt"
 /// chain, the busiest package, the busiest customer; wave 3: a service, the payroll rules, the
 /// calendar settings); a staff-book cell ≤ 50 ms (wave 2, 0052's day index); the day's visits and a 92-day revenue book with `edited` within +10 ms of the same
-/// lists without it, and 14 days of bookings with `marks=true` within +10 ms of the grids;
+/// lists without it, and 14 days of bookings with `marks=true` within +10 ms of the grids, the
+/// grids themselves (14 days ahead, 14 days back) p95 ≤ 150 ms;
 /// "Nhật ký thao tác" after the `rows_by_ids` refactor within the management views' 300 ms.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 #[ignore = "perf bench: seeds three years of data and audit; run with --ignored"]
 async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
     const HISTORY_BUDGET_MS: u128 = 100;
     const STAFF_DAY_BUDGET_MS: u128 = 50;
+    // A debug build in-process (K65): measured 30–60 ms; was 350–450 ms before the totals were
+    // set-based.
+    const CALENDAR_BUDGET_MS: u128 = 150;
     const EDITED_BUDGET_MS: u128 = 10;
     const EDITED_ROUNDS: usize = 60;
     let (h, owner) = books(pool).await?;
@@ -550,53 +554,66 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
             ));
         }
     }
-    // `/appointments` over 14 days: the list view's `marks=true` within +10 ms of the grids.
-    let (from, to): (String, String) =
-        sqlx::query_as("SELECT current_date::text, (current_date + 13)::text")
-            .fetch_one(&h.owner)
-            .await?;
-    let grid = format!("/appointments?from={from}&to={to}");
-    let (mut with, mut without) = (Vec::new(), Vec::new());
-    for round in 0..(EDITED_ROUNDS * 2) {
-        let marks = round % 2 == 0;
-        let path = if marks {
-            format!("{grid}&marks=true")
-        } else {
-            grid.clone()
-        };
-        n += 1;
-        let ip = format!("10.6.{}.{}", n / 250, n % 250);
-        let t = Instant::now();
-        let reply = call_with_headers(
-            &h.app,
-            "GET",
-            &path,
-            Some(&owner),
-            None,
-            &[("X-Forwarded-For", &ip)],
-        )
-        .await;
-        let ms = t.elapsed().as_millis();
-        assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
-        assert_eq!(
-            reply.body.to_string().contains("\"edited\""),
-            marks,
-            "{path}"
-        );
-        if marks {
-            with.push(ms)
-        } else {
-            without.push(ms)
+    // `/appointments` over 14 days (K65): the next 14 days (350 bookings) and the last 14 (560
+    // walk-ins, each with its sale). The seed links the one-off sales to their visits after its
+    // ANALYZE, so the planner believes `sale_visit_idx` empty, as right after a bulk load: with a
+    // lineage subquery per row the grid read every linked sale of the spa per row (~450 ms here,
+    // up to 0.9 s on a dev server) and its plan cost crossed `jit_above_cost` (+50–400 ms). Both
+    // windows within the calendar's budget, and the list view's `marks=true` within +10 ms of the
+    // grids at the median (the probe is ~1 ms, EXPLAIN below).
+    let windows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT current_date::text, (current_date + 13)::text
+         UNION ALL SELECT (current_date - 13)::text, current_date::text",
+    )
+    .fetch_all(&h.owner)
+    .await?;
+    for (from, to) in windows {
+        let grid = format!("/appointments?from={from}&to={to}");
+        let (mut with, mut without) = (Vec::new(), Vec::new());
+        for round in 0..(EDITED_ROUNDS * 2) {
+            let marks = round % 2 == 0;
+            let path = if marks {
+                format!("{grid}&marks=true")
+            } else {
+                grid.clone()
+            };
+            n += 1;
+            let ip = format!("10.6.{}.{}", n / 250, n % 250);
+            let t = Instant::now();
+            let reply = call_with_headers(
+                &h.app,
+                "GET",
+                &path,
+                Some(&owner),
+                None,
+                &[("X-Forwarded-For", &ip)],
+            )
+            .await;
+            let ms = t.elapsed().as_millis();
+            assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
+            assert_eq!(
+                reply.body.to_string().contains("\"edited\""),
+                marks,
+                "{path}"
+            );
+            if marks {
+                with.push(ms)
+            } else {
+                without.push(ms)
+            }
         }
-    }
-    let (with_p50, with_p95) = (p(&mut with, 0.5), p(&mut with, 0.95));
-    let (p50, p95) = (p(&mut without, 0.5), p(&mut without, 0.95));
-    println!("marks: p50 {with_p50:>4} / {p50:>4} ms  p95 {with_p95:>4} / {p95:>4} ms  {grid}");
-    // The 14 days' grid itself takes ~450 ms on a debug build (walk-ins, each booking's sale
-    // lineage), so its p95 swings ±25 ms from run to run and hides a ~1 ms probe (EXPLAIN below:
-    // 350 bookings through `audit_log_edit_idx` in ~1 ms). The median is what the marks move.
-    if with_p50 > p50 + EDITED_BUDGET_MS {
-        over.push(format!("{grid}: marks add {} ms at p50", with_p50 - p50));
+        let (with_p50, with_p95) = (p(&mut with, 0.5), p(&mut with, 0.95));
+        let (p50, p95) = (p(&mut without, 0.5), p(&mut without, 0.95));
+        println!("marks: p50 {with_p50:>4} / {p50:>4} ms  p95 {with_p95:>4} / {p95:>4} ms  {grid}");
+        if with_p95.max(p95) > CALENDAR_BUDGET_MS {
+            over.push(format!(
+                "{grid}: p95 {} ms (budget {CALENDAR_BUDGET_MS} ms)",
+                with_p95.max(p95)
+            ));
+        }
+        if with_p50 > p50 + EDITED_BUDGET_MS {
+            over.push(format!("{grid}: marks add {} ms at p50", with_p50 - p50));
+        }
     }
 
     // `edited` costs: the same lists with the right (the owner's default) and without it, in

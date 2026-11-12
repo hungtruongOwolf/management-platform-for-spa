@@ -281,12 +281,7 @@ async fn day_booking(
     let manager = ctx.manager.clone().at_clock(booked_at);
     let booked = retry(|| {
         operations::appointments::service::book_as_of(
-            ctx.app,
-            &manager,
-            key,
-            hash,
-            &input,
-            booked_at,
+            ctx.app, &manager, key, hash, &input, booked_at,
         )
     })
     .await;

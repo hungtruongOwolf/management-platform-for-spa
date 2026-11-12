@@ -409,6 +409,13 @@ pub struct AppointmentRow {
 /// index's (`audit_log_edit_idx`, 0052) so its predicate holds for a prepared statement. It counts
 /// this transaction's own edit too, so it writes the transaction's audit entries first: ask for it
 /// only once the use case's writes are done.
+///
+/// One statement whose cost grows with the bookings of the days, not with the spa's past
+/// (architecture/record-history §6, K65): the served visits are read by id, and what each one
+/// collected (`sale_total`) is summed once for all of them over its "Sửa lượt" lineage, each sale
+/// looked up by its visit (`sale_visit_idx`). A per-booking lineage subquery used to be costed so
+/// high that the plan was JIT-compiled (+50–400 ms), and with stale statistics it read every
+/// linked sale of the spa for each booking (0.9 s for 14 days). [`walk_ins`] does the same.
 pub async fn appointments(
     tx: &mut TenantTx,
     id: Option<Uuid>,
@@ -422,43 +429,67 @@ pub async fn appointments(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         AppointmentRow,
-        r#"SELECT a.id, a.status, a.business_date, a.starts_at, a.ends_at, a.customer_id,
+        r#"WITH RECURSIVE booking AS MATERIALIZED (
+             SELECT a.id, a.status, a.business_date, a.starts_at, a.ends_at, a.customer_id,
+                    a.guest_name, a.guest_phone, a.staff_id, a.note, a.status_reason,
+                    a.arrived_at, a.closed_at, a.visit_id, a.group_id, a.companions, a.version,
+                    a.created_at
+             FROM app.appointment a
+             WHERE a.tenant_id = $1
+               AND ($2::uuid IS NULL OR a.id = $2)
+               AND ($3::date IS NULL OR a.business_date BETWEEN $3 AND $4)
+             ORDER BY a.starts_at, a.id
+             LIMIT 2000
+           ), served AS MATERIALIZED (
+             SELECT v.id, v.customer_id, v.status, v.check_in_at FROM app.visit v
+             WHERE v.tenant_id = $1
+               AND v.id = ANY (ARRAY(SELECT b.visit_id FROM booking b WHERE b.visit_id IS NOT NULL))
+           ), lineage(root, customer_id, id) AS (
+             SELECT v.id, v.customer_id, v.id FROM served v
+             UNION ALL
+             SELECT l.root, l.customer_id, p.corrects_visit_id FROM lineage l
+             JOIN app.visit p ON p.tenant_id = $1 AND p.id = l.id
+             WHERE p.corrects_visit_id IS NOT NULL
+           ), paid AS (
+             -- The visit's open sales, plus the packages that the visits it replaced ("Sửa
+             -- lượt") sold to the same customer: they stay with the corrected visit (D8).
+             SELECT l.root, sum(x.total)::bigint AS total
+             FROM lineage l
+             CROSS JOIN LATERAL (
+               SELECT sum(s.total) AS total FROM app.sale s
+               WHERE s.tenant_id = $1 AND s.visit_id = l.id AND s.status = 'open'
+                 AND s.customer_id = l.customer_id) x
+             GROUP BY l.root
+           )
+           SELECT a.id AS "id!", a.status AS "status!", a.business_date AS "business_date!",
+                  a.starts_at AS "starts_at!", a.ends_at AS "ends_at!",
+                  a.customer_id AS "customer_id?",
                   CASE WHEN c.id IS NULL THEN a.guest_name
                        ELSE app.customer_label(c.full_name) END AS "customer_name!",
                   coalesce(c.phone_e164, a.guest_phone) AS "customer_phone?",
-                  c.gender AS "customer_gender?", a.staff_id, st.full_name AS "staff_name?",
-                  a.note, a.status_reason, a.arrived_at, a.closed_at, a.visit_id,
+                  c.gender AS "customer_gender?", a.staff_id AS "staff_id?",
+                  st.full_name AS "staff_name?", a.note AS "note?",
+                  a.status_reason AS "status_reason?", a.arrived_at AS "arrived_at?",
+                  a.closed_at AS "closed_at?", a.visit_id AS "visit_id?",
                   v.status AS "visit_status?", v.check_in_at AS "visit_check_in_at?",
-                  (WITH RECURSIVE lineage(id) AS (
-                     SELECT v.id
-                     UNION ALL
-                     SELECT p.corrects_visit_id FROM lineage l
-                     JOIN app.visit p ON p.tenant_id = v.tenant_id AND p.id = l.id
-                     WHERE p.corrects_visit_id IS NOT NULL)
-                   -- The visit's open sales, plus the packages that the visits it replaced ("Sửa
-                   -- lượt") sold to the same customer: they stay with the corrected visit (D8).
-                   SELECT sum(s.total) FROM app.sale s
-                   WHERE s.tenant_id = v.tenant_id AND s.visit_id IN (SELECT id FROM lineage)
-                     AND s.status = 'open' AND s.customer_id = v.customer_id)::bigint AS "sale_total?",
-                  a.group_id, a.companions, a.version, a.created_at,
+                  p.total AS "sale_total?", a.group_id AS "group_id?",
+                  a.companions AS "companions!", a.version AS "version!",
+                  a.created_at AS "created_at!",
                   CASE WHEN $5::bool THEN EXISTS (
                     SELECT 1 FROM app.audit_log l
-                    WHERE l.tenant_id = a.tenant_id AND l.entity_type = 'appointment'
+                    WHERE l.tenant_id = $1 AND l.entity_type = 'appointment'
                       AND l.entity_id = a.id
                       AND l.action IN ('visit.update', 'appointment.update')
                       AND l.action = 'appointment.update'
                       AND (l.before -> 'starts_at' IS DISTINCT FROM l.after -> 'starts_at'
                            OR l.before -> 'staff_id' IS DISTINCT FROM l.after -> 'staff_id'))
                   END AS "edited?"
-           FROM app.appointment a
-           LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
-           LEFT JOIN app.staff st ON st.tenant_id = a.tenant_id AND st.id = a.staff_id
-           LEFT JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.visit_id
-           WHERE a.tenant_id = $1
-             AND ($2::uuid IS NULL OR a.id = $2)
-             AND ($3::date IS NULL OR a.business_date BETWEEN $3 AND $4)
-           ORDER BY a.starts_at, a.id
-           LIMIT 2000"#,
+           FROM booking a
+           LEFT JOIN app.customer c ON c.tenant_id = $1 AND c.id = a.customer_id
+           LEFT JOIN app.staff st ON st.tenant_id = $1 AND st.id = a.staff_id
+           LEFT JOIN served v ON v.id = a.visit_id
+           LEFT JOIN paid p ON p.root = a.visit_id
+           ORDER BY a.starts_at, a.id"#,
         tenant,
         id,
         from,
@@ -507,6 +538,7 @@ pub struct WalkInRow {
 }
 
 /// Visits of `from..=to` in this branch that no appointment points at (walk-ins), earliest first.
+/// What each collected is summed once for all of them, as in [`appointments`].
 pub async fn walk_ins(
     tx: &mut TenantTx,
     branch: Uuid,
@@ -516,31 +548,43 @@ pub async fn walk_ins(
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         WalkInRow,
-        r#"SELECT v.id, v.business_date, v.check_in_at, v.customer_id,
+        r#"WITH RECURSIVE walk_in AS MATERIALIZED (
+             SELECT v.id, v.business_date, v.check_in_at, v.customer_id, v.status
+             FROM app.visit v
+             WHERE v.tenant_id = $1 AND v.branch_id = $2 AND v.business_date BETWEEN $3 AND $4
+               AND NOT EXISTS (
+                 SELECT 1 FROM app.appointment a WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id)
+               -- A visit replaced by "Sửa lượt" is not a second customer: only its newest version shows.
+               AND NOT EXISTS (
+                 SELECT 1 FROM app.visit n WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id)
+             ORDER BY v.check_in_at, v.id
+             LIMIT 2000
+           ), lineage(root, customer_id, id) AS (
+             SELECT w.id, w.customer_id, w.id FROM walk_in w
+             UNION ALL
+             SELECT l.root, l.customer_id, p.corrects_visit_id FROM lineage l
+             JOIN app.visit p ON p.tenant_id = $1 AND p.id = l.id
+             WHERE p.corrects_visit_id IS NOT NULL
+           ), paid AS (
+             -- The visit's open sales, plus the packages that the visits it replaced ("Sửa
+             -- lượt") sold to the same customer: they stay with the corrected visit (D8).
+             SELECT l.root, sum(x.total)::bigint AS total
+             FROM lineage l
+             CROSS JOIN LATERAL (
+               SELECT sum(s.total) AS total FROM app.sale s
+               WHERE s.tenant_id = $1 AND s.visit_id = l.id AND s.status = 'open'
+                 AND s.customer_id = l.customer_id) x
+             GROUP BY l.root
+           )
+           SELECT w.id AS "id!", w.business_date AS "business_date!",
+                  w.check_in_at AS "check_in_at!", w.customer_id AS "customer_id!",
                   app.customer_label(c.full_name) AS "customer_name!",
-
-                  c.gender AS "customer_gender?", v.status,
-                  (WITH RECURSIVE lineage(id) AS (
-                     SELECT v.id
-                     UNION ALL
-                     SELECT p.corrects_visit_id FROM lineage l
-                     JOIN app.visit p ON p.tenant_id = v.tenant_id AND p.id = l.id
-                     WHERE p.corrects_visit_id IS NOT NULL)
-                   -- The visit's open sales, plus the packages that the visits it replaced ("Sửa
-                   -- lượt") sold to the same customer: they stay with the corrected visit (D8).
-                   SELECT sum(s.total) FROM app.sale s
-                   WHERE s.tenant_id = v.tenant_id AND s.visit_id IN (SELECT id FROM lineage)
-                     AND s.status = 'open' AND s.customer_id = v.customer_id)::bigint AS "sale_total?"
-           FROM app.visit v
-           JOIN app.customer c ON c.tenant_id = v.tenant_id AND c.id = v.customer_id
-           WHERE v.tenant_id = $1 AND v.branch_id = $2 AND v.business_date BETWEEN $3 AND $4
-             AND NOT EXISTS (
-               SELECT 1 FROM app.appointment a WHERE a.tenant_id = v.tenant_id AND a.visit_id = v.id)
-             -- A visit replaced by "Sửa lượt" is not a second customer: only its newest version shows.
-             AND NOT EXISTS (
-               SELECT 1 FROM app.visit n WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id)
-           ORDER BY v.check_in_at, v.id
-           LIMIT 2000"#,
+                  c.gender AS "customer_gender?", w.status AS "status!",
+                  p.total AS "sale_total?"
+           FROM walk_in w
+           JOIN app.customer c ON c.tenant_id = $1 AND c.id = w.customer_id
+           LEFT JOIN paid p ON p.root = w.id
+           ORDER BY w.check_in_at, w.id"#,
         tenant,
         branch,
         from,

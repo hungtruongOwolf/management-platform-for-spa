@@ -138,6 +138,14 @@ RecordHistory {
 7. **Tóm tắt:** `created` theo D12 (thao tác tạo; không có → cột `created_by`/`created_at` của lượt, hóa đơn, gói, lịch hẹn, `source = record`; gói `origin = 'opening_balance'` không có dòng → `source = paper_book`, chỉ `day` = `starts_on`, **không** `at` (ngày trên sổ, không có giờ; web chỉ hiện ngày)); `edits` theo §4.4 trên **danh sách đã lọc**; `state` từ chính bản ghi.
 8. **Cắt:** `(at, id)` tăng dần, giữ 100 dòng cuối, `omitted`.
 
+**Thứ tự dòng = thứ tự thay đổi ([ADR-0023](../decisions/ADR-0023-audit-instant-is-write-time.md), K60–K64, 2026-11-12).** Mọi reader xếp `(at, id)`; luật ghi bảo đảm thứ tự đó đúng:
+- **Một transaction = một `at`**: `kernel::audit::record*` chỉ ghi nhận, `TenantTx::commit` ghi tất cả; dòng đầu lấy `clock_timestamp()` lúc insert, mọi dòng khác của transaction mang đúng giờ đó. Gộp một thao tác một dòng (D9), `edit_link` (cùng `at` + cùng người), dòng phụ của lượt (K7) vẫn dựa vào nó.
+- **Giờ = lúc ghi, sau mọi khóa dòng** của use case: request bắt đầu trước nhưng chờ khóa của request khác xếp **sau** request đó (trước đây `now()` = giờ bắt đầu transaction, hoặc `Utc::now()` của handler, đều lấy trước khi chờ). Test `kernel/tests/audit_order.rs` (chờ khóa thật, đỏ trước bản sửa: "C, B"), `record_history.rs` `racing_edits_read_in_the_order_they_were_made` ("A → B", "B → C") và `a_request_reads_when_it_wrote_not_when_it_arrived`.
+- **Trong một `at`**: thứ tự ghi nhận (id UUIDv7 lấy lúc `record`, đơn điệu trong process).
+- **Reply có `edited`** (`repo::visits`, `appointments::repo::appointments` với `with_edited`) gọi `TenantTx::write_audit()` trước, nên "Đã sửa" tính cả request này; chỉ gọi sau lần ghi cuối của use case. Đọc giữa chừng (bản bị thay của Sửa lượt, chuyển sang gói) dùng `operations::service::peek_one` (không `edited`).
+- **Giờ đặt trước** chỉ bởi `Actor::at_clock` (seed back-fill); `now` của `*_as_of` chỉ là đồng hồ nghiệp vụ. Writer SQL bỏ trống `at` (áp mẫu vai trò 0040 / 0052, tài khoản của operator) lấy default `clock_timestamp()` (0053).
+- Dòng cũ không đóng dấu lại (K64).
+
 ### 4.4 "Tính là sửa" (một định nghĩa, D9 / D10)
 `edits` = số **dòng đã gộp** (sau lọc D7) mà **hành động gốc** tính là sửa theo bảng dưới (hàm thuần `history::counts_as_edit(kind, &line)`), không đếm từng dòng audit. Chỉ hai loại có bản SQL cho `edited`; test `edited_agrees_with_summary_edits` chạy cả hai trên dữ liệu có **một lượt đổi KTV, một lượt chỉ gửi lại KTV cũ (from = to), một chuỗi A→B→C, một lượt chuyển sang gói, một lượt chỉ thêm dịch vụ**: `edited` ⇔ `edits ≥ 1` ở mọi bản.
 
