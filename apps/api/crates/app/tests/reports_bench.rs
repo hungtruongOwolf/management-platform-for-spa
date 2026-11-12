@@ -424,8 +424,8 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
 async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
     const HISTORY_BUDGET_MS: u128 = 100;
     const STAFF_DAY_BUDGET_MS: u128 = 50;
-    // A debug build in-process (K65): measured 30–60 ms; was 350–450 ms before the totals were
-    // set-based.
+    // A debug build in-process (K65): p95 55 ms for the next 14 days (390–400 ms before the totals
+    // were set-based), 103 ms for the last 14 (560 walk-ins: most of it is the reply's size).
     const CALENDAR_BUDGET_MS: u128 = 150;
     const EDITED_BUDGET_MS: u128 = 10;
     const EDITED_ROUNDS: usize = 60;

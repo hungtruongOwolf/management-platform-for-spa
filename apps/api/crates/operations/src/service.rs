@@ -1445,8 +1445,8 @@ pub async fn void(
 /// [`void`] with `now` as the server clock: the closed-day rule compares the visit's day with the
 /// business day of `now`, and the reversals are booked on that day. Operator tooling only
 /// (`app seed-demo` voids a past visit on its own day, as the desk does); no route reaches it —
-/// `POST /visits/{id}/void` calls [`void`]. Audit rows and `created_at` keep the real time of the
-/// write.
+/// `POST /visits/{id}/void` calls [`void`]. `now` never stamps the audit rows: they carry the time
+/// of the write, or the back-fill clock of the actor (`Actor::at_clock`, ADR-0023).
 #[allow(clippy::too_many_arguments)]
 pub async fn void_as_of(
     pool: &PgPool,
@@ -1601,8 +1601,8 @@ pub async fn correct(
 /// [`correct`] with `now` as the server clock: the closed-day rule and the reversals of the old
 /// visit use the business day of `now`, and the corrected visit's time is checked against `now`.
 /// Operator tooling only (`app seed-demo` corrects a past visit on its own day, as the desk
-/// does); no route reaches it — `POST /visits/{id}/correct` calls [`correct`]. Audit rows and
-/// `created_at` keep the real time of the write.
+/// does); no route reaches it — `POST /visits/{id}/correct` calls [`correct`]. `now` never stamps
+/// the audit rows: they carry the time of the write, or the actor's back-fill clock (ADR-0023).
 pub async fn correct_as_of(
     pool: &PgPool,
     cipher: &FieldCipher,
