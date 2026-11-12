@@ -56,7 +56,7 @@ Chọn **E + I + K**.
 4. **"Đã sửa" hẹp.** Chỉ tính khi điều đã ghi bị đổi: lượt đổi giờ / KTV, Sửa lượt, chuyển sang gói; lịch hẹn đổi giờ / KTV. Upsell, gia hạn, dùng gói hết hạn, ghi chú… là vòng đời.
    - Một định nghĩa dùng cho cả `edited` lẫn "đã sửa N lần".
    - Chip bản bị thay đổi thành "Đã thay" cho mọi vai trò. Mỗi hàng chỉ một chip, ba điều kiện **loại trừ nhau** (spec D9, khớp thứ tự code hiện có: kiểm `corrected_by_visit_id` trước): **Đã thay** = `corrected_by_visit_id` có giá trị; **Đã hủy** = `status = voided` và không có `corrected_by_visit_id`; **Đã sửa** = `edited` và `status != voided`.
-5. Chỗ đã hiện "ai làm" giữ nguyên (hồ sơ NV, đánh giá tháng, chốt lương, gọi lại). Thưởng/phạt có thêm lịch sử (đợt 2).
+5. Chỗ đã hiện "ai làm" giữ nguyên (hồ sơ NV, đánh giá tháng, chốt lương, gọi lại). Thưởng/phạt có thêm lịch sử (đợt 2). Bảng giá, mẫu gói, nhóm dịch vụ, quy tắc lương, số khách tối đa có lịch sử ở form / sheet sửa của chúng, quyền theo màn gốc (`catalog.manage`, `payroll.read`, `appointment.settings`: quản lý được bật cũng không thấy), danh sách không chip (đợt 3).
 
 ## Consequences
 - Positive:
@@ -66,7 +66,7 @@ Chọn **E + I + K**.
   - Không bảng mới, không đổi cách ghi audit.
 - Negative / accepted trade-offs:
   - **Sửa ADR-0018 D6 / ADR-0003.** Khi cờ `activity_log` tắt (mặc định), chủ spa **không** xem được trên UI việc đội vận hành làm với spa: khóa / mở tài khoản, đặt lại mật khẩu / MFA, sửa vai trò, cờ, ngưng spa. Dữ liệu vẫn ở `audit_log` (`actor_kind = platform_admin`) và nhật ký nền tảng. Operator bật cờ khi chủ spa cần. Không làm màn riêng cho việc này (LEAD).
-  - **Cửa sổ hồi quy** từ đợt 1 tới đợt 2 / 3: lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt, danh mục, quy tắc lương, cài đặt lịch hẹn chưa có lịch sử tại chỗ. Giảm thiểu như trên ([plan](../plans/record-history.md)).
+  - **Cửa sổ hồi quy** từ đợt 1 tới đợt 2 / 3: lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt, danh mục, quy tắc lương, cài đặt lịch hẹn chưa có lịch sử tại chỗ. Giảm thiểu như trên ([plan](../plans/record-history.md)). Đóng lại khi đợt 3 lên staging (đợt 3 đã build 2026-11-12), trừ **nhóm dịch vụ**: web chưa có form sửa nhóm nên lịch sử nhóm chỉ có qua API (spec K39).
   - Thêm khái niệm spa-local vào hai hàm vai trò. Hằng spa-local nằm ở cả Rust và SQL; một test giữ hai nơi khớp nhau.
   - Quản lý được bật thấy tên cũ của khách, không thấy SĐT cũ.
   - Cờ đầu tiên mặc định tắt: một test khóa giá trị mặc định của từng cờ.

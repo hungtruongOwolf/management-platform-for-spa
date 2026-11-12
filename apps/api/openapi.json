@@ -4386,6 +4386,45 @@
         }
       }
     },
+    "/api/v1/record-history/package-plan/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "package_plan_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A package plan: added, edited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + catalog.manage"
+          },
+          "404": {}
+        }
+      }
+    },
     "/api/v1/record-history/refund/{id}": {
       "get": {
         "tags": [
@@ -4461,6 +4500,132 @@
             "description": "auth.forbidden: needs record.history.read + sale.read, then visit.read (one-off sale) or customer.read (package sale)"
           },
           "404": {}
+        }
+      }
+    },
+    "/api/v1/record-history/service-category/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "service_category_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A group of services: added, renamed, moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + catalog.manage"
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/record-history/service/{id}": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "service_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A service of the price list: added, edited (old → new prices)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "id is not a UUID"
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + catalog.manage"
+          },
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/record-history/settings/appointment-settings": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "appointment_settings_history",
+        "responses": {
+          "200": {
+            "description": "Every save of the calendar's \"số khách tối đa\"; each after the first is an edit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + appointment.settings; feature.disabled when the spa has appointments off"
+          }
+        }
+      }
+    },
+    "/api/v1/record-history/settings/payroll-rules": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "payroll_rules_history",
+        "responses": {
+          "200": {
+            "description": "Every save of the spa's payroll rules; each after the first is an edit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordHistory"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs record.history.read + payroll.read; feature.disabled when the spa has payroll off"
+          }
         }
       }
     },
@@ -13497,7 +13662,7 @@
       },
       "RecordKind": {
         "type": "string",
-        "description": "The kind of record a history is about, after re-anchoring (a sale's history is its visit's or\nits package's; a refund's is its package's). Wave 3 adds the catalogue and the settings.",
+        "description": "The kind of record a history is about, after re-anchoring (a sale's history is its visit's or\nits package's; a refund's is its package's).",
         "enum": [
           "visit",
           "customer_package",
@@ -13505,7 +13670,12 @@
           "appointment",
           "attendance",
           "daily_review",
-          "adjustment"
+          "adjustment",
+          "service",
+          "package_plan",
+          "service_category",
+          "payroll_rules",
+          "appointment_settings"
         ]
       },
       "RecordLast": {
@@ -13542,7 +13712,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Absent for a cell of a staff book (`attendance`, `daily_review`): it is a person and a day."
+            "description": "Absent for a cell of a staff book (`attendance`, `daily_review`), a person and a day, and\nfor the spa's own settings (`payroll_rules`, `appointment_settings`)."
           },
           "type": {
             "$ref": "#/components/schemas/RecordKind"

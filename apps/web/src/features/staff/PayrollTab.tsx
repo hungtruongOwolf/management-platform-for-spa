@@ -1,10 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { TimeField } from "../../components/TimeField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
 import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
+import { meQuery } from "../auth/session";
+import { LazyRecordTrace } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import {
   closePayroll,
@@ -425,9 +428,16 @@ function CloseSheet({
 
 function RulesSheet({ onClose }: { onClose: () => void }) {
   const query = useQuery(rulesQuery);
+  const { data: me } = useSuspenseQuery(meQuery);
   return (
     <BottomSheet open wide onClose={onClose} title="Quy tắc lương của spa" description="Áp dụng cho các tháng chưa chốt">
-      {query.isPending ? <RowsSkeleton rows={4} /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : <RulesForm initial={query.data.rules} version={query.data.version} onDone={onClose} />}
+      {query.isPending ? (
+        <RowsSkeleton rows={4} />
+      ) : query.isError ? (
+        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+      ) : (
+        <RulesForm initial={query.data.rules} version={query.data.version} onDone={onClose} traced={canTrace(me, "payroll_rules")} />
+      )}
     </BottomSheet>
   );
 }
@@ -445,8 +455,9 @@ const RULE_MAX_LABEL: Record<BoundedRule, string> = {
  * `version` is what the form was read at: saving over someone else's later save is refused
  * (`412`, ADR-0019 D10) and the form asks to reopen it, so neither save is lost silently.
  */
-function RulesForm({ initial, version, onDone }: { initial: PayrollRules; version: number; onDone: () => void }) {
+function RulesForm({ initial, version, onDone, traced }: { initial: PayrollRules; version: number; onDone: () => void; traced: boolean }) {
   const queryClient = useQueryClient();
+  const formRef = useRef<HTMLFormElement>(null);
   const [r, setR] = useState(initial);
   // The version these values were read at, fixed while the form is open: a refetch behind it
   // must not turn the next save into an overwrite of someone else's.
@@ -483,6 +494,7 @@ function RulesForm({ initial, version, onDone }: { initial: PayrollRules; versio
   );
   return (
     <form
+      ref={formRef}
       className="grid gap-4"
       onSubmit={(e) => {
         e.preventDefault();
@@ -532,6 +544,15 @@ function RulesForm({ initial, version, onDone }: { initial: PayrollRules; versio
           <option value="days_worked">Theo số ngày đi làm thực tế</option>
         </select>
       </label>
+      {traced && (
+        // The sheet's last element, above its button (design record-history §2.10); on 403 focus
+        // goes to the sheet's close button, which never depends on the right (K31).
+        <LazyRecordTrace
+          record={{ type: "payroll_rules" }}
+          noun="quy tắc lương"
+          focusOnHide={() => formRef.current?.closest("dialog")?.querySelector<HTMLElement>(".sheet-close")}
+        />
+      )}
       {save.isError && (
         <p role="alert" className="text-sm text-danger">
           {stale ? "Quy tắc vừa được lưu ở máy khác. Đóng rồi mở lại “Quy tắc lương” để xem bản mới nhất, rồi sửa lại." : messageFor(save.error)}

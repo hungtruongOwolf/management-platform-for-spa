@@ -816,6 +816,37 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
     )
     .id(Target::Adjustment),
+    // Wave 3: the catalogue + catalog.manage; the spa's settings (no id) + payroll.read (and the
+    // payroll feature, by route prefix) or appointment.settings (and the appointments feature).
+    // A manager shown the history still reaches none of them (spec §7, tests/record_history.rs).
+    route(
+        "GET",
+        "/api/v1/record-history/service/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Service),
+    route(
+        "GET",
+        "/api/v1/record-history/package-plan/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Plan),
+    route(
+        "GET",
+        "/api/v1/record-history/service-category/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Category),
+    route(
+        "GET",
+        "/api/v1/record-history/settings/payroll-rules",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    ),
+    route(
+        "GET",
+        "/api/v1/record-history/settings/appointment-settings",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    ),
     route(
         "GET",
         "/api/v1/customers/inactive",

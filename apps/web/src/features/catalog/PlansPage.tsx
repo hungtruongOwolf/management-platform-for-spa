@@ -6,6 +6,8 @@ import { useState } from "react";
 import { Icon } from "../../app/Icon";
 import { PageHeader } from "../../app/PageHeader";
 import { can, meQuery } from "../auth/session";
+import { usePreloadRecordHistory } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { ErrorState } from "../reports/ui";
 import { plansQuery, servicesQuery } from "./api";
 import { PlanForm } from "./PlanForm";
@@ -26,6 +28,9 @@ function describePlan(plan: PackagePlan, serviceName: Map<string, string>): stri
 export function PlansPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const canManage = can(me, "catalog.manage");
+  // "Ai ghi, ai sửa" at the end of a plan's edit form (ADR-0022 wave 3), never on the list.
+  const traced = canTrace(me, "catalog");
+  usePreloadRecordHistory(traced);
   const [plans, services] = useQueries({
     queries: [plansQuery(canManage), servicesQuery(canManage)],
   });
@@ -112,7 +117,7 @@ export function PlansPage() {
             )}
           </p>
         </div>
-        {open && <PlanForm services={services.data} plan={plan} onDone={done} />}
+        {open && <PlanForm services={services.data} plan={plan} onDone={done} traced={traced} />}
       </li>
     );
   };

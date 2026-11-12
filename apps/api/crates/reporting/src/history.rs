@@ -1,10 +1,12 @@
 //! "Ai ghi, ai sửa" on each record (ADR-0022, spec record-history, architecture §4): the history of
-//! one visit, package, customer, booking, staff-book cell or bonus / penalty, read from
+//! one visit, package, customer, booking, staff-book cell, bonus / penalty, service, package plan
+//! or group of services, or of the spa's payroll rules or appointment settings, read from
 //! `app.audit_log` with the same row reader and the same one-line-per-action folding as the
 //! owner's trail ([`crate::activity`]).
 //!
 //! Authorization, in this order (F17): `record.history.read`, the route's own read permission
-//! ([`require_route`], [`require_staff_book`]), then the record is re-anchored (a sale → its visit
+//! ([`require_route`], [`require_staff_book`], [`require_settings`]), then the record is
+//! re-anchored (a sale → its visit
 //! or its package, a refund → its package; `404` when it is not the spa's, or — a staff record —
 //! not in the caller's books: their own, a day of a month the person did not work) and the read
 //! permission of the anchor's kind is required ([`require_anchor`], exhaustive), all before any
@@ -51,6 +53,53 @@ pub enum RecordRoute {
     Customer,
     Appointment,
     Adjustment,
+    Service,
+    PackagePlan,
+    ServiceCategory,
+}
+
+/// A record of the price list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Catalog {
+    Service,
+    PackagePlan,
+    ServiceCategory,
+}
+
+impl Catalog {
+    /// Its kind, the entity its use cases write (`catalog::commands`), its creating and editing
+    /// actions.
+    const fn trail(self) -> (RecordKind, &'static str, Action, Action) {
+        match self {
+            Catalog::Service => (
+                RecordKind::Service,
+                "service",
+                Action::CatalogServiceCreate,
+                Action::CatalogServiceUpdate,
+            ),
+            Catalog::PackagePlan => (
+                RecordKind::PackagePlan,
+                "package_plan",
+                Action::CatalogPlanCreate,
+                Action::CatalogPlanUpdate,
+            ),
+            Catalog::ServiceCategory => (
+                RecordKind::ServiceCategory,
+                "service_category",
+                Action::CatalogCategoryCreate,
+                Action::CatalogCategoryUpdate,
+            ),
+        }
+    }
+}
+
+/// The spa's own settings, one of each per spa: named by their route, never by an id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Settings {
+    /// "Quy tắc lương" (`payroll.rules_update`).
+    PayrollRules,
+    /// "Số khách tối đa" of the calendar (`appointment.settings`).
+    AppointmentSettings,
 }
 
 /// The record whose history is read, after re-anchoring.
@@ -64,6 +113,8 @@ enum Anchor {
     Adjustment(Uuid),
     /// One person's cell of one book on one day.
     StaffDay(Uuid, NaiveDate, StaffBook),
+    Catalog(Catalog, Uuid),
+    Settings(Settings),
 }
 
 /// The right of a staff book: the one its screen and its `PUT` need.
@@ -89,7 +140,27 @@ pub fn require_route(actor: &Actor, route: RecordRoute) -> Result<(), AppError> 
         RecordRoute::CustomerPackage | RecordRoute::Customer => actor.require(P::CustomerRead),
         RecordRoute::Appointment => actor.require(P::AppointmentManage),
         RecordRoute::Adjustment => actor.require(P::EvaluationRecord),
+        // The screens that edit them: the price list's and the plans' forms (owner by default).
+        RecordRoute::Service | RecordRoute::PackagePlan | RecordRoute::ServiceCategory => {
+            actor.require(P::CatalogManage)
+        }
     }
+}
+
+/// The read right of the spa's own settings, as their screens need it: the payroll rules'
+/// (`payroll.read`, the same as `GET /payroll/rules`), the calendar's "số khách tối đa"
+/// (`appointment.settings`, the sheet that sets it). The switch first.
+const fn settings_right(settings: Settings) -> Permission {
+    match settings {
+        Settings::PayrollRules => Permission::PayrollRead,
+        Settings::AppointmentSettings => Permission::AppointmentSettings,
+    }
+}
+
+/// The rights of `GET /record-history/settings/…`: the switch, then the settings' own right.
+pub fn require_settings(actor: &Actor, settings: Settings) -> Result<(), AppError> {
+    actor.require(Permission::RecordHistoryRead)?;
+    actor.require(settings_right(settings))
 }
 
 /// The rights of `GET /record-history/staff-day/…`: the switch, then the book's right. The book is
@@ -107,7 +178,8 @@ pub fn require_staff_book(actor: &Actor, book: Option<StaffBook>) -> Result<(), 
 
 /// The read right of the anchor's kind (B1): a sale of one-off services is its visit's history
 /// (`visit.read`), a package sale or a refund its package's (`customer.read`); a booking the
-/// calendar's, a staff record its book's (whose scope is checked when selecting, `404`).
+/// calendar's, a staff record its book's (whose scope is checked when selecting, `404`); the
+/// catalogue its forms' (`catalog.manage`), the settings their own.
 fn require_anchor(actor: &Actor, anchor: Anchor) -> Result<(), AppError> {
     match anchor {
         Anchor::Visit(_) => actor.require(Permission::VisitRead),
@@ -115,6 +187,8 @@ fn require_anchor(actor: &Actor, anchor: Anchor) -> Result<(), AppError> {
         Anchor::Appointment(_) => actor.require(Permission::AppointmentManage),
         Anchor::Adjustment(_) => actor.require(Permission::EvaluationRecord),
         Anchor::StaffDay(_, _, book) => actor.require(book_right(book)),
+        Anchor::Catalog(..) => actor.require(Permission::CatalogManage),
+        Anchor::Settings(settings) => actor.require(settings_right(settings)),
     }
 }
 
@@ -195,6 +269,30 @@ async fn resolve(tx: &mut TenantTx, route: RecordRoute, id: Uuid) -> Result<Anch
         .fetch_optional(tx.conn())
         .await?
         .map(Anchor::Adjustment),
+        RecordRoute::Service => sqlx::query_scalar!(
+            "SELECT id FROM app.service WHERE tenant_id = $1 AND id = $2",
+            tenant,
+            id
+        )
+        .fetch_optional(tx.conn())
+        .await?
+        .map(|id| Anchor::Catalog(Catalog::Service, id)),
+        RecordRoute::PackagePlan => sqlx::query_scalar!(
+            "SELECT id FROM app.package_plan WHERE tenant_id = $1 AND id = $2",
+            tenant,
+            id
+        )
+        .fetch_optional(tx.conn())
+        .await?
+        .map(|id| Anchor::Catalog(Catalog::PackagePlan, id)),
+        RecordRoute::ServiceCategory => sqlx::query_scalar!(
+            "SELECT id FROM app.service_category WHERE tenant_id = $1 AND id = $2",
+            tenant,
+            id
+        )
+        .fetch_optional(tx.conn())
+        .await?
+        .map(|id| Anchor::Catalog(Catalog::ServiceCategory, id)),
     };
     anchor.ok_or(AppError::NotFound)
 }
@@ -243,13 +341,16 @@ enum Creation {
     Appointment(Uuid),
     /// `staff.adjustment` of the chain's first entry.
     Adjustment(Uuid),
-    /// A staff-book cell has no creating action: its first row is.
+    /// A catalogue record's own `*_create` (its rows are all about it).
+    Made(Action),
+    /// A staff-book cell or the spa's settings have no creating action: their first row is.
     First,
 }
 
 impl Creation {
     fn is(&self, row: &Row) -> bool {
         match (self, Action::parse(&row.action)) {
+            (Creation::Made(made), action) => action == Some(*made),
             (Creation::Visit(id), Some(Action::VisitCreate))
             | (Creation::Package(id), Some(Action::CustomerPackageCreate))
             | (Creation::Appointment(id), Some(Action::AppointmentCreate)) => row.entity_id == *id,
@@ -678,12 +779,77 @@ async fn edit_link(tx: &mut TenantTx, entry: &Entry, way: Link) -> Result<Option
     }))
 }
 
+/// A service, a package plan or a group of services (spec §4.1): its own `*_create` and
+/// `*_update` rows. The price list seeded with the spa wrote none: such a record has no creation
+/// ("Chưa rõ ai ghi", edge case 9) and no fallback (the catalogue keeps no `created_by`).
+async fn catalog(tx: &mut TenantTx, catalog: Catalog, id: Uuid) -> Result<Selected, AppError> {
+    let (kind, entity, create, update) = catalog.trail();
+    let tenant = tx.tenant().as_uuid();
+    let actions = [create.as_str().to_owned(), update.as_str().to_owned()];
+    let members = sqlx::query_scalar!(
+        r#"SELECT a.id FROM app.audit_log a
+           WHERE a.tenant_id = $1 AND a.entity_type = $2 AND a.entity_id = $3
+             AND a.action = ANY($4)"#,
+        tenant,
+        entity,
+        id,
+        &actions
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    Ok(Selected {
+        kind,
+        id: Some(id),
+        members: members.into_iter().collect(),
+        extra: Vec::new(),
+        edits: Vec::new(),
+        creation: Creation::Made(create),
+        fallback: None,
+        paper_day: None,
+        state: RecordState::Active,
+    })
+}
+
+/// The spa's payroll rules or appointment settings: every save of them, written about the spa
+/// itself (`entity_type = 'tenant'`, `entity_id` = the spa) under its own action. The first save
+/// stands for "created" (the defaults before it were nobody's), every later one is an edit.
+async fn settings(tx: &mut TenantTx, settings: Settings) -> Result<Selected, AppError> {
+    let (action, kind) = match settings {
+        Settings::PayrollRules => (Action::PayrollRulesUpdate, RecordKind::PayrollRules),
+        Settings::AppointmentSettings => {
+            (Action::AppointmentSettings, RecordKind::AppointmentSettings)
+        }
+    };
+    let tenant = tx.tenant().as_uuid();
+    let members = sqlx::query_scalar!(
+        r#"SELECT a.id FROM app.audit_log a
+           WHERE a.tenant_id = $1 AND a.entity_type = 'tenant' AND a.entity_id = $1
+             AND a.action = $2"#,
+        tenant,
+        action.as_str()
+    )
+    .fetch_all(tx.conn())
+    .await?;
+    Ok(Selected {
+        kind,
+        id: None,
+        members: members.into_iter().collect(),
+        extra: Vec::new(),
+        edits: Vec::new(),
+        creation: Creation::First,
+        fallback: None,
+        paper_day: None,
+        state: RecordState::Active,
+    })
+}
+
 /// "Tính là sửa" (spec D9, D10, architecture §4.4), on a line as the caller sees it (`first`: the
 /// oldest line of the history): a visit whose time or technician changed, a correction, a
 /// conversion to a package (one line even though it writes two rows); a customer profile edited;
-/// a booking moved or given another technician; a staff-book cell written again (every line after
-/// the first); a bonus / penalty edited (its void and new entry are one line). A package's life,
-/// a booking's arrival, completion or cancellation are never edits.
+/// a booking moved or given another technician; a staff-book cell or the spa's settings written
+/// again (every line after the first); a bonus / penalty edited (its void and new entry are one
+/// line); a service, plan or group edited. A package's life, a booking's arrival, completion or
+/// cancellation, a catalogue record's creation are never edits.
 pub fn counts_as_edit(kind: RecordKind, line: &ActivityEntry, first: bool) -> bool {
     let action = Action::parse(&line.action);
     match kind {
@@ -704,7 +870,15 @@ pub fn counts_as_edit(kind: RecordKind, line: &ActivityEntry, first: bool) -> bo
                     .iter()
                     .any(|c| c.field == "starts_at" || c.field == "staff")
         }
-        RecordKind::Attendance | RecordKind::DailyReview => !first,
+        // Every save after the first: the settings have no creating action (spec §4.1).
+        RecordKind::Attendance
+        | RecordKind::DailyReview
+        | RecordKind::PayrollRules
+        | RecordKind::AppointmentSettings => !first,
+        // The catalogue: its `*_update` rows; its creation is no edit.
+        RecordKind::Service => action == Some(Action::CatalogServiceUpdate),
+        RecordKind::PackagePlan => action == Some(Action::CatalogPlanUpdate),
+        RecordKind::ServiceCategory => action == Some(Action::CatalogCategoryUpdate),
         RecordKind::Adjustment => {
             action == Some(Action::StaffAdjustment)
                 && line
@@ -802,6 +976,17 @@ pub async fn read_staff_day(
     history(tx, actor, Anchor::StaffDay(staff, date, book)).await
 }
 
+/// `GET /record-history/settings/{payroll-rules,appointment-settings}`: the spa's own settings.
+pub async fn read_settings(
+    pool: &PgPool,
+    actor: &Actor,
+    settings: Settings,
+) -> Result<RecordHistory, AppError> {
+    require_settings(actor, settings)?;
+    let tx = TenantTx::for_actor(pool, actor).await?;
+    history(tx, actor, Anchor::Settings(settings)).await
+}
+
 /// The history of a resolved anchor: its kind's read right, its rows, its lines as the caller may
 /// see them, and the summary.
 async fn history(
@@ -817,6 +1002,8 @@ async fn history(
         Anchor::Appointment(a) => appointment(&mut tx, a).await?,
         Anchor::Adjustment(a) => adjustment(&mut tx, actor, a).await?,
         Anchor::StaffDay(staff, date, book) => staff_day(&mut tx, actor, staff, date, book).await?,
+        Anchor::Catalog(record, id) => catalog(&mut tx, record, id).await?,
+        Anchor::Settings(which) => settings(&mut tx, which).await?,
     };
     let record = RecordRef {
         kind: selected.kind,
@@ -843,7 +1030,7 @@ async fn history(
     let imported = rows
         .iter()
         .any(|r| Action::parse(&r.action) == Some(Action::OpeningBalanceImport));
-    let rows: Vec<Row> = rows
+    let mut rows: Vec<Row> = rows
         .into_iter()
         .filter(|r| {
             let written_by_import = match Action::parse(&r.action) {
@@ -860,6 +1047,9 @@ async fn history(
             !(imported && written_by_import)
         })
         .collect();
+    if selected.kind == RecordKind::ServiceCategory {
+        activity::chain_category_updates(&mut rows);
+    }
     let creation_row = rows
         .iter()
         .filter(|r| selected.creation.is(r))
@@ -1158,6 +1348,37 @@ mod tests {
             K::Adjustment,
             &entry(Action::StaffAdjustmentVoid, &[])
         ));
+        // The catalogue: an edit, never its creation (even read as a later line).
+        for (kind, create, update) in [
+            (
+                K::Service,
+                Action::CatalogServiceCreate,
+                Action::CatalogServiceUpdate,
+            ),
+            (
+                K::PackagePlan,
+                Action::CatalogPlanCreate,
+                Action::CatalogPlanUpdate,
+            ),
+            (
+                K::ServiceCategory,
+                Action::CatalogCategoryCreate,
+                Action::CatalogCategoryUpdate,
+            ),
+        ] {
+            assert!(edit(kind, &entry(update, &[])), "{kind:?}");
+            assert!(counts_as_edit(kind, &entry(update, &[]), true), "{kind:?}");
+            assert!(!edit(kind, &entry(create, &[])), "{kind:?}");
+        }
+        assert!(!edit(K::Service, &entry(Action::CatalogPlanUpdate, &[])));
+        // The spa's settings: every save after the first (spec §4.1).
+        for (kind, action) in [
+            (K::PayrollRules, Action::PayrollRulesUpdate),
+            (K::AppointmentSettings, Action::AppointmentSettings),
+        ] {
+            assert!(!counts_as_edit(kind, &entry(action, &[]), true), "{kind:?}");
+            assert!(counts_as_edit(kind, &entry(action, &[]), false), "{kind:?}");
+        }
     }
 
     #[test]
@@ -1231,9 +1452,48 @@ mod tests {
             RecordRoute::Customer,
             RecordRoute::Appointment,
             RecordRoute::Adjustment,
+            RecordRoute::Service,
+            RecordRoute::PackagePlan,
+            RecordRoute::ServiceCategory,
         ] {
             assert!(require_route(&no_switch, route).is_err(), "{route:?}");
         }
+        // The catalogue and the settings: the switch, then their screens' own right. A manager
+        // shown the history still has neither (spec §7).
+        let owner_rights = actor(&[P::CatalogManage, P::PayrollRead, P::AppointmentSettings]);
+        for settings in [Settings::PayrollRules, Settings::AppointmentSettings] {
+            assert!(require_settings(&owner_rights, settings).is_err());
+        }
+        assert!(require_route(&owner_rights, RecordRoute::Service).is_err());
+        let manager = actor(&[
+            P::RecordHistoryRead,
+            P::CatalogRead,
+            P::AppointmentManage,
+            P::VisitRead,
+        ]);
+        for route in [
+            RecordRoute::Service,
+            RecordRoute::PackagePlan,
+            RecordRoute::ServiceCategory,
+        ] {
+            assert!(require_route(&manager, route).is_err(), "{route:?}");
+        }
+        for settings in [Settings::PayrollRules, Settings::AppointmentSettings] {
+            assert!(
+                require_settings(&manager, settings).is_err(),
+                "{settings:?}"
+            );
+        }
+        let catalog = actor(&[P::RecordHistoryRead, P::CatalogManage]);
+        assert!(require_route(&catalog, RecordRoute::PackagePlan).is_ok());
+        assert!(require_anchor(&catalog, Anchor::Catalog(Catalog::Service, Uuid::nil())).is_ok());
+        assert!(require_settings(&catalog, Settings::PayrollRules).is_err());
+        let payroll = actor(&[P::RecordHistoryRead, P::PayrollRead]);
+        assert!(require_settings(&payroll, Settings::PayrollRules).is_ok());
+        assert!(require_settings(&payroll, Settings::AppointmentSettings).is_err());
+        let calendar = actor(&[P::RecordHistoryRead, P::AppointmentSettings]);
+        assert!(require_settings(&calendar, Settings::AppointmentSettings).is_ok());
+        assert!(require_anchor(&calendar, Anchor::Settings(Settings::PayrollRules)).is_err());
         // The staff books: the switch, then a book's right (either one before the book is known).
         let books = actor(&[
             P::AttendanceRecord,

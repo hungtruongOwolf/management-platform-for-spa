@@ -11,6 +11,8 @@ import { Icon } from "../../app/Icon";
 import { PageHeader } from "../../app/PageHeader";
 import { fieldMessage, messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
+import { usePreloadRecordHistory } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { ErrorState } from "../reports/ui";
 import { categoriesQuery, createCategory, servicesQuery } from "./api";
 import { describeDuration, describePrices } from "./prices";
@@ -33,6 +35,9 @@ type Editing =
 export function PriceListPage() {
   const { data: me } = useSuspenseQuery(meQuery);
   const canManage = can(me, "catalog.manage");
+  // "Ai ghi, ai sửa" at the end of a service's edit form (ADR-0022 wave 3), never on the list.
+  const traced = canTrace(me, "catalog");
+  usePreloadRecordHistory(traced);
   const [categories, services] = useQueries({
     queries: [categoriesQuery, servicesQuery(canManage)],
   });
@@ -165,7 +170,7 @@ export function PriceListPage() {
                         )}
                       </p>
                     </div>
-                    {open && <ServiceForm categories={categories.data} service={service} defaultCategoryId={category.id} onDone={done} />}
+                    {open && <ServiceForm categories={categories.data} service={service} defaultCategoryId={category.id} onDone={done} traced={traced} />}
                   </li>
                 );
               })}

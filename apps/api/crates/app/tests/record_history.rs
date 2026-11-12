@@ -1725,3 +1725,497 @@ async fn a_bonus_and_its_edits_read_as_one_chain(pool: PgPool) -> TestResult {
     );
     Ok(())
 }
+
+// --------------------------------------------------------- wave 3: the catalogue, the settings
+
+impl Spa {
+    /// `GET /record-history/settings/{which}` (`payroll-rules`, `appointment-settings`).
+    async fn settings_history(&self, who: &str, which: &str) -> Reply {
+        call(
+            &self.h.app,
+            "GET",
+            &format!("/record-history/settings/{which}"),
+            Some(who),
+            None,
+        )
+        .await
+    }
+
+    async fn put_versioned(&self, who: &str, path: &str, version: i64, body: Value) -> Reply {
+        let etag = format!("\"{version}\"");
+        call_with_headers(
+            &self.h.app,
+            "PUT",
+            path,
+            Some(who),
+            Some(body),
+            &[("If-Match", &etag)],
+        )
+        .await
+    }
+
+    /// The seeded group "Gội đầu dưỡng sinh".
+    async fn shampoo_group(&self) -> Setup<String> {
+        let id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM app.service_category WHERE tenant_id = $1 AND name = 'Gội đầu dưỡng sinh'",
+        )
+        .bind(self.tenant)
+        .fetch_one(&self.h.owner)
+        .await?;
+        Ok(id.to_string())
+    }
+}
+
+/// The line of an action that changed this field.
+fn change_of<'a>(history: &'a Value, action: &str, field: &str) -> &'a Value {
+    history["items"]
+        .as_array()
+        .and_then(|i| {
+            i.iter()
+                .filter(|e| e["action"] == action)
+                .flat_map(|e| e["changes"].as_array().into_iter().flatten())
+                .find(|c| c["field"] == field)
+        })
+        .unwrap_or_else(|| panic!("no {action} changing {field} in {history}"))
+}
+
+/// Spec §7 (wave 3), AC "chung", K1: the catalogue's and the settings' histories are their screens'
+/// — `catalog.manage`, `payroll.read`, `appointment.settings`, the owner's by default — so a
+/// manager the operator showed the history to still gets `403` (whatever the id, malformed or
+/// another spa's: no oracle); another spa's records are not found; a switched-off feature
+/// answers `403 feature.disabled` from the route guard.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_catalogue_and_the_settings_are_the_owners_alone(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let group = s.shampoo_group().await?;
+    let records = [
+        ("service", s.shampoo.clone()),
+        ("package-plan", s.plan.clone()),
+        ("service-category", group),
+    ];
+    let settings = ["payroll-rules", "appointment-settings"];
+    let no_store = |r: &Reply| {
+        r.headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    };
+    for (kind, id) in &records {
+        let r = s.history(&s.owner, kind, id).await;
+        assert_eq!(r.status, StatusCode::OK, "{kind}: {}", r.body);
+        assert_eq!(no_store(&r).as_deref(), Some("no-store"), "{kind}");
+    }
+    for which in settings {
+        let r = s.settings_history(&s.owner, which).await;
+        assert_eq!(r.status, StatusCode::OK, "{which}: {}", r.body);
+        assert_eq!(no_store(&r).as_deref(), Some("no-store"), "{which}");
+        assert!(r.body["record"].get("id").is_none(), "{which}: {}", r.body);
+    }
+
+    // Shown the history by the operator, the manager still lacks the screens' rights; the
+    // technician never has the switch. Junk ids are refused the same way (K1).
+    s.grant_manager("record.history.read", true).await?;
+    let unknown = Uuid::now_v7().to_string();
+    for who in [&s.manager, &s.technician] {
+        for (kind, id) in &records {
+            for junk in [id.as_str(), "not-a-uuid", unknown.as_str()] {
+                assert_eq!(
+                    code(&s.history(who, kind, junk).await),
+                    (StatusCode::FORBIDDEN, Some("auth.forbidden")),
+                    "{kind} {junk}"
+                );
+            }
+        }
+        for which in settings {
+            assert_eq!(
+                code(&s.settings_history(who, which).await),
+                (StatusCode::FORBIDDEN, Some("auth.forbidden")),
+                "{which}"
+            );
+        }
+    }
+    // The owner: malformed → 400, unknown → 404.
+    for (kind, _) in &records {
+        assert_eq!(
+            s.history(&s.owner, kind, "not-a-uuid").await.status,
+            StatusCode::BAD_REQUEST,
+            "{kind}"
+        );
+        assert_eq!(
+            s.history(&s.owner, kind, &unknown).await.status,
+            StatusCode::NOT_FOUND,
+            "{kind}"
+        );
+    }
+
+    // Another spa's owner: this spa's service, plan and group are not found; its own settings
+    // are its own (this spa's save is not in them).
+    let saved = call(
+        &s.h.app,
+        "PUT",
+        "/appointment-settings",
+        Some(&s.owner),
+        Some(json!({"max_per_slot": 4})),
+    )
+    .await;
+    assert_eq!(saved.status, StatusCode::OK, "{}", saved.body);
+    create_tenant(&s.h.owner, "khac", "Spa Khác", "Huế").await?;
+    add_member(
+        &s.h.owner,
+        "khac",
+        OTHER_OWNER_PHONE,
+        "Chủ Khác",
+        SystemRole::Owner,
+    )
+    .await?;
+    let other = session_for(&s.h, OTHER_OWNER_PHONE).await;
+    for (kind, id) in &records {
+        assert_eq!(
+            s.history(&other, kind, id).await.status,
+            StatusCode::NOT_FOUND,
+            "{kind}"
+        );
+    }
+    let theirs = s.settings_history(&other, "appointment-settings").await;
+    assert_eq!(theirs.status, StatusCode::OK, "{}", theirs.body);
+    assert_eq!(theirs.body["items"], json!([]));
+    assert_eq!(
+        s.settings_history(&s.owner, "appointment-settings")
+            .await
+            .body["items"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+
+    // A switched-off feature: the route guard answers, before any handler (spec edge case 12).
+    s.switch_off("payroll").await?;
+    assert_eq!(
+        code(&s.settings_history(&s.owner, "payroll-rules").await),
+        (StatusCode::FORBIDDEN, Some("feature.disabled"))
+    );
+    assert_eq!(
+        s.settings_history(&s.owner, "appointment-settings")
+            .await
+            .status,
+        StatusCode::OK
+    );
+    s.switch_off("appointments").await?;
+    assert_eq!(
+        code(&s.settings_history(&s.owner, "appointment-settings").await),
+        (StatusCode::FORBIDDEN, Some("feature.disabled"))
+    );
+    // The catalogue has no feature switch of its own.
+    assert_eq!(
+        s.history(&s.owner, "service", &s.shampoo).await.status,
+        StatusCode::OK
+    );
+    Ok(())
+}
+
+/// Spec §4.1 (wave 3), edge case 9, design §2.10: a service, a plan and a group of services say
+/// who added and who edited them, an edit names old → new values ("Giá Nữ: 150.000đ → 170.000đ",
+/// a renamed group from its previous row), only edits count ("đã sửa N lần": the creation is
+/// none), and what the spa was seeded with has no trail ("Chưa rõ ai ghi").
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_catalogue_says_who_added_and_who_edited(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let group = s.shampoo_group().await?;
+
+    // Seeded with the spa: no line, nobody.
+    let seeded = s.owner_history("service", &s.cheaper).await;
+    assert_eq!(
+        seeded["record"],
+        json!({"type": "service", "id": s.cheaper})
+    );
+    assert_eq!(seeded["items"], json!([]));
+    assert_eq!(seeded["summary"], json!({"edits": 0, "state": "active"}));
+
+    // A service added, then edited twice by gender prices.
+    let service = |female: i64, male: i64, recommended: bool| {
+        json!({"category_id": group, "name": "Gội thảo dược", "description": null,
+               "duration_min": 60, "recommended": recommended, "active": true,
+               "prices": {"female": female, "male": male}})
+    };
+    let made = call(
+        &s.h.app,
+        "POST",
+        "/services",
+        Some(&s.owner),
+        Some(service(150_000, 150_000, false)),
+    )
+    .await;
+    assert_eq!(made.status, StatusCode::CREATED, "{}", made.body);
+    let id = str_of(&made.body["id"]);
+    let path = format!("/services/{id}");
+    let added = s.owner_history("service", &id).await;
+    assert_eq!(actions(&added), ["catalog.service_create"]);
+    assert_eq!(item(&added, "catalog.service_create")["changes"], json!([]));
+    assert_eq!(
+        (
+            &added["summary"]["edits"],
+            &added["summary"]["created"]["actor"]["name"],
+            &added["summary"]["created"]["source"]
+        ),
+        (&json!(0), &json!("Chủ Spa"), &json!("audit"))
+    );
+    assert!(added["summary"].get("last").is_none(), "{added}");
+
+    let edited = s
+        .put_versioned(&s.owner, &path, 1, service(170_000, 150_000, false))
+        .await;
+    assert_eq!(edited.status, StatusCode::OK, "{}", edited.body);
+    let once = s.owner_history("service", &id).await;
+    assert_eq!(
+        actions(&once),
+        ["catalog.service_create", "catalog.service_update"]
+    );
+    assert_eq!(
+        item(&once, "catalog.service_update")["changes"],
+        json!([{"field": "price_female", "format": "money", "old": "150000", "new": "170000"}])
+    );
+    assert_eq!(once["summary"]["edits"], 1);
+    assert_eq!(once["summary"]["last"]["actor"]["name"], "Chủ Spa");
+
+    let again = s
+        .put_versioned(
+            &s.owner,
+            &path,
+            edited.body["version"].as_i64().unwrap_or_default(),
+            service(170_000, 160_000, true),
+        )
+        .await;
+    assert_eq!(again.status, StatusCode::OK, "{}", again.body);
+    let twice = s.owner_history("service", &id).await;
+    assert_eq!(twice["summary"]["edits"], 2);
+    assert_eq!(
+        change_of(&twice, "catalog.service_update", "price_male"),
+        &json!({"field": "price_male", "format": "money", "old": "150000", "new": "160000"})
+    );
+    assert_eq!(
+        change_of(&twice, "catalog.service_update", "recommended")["new"],
+        "true"
+    );
+    // Moved to another group: by name, not by id.
+    let other_group = call(
+        &s.h.app,
+        "POST",
+        "/service-categories",
+        Some(&s.owner),
+        Some(json!({"name": "Chăm sóc tay chân"})),
+    )
+    .await;
+    assert_eq!(
+        other_group.status,
+        StatusCode::CREATED,
+        "{}",
+        other_group.body
+    );
+    let mut moved = service(170_000, 160_000, true);
+    moved["category_id"] = other_group.body["id"].clone();
+    let moved = s
+        .put_versioned(
+            &s.owner,
+            &path,
+            again.body["version"].as_i64().unwrap_or_default(),
+            moved,
+        )
+        .await;
+    assert_eq!(moved.status, StatusCode::OK, "{}", moved.body);
+    assert_eq!(
+        change_of(
+            &s.owner_history("service", &id).await,
+            "catalog.service_update",
+            "category"
+        ),
+        &json!({"field": "category", "format": "text",
+                "old": "Gội đầu dưỡng sinh", "new": "Chăm sóc tay chân"})
+    );
+
+    // The plan the owner made for every test: its price edited once.
+    let plan = s.owner_history("package-plan", &s.plan).await;
+    assert_eq!(actions(&plan), ["catalog.plan_create"]);
+    assert_eq!(plan["summary"]["edits"], 0);
+    let repriced = s
+        .put_versioned(
+            &s.owner,
+            &format!("/package-plans/{}", s.plan),
+            1,
+            json!({
+                "name": PLAN_NAME, "price": 1_800_000, "validity_months": 6,
+                "gift_note": null, "active": true,
+                "items": [{"service_id": s.shampoo, "sessions": 10, "bonus_sessions": 2}],
+            }),
+        )
+        .await;
+    assert_eq!(repriced.status, StatusCode::OK, "{}", repriced.body);
+    let plan = s.owner_history("package-plan", &s.plan).await;
+    assert_eq!(
+        plan["record"],
+        json!({"type": "package_plan", "id": s.plan})
+    );
+    assert_eq!(
+        item(&plan, "catalog.plan_update")["changes"],
+        json!([{"field": "price", "format": "money", "old": "1500000", "new": "1800000"}])
+    );
+    assert_eq!(plan["summary"]["edits"], 1);
+
+    // A group: its writer keeps no old values, its previous row has them.
+    let new_group = str_of(&other_group.body["id"]);
+    let order = other_group.body["sort_order"].clone();
+    let rename = |name: &str, order: &Value| {
+        let (s, path, body) = (
+            &s,
+            format!("/service-categories/{new_group}"),
+            json!({"name": name, "sort_order": order}),
+        );
+        async move {
+            let r = call(&s.h.app, "PUT", &path, Some(&s.owner), Some(body)).await;
+            assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+        }
+    };
+    rename("Chăm sóc tay và chân", &order).await;
+    rename("Chăm sóc tay và chân", &json!(90)).await;
+    let story = s.owner_history("service-category", &new_group).await;
+    assert_eq!(
+        story["record"],
+        json!({"type": "service_category", "id": new_group})
+    );
+    assert_eq!(story["summary"]["edits"], 2);
+    assert_eq!(
+        change_of(&story, "catalog.category_update", "name"),
+        &json!({"field": "name", "format": "text",
+                "old": "Chăm sóc tay chân", "new": "Chăm sóc tay và chân"})
+    );
+    assert_eq!(
+        change_of(&story, "catalog.category_update", "sort_order")["new"],
+        "90"
+    );
+    assert_eq!(
+        lines(&story)
+            .iter()
+            .filter(|(a, _)| a == "catalog.category_update")
+            .map(|(_, fields)| fields.clone())
+            .collect::<Vec<_>>(),
+        [vec!["name".to_owned()], vec!["sort_order".to_owned()]]
+    );
+    // A seeded group edited: no previous row, so the line says who and when, not what.
+    let seeded = s.shampoo_group().await?;
+    let r = call(
+        &s.h.app,
+        "PUT",
+        &format!("/service-categories/{seeded}"),
+        Some(&s.owner),
+        Some(json!({"name": "Gội đầu dưỡng sinh", "sort_order": 7})),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let story = s.owner_history("service-category", &seeded).await;
+    assert_eq!(
+        lines(&story),
+        [("catalog.category_update".to_owned(), Vec::new())]
+    );
+    assert!(story["summary"].get("created").is_none(), "{story}");
+    assert_eq!(story["summary"]["edits"], 1);
+    assert_eq!(story["summary"]["last"]["actor"]["name"], "Chủ Spa");
+    Ok(())
+}
+
+/// Spec §4.1 (wave 3), architecture §4.4: the payroll rules and the calendar's "số khách tối đa"
+/// are the spa's own (no id). Never saved: no line. Every save is a line with what it changed,
+/// the first one stands for "created", every later one is an edit.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn the_spa_settings_count_every_save_after_the_first(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    for which in ["payroll-rules", "appointment-settings"] {
+        let r = s.settings_history(&s.owner, which).await;
+        assert_eq!(r.status, StatusCode::OK, "{which}: {}", r.body);
+        assert_eq!(r.body["items"], json!([]), "{which}");
+        assert_eq!(
+            r.body["summary"],
+            json!({"edits": 0, "state": "active"}),
+            "{which}"
+        );
+    }
+
+    // The payroll rules, saved twice (each save replaces them, missing keys at their defaults).
+    let first = s
+        .put_versioned(
+            &s.owner,
+            "/payroll/rules",
+            0,
+            json!({"late_grace_minutes": 10}),
+        )
+        .await;
+    assert_eq!(first.status, StatusCode::OK, "{}", first.body);
+    let rules = s.settings_history(&s.owner, "payroll-rules").await.body;
+    assert_eq!(rules["record"], json!({"type": "payroll_rules"}));
+    assert_eq!(
+        (
+            &rules["summary"]["edits"],
+            &rules["summary"]["created"]["actor"]["name"]
+        ),
+        (&json!(0), &json!("Chủ Spa"))
+    );
+    assert_eq!(
+        item(&rules, "payroll.rules_update")["changes"],
+        json!([{"field": "late_grace_minutes", "format": "number", "old": "0", "new": "10"}])
+    );
+    let second = s
+        .put_versioned(
+            &s.owner,
+            "/payroll/rules",
+            1,
+            json!({"late_grace_minutes": 15, "late_penalty_amount": 30_000,
+                   "loyalty_partial_month": "prorate"}),
+        )
+        .await;
+    assert_eq!(second.status, StatusCode::OK, "{}", second.body);
+    let rules = s.settings_history(&s.owner, "payroll-rules").await.body;
+    assert_eq!(rules["summary"]["edits"], 1);
+    assert_eq!(
+        actions(&rules),
+        ["payroll.rules_update", "payroll.rules_update"]
+    );
+    assert_eq!(
+        change_of(&rules, "payroll.rules_update", "late_penalty_amount"),
+        &json!({"field": "late_penalty_amount", "format": "money", "old": "0", "new": "30000"})
+    );
+    assert_eq!(
+        change_of(&rules, "payroll.rules_update", "loyalty_partial_month"),
+        &json!({"field": "loyalty_partial_month", "format": "code",
+                "old": "fifteen_days", "new": "prorate"})
+    );
+
+    // "Số khách tối đa": 4, then 6, then no limit.
+    for max in [json!(4), json!(6), Value::Null] {
+        let r = call(
+            &s.h.app,
+            "PUT",
+            "/appointment-settings",
+            Some(&s.owner),
+            Some(json!({"max_per_slot": max})),
+        )
+        .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    }
+    let slots = s
+        .settings_history(&s.owner, "appointment-settings")
+        .await
+        .body;
+    assert_eq!(slots["record"], json!({"type": "appointment_settings"}));
+    assert_eq!(slots["summary"]["edits"], 2);
+    let mut changes: Vec<Value> = slots["items"]
+        .as_array()
+        .map(|i| i.iter().map(|e| e["changes"][0].clone()).collect())
+        .unwrap_or_default();
+    changes.sort_by_key(Value::to_string);
+    let mut expected = vec![
+        json!({"field": "max_per_slot", "format": "number", "new": "4"}),
+        json!({"field": "max_per_slot", "format": "number", "old": "4", "new": "6"}),
+        json!({"field": "max_per_slot", "format": "number", "old": "6"}),
+    ];
+    expected.sort_by_key(Value::to_string);
+    assert_eq!(changes, expected);
+    Ok(())
+}
