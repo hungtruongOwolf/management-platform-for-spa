@@ -152,7 +152,8 @@ function serve(permissions: string[], { forbidden = false, neverSaved = false }:
 }
 
 const urls = (spy: ReturnType<typeof serve>) => spy.mock.calls.map(([input]) => (typeof input === "string" ? input : input instanceof URL ? input.href : input.url));
-const traces = (spy: ReturnType<typeof serve>) => urls(spy).filter((u) => u.includes("/record-history/"));
+/** The histories asked for, once each (the prefetch and the mounted query may both ask: `staleTime: 0`). */
+const traces = (spy: ReturnType<typeof serve>) => [...new Set(urls(spy).filter((u) => u.includes("/record-history/")))];
 const at = (path: string) => render(<App history={createMemoryHistory({ initialEntries: [path] })} />);
 const lastEdit = `Sửa lần cuối bởi Lan · ${fullDay(today)}`;
 
