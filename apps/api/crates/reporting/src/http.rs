@@ -7,7 +7,7 @@ use crate::dto::{
     LedgerPage, LedgerQuery, PackageOverviewPage, PackageUsage, PackagesQuery, RangeQuery,
     RangeReport,
 };
-use crate::history::RecordRoute;
+use crate::history::{RecordRoute, Settings};
 use crate::history_dto::{RecordHistory, StaffDayQuery};
 use crate::notes_dto::{NotesPage, NotesQuery};
 use crate::{activity, customer, day, history, notes, overview};
@@ -61,6 +61,23 @@ where
             get(staff_day_history),
         )
         .route("/record-history/adjustment/{id}", get(adjustment_history))
+        .route("/record-history/service/{id}", get(service_history))
+        .route(
+            "/record-history/package-plan/{id}",
+            get(package_plan_history),
+        )
+        .route(
+            "/record-history/service-category/{id}",
+            get(service_category_history),
+        )
+        .route(
+            "/record-history/settings/payroll-rules",
+            get(payroll_rules_history),
+        )
+        .route(
+            "/record-history/settings/appointment-settings",
+            get(appointment_settings_history),
+        )
 }
 
 /// Every `/record-history/*` route: the rights first (a caller without them gets `403` whatever
@@ -209,6 +226,79 @@ pub async fn adjustment_history(
     id: Result<Path<Uuid>, PathRejection>,
 ) -> Result<Response, AppError> {
     record_history(&pool, &user, RecordRoute::Adjustment, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/service/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "A service of the price list: added, edited (old → new prices)"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + catalog.manage"),
+        (status = 404)))]
+pub async fn service_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::Service, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/package-plan/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "A package plan: added, edited"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + catalog.manage"),
+        (status = 404)))]
+pub async fn package_plan_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::PackagePlan, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/service-category/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "A group of services: added, renamed, moved"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + catalog.manage"),
+        (status = 404)))]
+pub async fn service_category_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::ServiceCategory, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/settings/payroll-rules", tag = "reports",
+    responses(
+        (status = 200, body = RecordHistory, description = "Every save of the spa's payroll rules; each after the first is an edit"),
+        (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + payroll.read; feature.disabled when the spa has payroll off")))]
+pub async fn payroll_rules_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+) -> Result<Response, AppError> {
+    Ok(no_store(
+        history::read_settings(&pool, &user.actor, Settings::PayrollRules).await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/settings/appointment-settings", tag = "reports",
+    responses(
+        (status = 200, body = RecordHistory, description = "Every save of the calendar's \"số khách tối đa\"; each after the first is an edit"),
+        (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + appointment.settings; feature.disabled when the spa has appointments off")))]
+pub async fn appointment_settings_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+) -> Result<Response, AppError> {
+    Ok(no_store(
+        history::read_settings(&pool, &user.actor, Settings::AppointmentSettings).await?,
+    ))
 }
 
 fn no_store(body: impl Serialize) -> Response {

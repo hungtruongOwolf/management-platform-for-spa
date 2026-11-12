@@ -25,7 +25,7 @@ pub struct StaffDayQuery {
 }
 
 /// The kind of record a history is about, after re-anchoring (a sale's history is its visit's or
-/// its package's; a refund's is its package's). Wave 3 adds the catalogue and the settings.
+/// its package's; a refund's is its package's).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RecordKind {
@@ -39,13 +39,24 @@ pub enum RecordKind {
     DailyReview,
     /// A bonus / penalty, with the entries its edits replaced.
     Adjustment,
+    /// A service of the price list.
+    Service,
+    /// A package plan ("mẫu gói").
+    PackagePlan,
+    /// A group of services of the price list.
+    ServiceCategory,
+    /// The spa's payroll rules (one per spa: no id).
+    PayrollRules,
+    /// The spa's appointment settings, "số khách tối đa" (one per spa: no id).
+    AppointmentSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct RecordRef {
     #[serde(rename = "type")]
     pub kind: RecordKind,
-    /// Absent for a cell of a staff book (`attendance`, `daily_review`): it is a person and a day.
+    /// Absent for a cell of a staff book (`attendance`, `daily_review`), a person and a day, and
+    /// for the spa's own settings (`payroll_rules`, `appointment_settings`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<Uuid>,
 }

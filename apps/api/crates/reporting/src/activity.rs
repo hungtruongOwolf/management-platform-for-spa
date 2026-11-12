@@ -228,6 +228,12 @@ fn fields(action: Action) -> &'static [(&'static str, &'static str, ChangeFormat
             ("/items", "items", F::Text),
             ("/active", "active", F::Flag),
         ],
+        // The writer stores only the new values: the old ones come from the group's previous row
+        // when its history is read ([`chain_category_updates`]); without them, nothing is said.
+        A::CatalogCategoryUpdate => &[
+            ("/name", "name", F::Text),
+            ("/sort_order", "sort_order", F::Number),
+        ],
         A::AppointmentSettings => &[("/max_per_slot", "max_per_slot", F::Number)],
         A::PayrollRulesUpdate => &[
             ("/free_leave_days", "free_leave_days", F::Number),
@@ -503,6 +509,24 @@ pub(crate) fn replaced_adjustment(void: &Row, old: Option<&Row>, new: Row) -> Ac
     e
 }
 
+/// A group of services' `catalog.category_update` stores only its new name and order
+/// (`catalog::commands::update_category`). Read as that group's history (`rows`: its own rows,
+/// any order), each such row takes the previous row's values as what it changed from, so the line
+/// reads "Tên: Gội đầu → Gội đầu dưỡng sinh". The trail is not changed; a row with nothing before
+/// it (a group seeded with the spa) still says nothing.
+pub(crate) fn chain_category_updates(rows: &mut [Row]) {
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    order.sort_by_key(|&i| (rows[i].at, rows[i].id));
+    for pair in order.windows(2) {
+        let (previous, this) = (pair[0], pair[1]);
+        if rows[this].action == Action::CatalogCategoryUpdate.as_str()
+            && rows[this].before.is_none()
+        {
+            rows[this].before = rows[previous].after.clone();
+        }
+    }
+}
+
 fn int(v: Option<&Value>) -> Option<i64> {
     v.and_then(Value::as_i64)
 }
@@ -648,7 +672,7 @@ pub(crate) struct Row {
     pub(crate) action: String,
     pub(crate) entity_type: String,
     pub(crate) entity_id: Uuid,
-    before: Option<Value>,
+    pub(crate) before: Option<Value>,
     pub(crate) after: Option<Value>,
     reason: Option<String>,
     customer_id: Option<Uuid>,
@@ -660,6 +684,9 @@ pub(crate) struct Row {
     package: Option<String>,
     staff_before: Option<String>,
     staff_after: Option<String>,
+    /// `catalog.service_update`: the group of services before / after, by its current name.
+    category_before: Option<String>,
+    category_after: Option<String>,
     /// `visit.update`: the technicians of the lines that changed, by name (`""` = none), in order.
     staff_from: Vec<String>,
     staff_to: Vec<String>,
@@ -827,6 +854,20 @@ fn entry(r: Row) -> ActivityEntry {
             changes.extend(visit_update_changes(after, &moves));
             changes
         }
+        // Its writer keeps no `before`: without the previous row, what changed is unknown.
+        Some(Action::CatalogCategoryUpdate) if before.is_none() => Vec::new(),
+        // The group of services by name (the ids are resolved by the query).
+        Some(Action::CatalogServiceUpdate) => diff(Action::CatalogServiceUpdate, before, after)
+            .into_iter()
+            .map(|c| match c.field.as_str() {
+                "category" => ActivityChange {
+                    old: r.category_before.clone(),
+                    new: r.category_after.clone(),
+                    ..c
+                },
+                _ => c,
+            })
+            .collect(),
         Some(a) => diff(a, before, after),
         None => Vec::new(),
     };
@@ -1092,6 +1133,7 @@ pub(crate) async fn rows_by_ids(
                   s.customer_gender AS "customer_gender?", s.customer_gone AS "customer_gone?",
                   s.name AS "target_name?", s.on_date AS "on_date?", s.package AS "package?",
                   sb.full_name AS "staff_before?", sa.full_name AS "staff_after?",
+                  cb.name AS "category_before?", ca.name AS "category_after?",
                   ARRAY(SELECT coalesce(sf.full_name, '')
                         FROM jsonb_array_elements(
                           CASE WHEN a.action = 'visit.update' AND jsonb_typeof(a.after -> 'staff') = 'array'
@@ -1176,6 +1218,11 @@ pub(crate) async fn rows_by_ids(
              AND sb.id = CASE WHEN a.entity_type = 'appointment' THEN (a.before ->> 'staff_id')::uuid END
            LEFT JOIN app.staff sa ON sa.tenant_id = a.tenant_id
              AND sa.id = CASE WHEN a.entity_type = 'appointment' THEN (a.after ->> 'staff_id')::uuid END
+           -- A service's group of services before / after (ids written by the catalogue).
+           LEFT JOIN app.service_category cb ON cb.tenant_id = a.tenant_id
+             AND cb.id = CASE WHEN a.action = 'catalog.service_update' THEN (a.before ->> 'category_id')::uuid END
+           LEFT JOIN app.service_category ca ON ca.tenant_id = a.tenant_id
+             AND ca.id = CASE WHEN a.action = 'catalog.service_update' THEN (a.after ->> 'category_id')::uuid END
            WHERE a.tenant_id = $1 AND a.id = ANY($3)
            ORDER BY a.at DESC, a.id DESC"#,
         tenant,
@@ -1387,6 +1434,8 @@ mod tests {
             package: None,
             staff_before: None,
             staff_after: None,
+            category_before: None,
+            category_after: None,
             staff_from: Vec::new(),
             staff_to: Vec::new(),
             root,
@@ -1782,5 +1831,62 @@ mod tests {
             amount(Action::CustomerUpdate, Some(&json!({"total": 1}))),
             None
         );
+    }
+
+    #[test]
+    fn a_service_edit_names_its_prices_and_its_group() {
+        let (shampoo, massage) = (Uuid::now_v7().to_string(), Uuid::now_v7().to_string());
+        let mut r = row(
+            Action::CatalogServiceUpdate,
+            true,
+            &[],
+            Some(json!({"name": "Gội", "category_id": massage, "duration_min": 60,
+                        "recommended": true, "active": true,
+                        "prices": {"all": null, "female": 170_000, "male": 150_000}})),
+        );
+        r.before = Some(json!({"name": "Gội", "category_id": shampoo, "duration_min": 60,
+                               "recommended": false, "active": true,
+                               "prices": {"all": null, "female": 150_000, "male": 150_000}}));
+        r.category_before = Some("Gội đầu".to_owned());
+        r.category_after = Some("Massage".to_owned());
+        assert_eq!(
+            fields_of(&entry(r)),
+            [
+                ("price_female", Some("150000"), Some("170000")),
+                ("category", Some("Gội đầu"), Some("Massage")),
+                ("recommended", Some("false"), Some("true")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_group_edit_reads_its_old_values_from_the_row_before() {
+        let group = |action: Action, seconds: i64, name: &str, order: i32| {
+            let mut r = row(
+                action,
+                true,
+                &[],
+                Some(json!({"name": name, "sort_order": order})),
+            );
+            r.at = DateTime::<Utc>::UNIX_EPOCH + Duration::seconds(seconds);
+            r
+        };
+        let moved = || group(Action::CatalogCategoryUpdate, 3, "Gội đầu dưỡng sinh", 3);
+        // On the owner's trail (no previous row): an edit without its old values says nothing.
+        assert!(entry(moved()).changes.is_empty());
+        // As the group's history, newest first as the query returns them.
+        let mut rows = vec![
+            moved(),
+            group(Action::CatalogCategoryUpdate, 2, "Gội đầu dưỡng sinh", 1),
+            group(Action::CatalogCategoryCreate, 1, "Gội đầu", 1),
+        ];
+        chain_category_updates(&mut rows);
+        let lines: Vec<_> = rows.into_iter().map(entry).collect();
+        assert_eq!(fields_of(&lines[0]), [("sort_order", Some("1"), Some("3"))]);
+        assert_eq!(
+            fields_of(&lines[1]),
+            [("name", Some("Gội đầu"), Some("Gội đầu dưỡng sinh"))]
+        );
+        assert!(lines[2].changes.is_empty());
     }
 }
