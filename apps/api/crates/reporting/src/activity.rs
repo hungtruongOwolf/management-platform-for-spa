@@ -1840,13 +1840,17 @@ mod tests {
             Action::CatalogServiceUpdate,
             true,
             &[],
-            Some(json!({"name": "Gội", "category_id": massage, "duration_min": 60,
+            Some(
+                json!({"name": "Gội", "category_id": massage, "duration_min": 60,
                         "recommended": true, "active": true,
-                        "prices": {"all": null, "female": 170_000, "male": 150_000}})),
+                        "prices": {"all": null, "female": 170_000, "male": 150_000}}),
+            ),
         );
-        r.before = Some(json!({"name": "Gội", "category_id": shampoo, "duration_min": 60,
+        r.before = Some(
+            json!({"name": "Gội", "category_id": shampoo, "duration_min": 60,
                                "recommended": false, "active": true,
-                               "prices": {"all": null, "female": 150_000, "male": 150_000}}));
+                               "prices": {"all": null, "female": 150_000, "male": 150_000}}),
+        );
         r.category_before = Some("Gội đầu".to_owned());
         r.category_after = Some("Massage".to_owned());
         assert_eq!(

@@ -1370,10 +1370,7 @@ mod tests {
             assert!(counts_as_edit(kind, &entry(update, &[]), true), "{kind:?}");
             assert!(!edit(kind, &entry(create, &[])), "{kind:?}");
         }
-        assert!(!edit(
-            K::Service,
-            &entry(Action::CatalogPlanUpdate, &[])
-        ));
+        assert!(!edit(K::Service, &entry(Action::CatalogPlanUpdate, &[])));
         // The spa's settings: every save after the first (spec §4.1).
         for (kind, action) in [
             (K::PayrollRules, Action::PayrollRulesUpdate),
@@ -1463,11 +1460,7 @@ mod tests {
         }
         // The catalogue and the settings: the switch, then their screens' own right. A manager
         // shown the history still has neither (spec §7).
-        let owner_rights = actor(&[
-            P::CatalogManage,
-            P::PayrollRead,
-            P::AppointmentSettings,
-        ]);
+        let owner_rights = actor(&[P::CatalogManage, P::PayrollRead, P::AppointmentSettings]);
         for settings in [Settings::PayrollRules, Settings::AppointmentSettings] {
             assert!(require_settings(&owner_rights, settings).is_err());
         }
@@ -1486,7 +1479,10 @@ mod tests {
             assert!(require_route(&manager, route).is_err(), "{route:?}");
         }
         for settings in [Settings::PayrollRules, Settings::AppointmentSettings] {
-            assert!(require_settings(&manager, settings).is_err(), "{settings:?}");
+            assert!(
+                require_settings(&manager, settings).is_err(),
+                "{settings:?}"
+            );
         }
         let catalog = actor(&[P::RecordHistoryRead, P::CatalogManage]);
         assert!(require_route(&catalog, RecordRoute::PackagePlan).is_ok());

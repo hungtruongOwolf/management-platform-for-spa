@@ -1924,7 +1924,10 @@ async fn the_catalogue_says_who_added_and_who_edited(pool: PgPool) -> TestResult
 
     // Seeded with the spa: no line, nobody.
     let seeded = s.owner_history("service", &s.cheaper).await;
-    assert_eq!(seeded["record"], json!({"type": "service", "id": s.cheaper}));
+    assert_eq!(
+        seeded["record"],
+        json!({"type": "service", "id": s.cheaper})
+    );
     assert_eq!(seeded["items"], json!([]));
     assert_eq!(seeded["summary"], json!({"edits": 0, "state": "active"}));
 
@@ -2002,7 +2005,12 @@ async fn the_catalogue_says_who_added_and_who_edited(pool: PgPool) -> TestResult
         Some(json!({"name": "Chăm sóc tay chân"})),
     )
     .await;
-    assert_eq!(other_group.status, StatusCode::CREATED, "{}", other_group.body);
+    assert_eq!(
+        other_group.status,
+        StatusCode::CREATED,
+        "{}",
+        other_group.body
+    );
     let mut moved = service(170_000, 160_000, true);
     moved["category_id"] = other_group.body["id"].clone();
     let moved = s
@@ -2042,7 +2050,10 @@ async fn the_catalogue_says_who_added_and_who_edited(pool: PgPool) -> TestResult
         .await;
     assert_eq!(repriced.status, StatusCode::OK, "{}", repriced.body);
     let plan = s.owner_history("package-plan", &s.plan).await;
-    assert_eq!(plan["record"], json!({"type": "package_plan", "id": s.plan}));
+    assert_eq!(
+        plan["record"],
+        json!({"type": "package_plan", "id": s.plan})
+    );
     assert_eq!(
         item(&plan, "catalog.plan_update")["changes"],
         json!([{"field": "price", "format": "money", "old": "1500000", "new": "1800000"}])
@@ -2100,7 +2111,10 @@ async fn the_catalogue_says_who_added_and_who_edited(pool: PgPool) -> TestResult
     .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     let story = s.owner_history("service-category", &seeded).await;
-    assert_eq!(lines(&story), [("catalog.category_update".to_owned(), Vec::new())]);
+    assert_eq!(
+        lines(&story),
+        [("catalog.category_update".to_owned(), Vec::new())]
+    );
     assert!(story["summary"].get("created").is_none(), "{story}");
     assert_eq!(story["summary"]["edits"], 1);
     assert_eq!(story["summary"]["last"]["actor"]["name"], "Chủ Spa");
@@ -2185,7 +2199,10 @@ async fn the_spa_settings_count_every_save_after_the_first(pool: PgPool) -> Test
         .await;
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     }
-    let slots = s.settings_history(&s.owner, "appointment-settings").await.body;
+    let slots = s
+        .settings_history(&s.owner, "appointment-settings")
+        .await
+        .body;
     assert_eq!(slots["record"], json!({"type": "appointment_settings"}));
     assert_eq!(slots["summary"]["edits"], 2);
     let mut changes: Vec<Value> = slots["items"]
