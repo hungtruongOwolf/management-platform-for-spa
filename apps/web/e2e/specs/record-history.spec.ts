@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ownerState, runFile } from "../stack";
+import { closePayrollMonth } from "../support/db";
 import { WRITE, flatService, spaDay } from "../support/fixtures";
 import { sidewaysOverflow } from "../support/responsive";
 import { credentials, expectAccessible, uniquePhone } from "../support/run";
@@ -471,6 +472,17 @@ test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
     await context.close();
   });
 
+  // The marked group goes with the run (spec record-history K68, K70): nothing is left behind.
+  // After every test of the block (the manager's 403 on its history needs it).
+  test.afterAll(async ({ browser }) => {
+    if (!group) return;
+    const context = await browser.newContext({ storageState: ownerState });
+    const removed = await (await context.newPage()).request.delete(`/api/v1/service-categories/${group}`, { headers: WRITE });
+    // 404: a retry already removed it.
+    expect([204, 404], await removed.text()).toContain(removed.status());
+    await context.close();
+  });
+
   test("a service's edit form: 'Sửa lần cuối bởi …' above its buttons, Giá Nữ old → new", async ({ page }) => {
     const owner = credentials().fullName;
     for (const width of [1280, 360]) {
@@ -604,5 +616,104 @@ test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
     await expect(page.getByRole("button", { name: "Quy tắc lương" })).toHaveCount(0);
     expect(asked).toEqual([]);
     await context.close();
+  });
+});
+
+/**
+ * The read-only day sheet of a closed month (spec record-history K49 (a), K69): a cell of a month
+ * whose payroll is closed opens "chỉ xem", with no input, and the owner reads each book's history
+ * at the end of its part. The month is an old one no other spec reads or writes (2025-06); its
+ * person (who left at its end, so today's books never list them) and their day are written
+ * through the API, then the month is closed for this run's spa only (`closePayrollMonth`, a row:
+ * see why there). Idempotent: a retry finds the month closed and reuses all of it.
+ */
+test.describe("lịch sử trên từng bản ghi: ô ngày của tháng đã chốt", () => {
+  const MONTH = "2025-06";
+  const DAY = "2025-06-10";
+  /** Not stamped: one per run's spa, so a retry finds them again. */
+  const PERSON = "KTV Tháng Đã Chốt";
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await browser.newContext({ storageState: ownerState });
+    const request = (await context.newPage()).request;
+    const sheetOf = async () =>
+      (await (await request.get(`/api/v1/attendance?month=${MONTH}`)).json()) as {
+        closed: boolean;
+        staff: { staff_id: string; full_name: string }[];
+      };
+    let sheet = await sheetOf();
+    if (!sheet.closed) {
+      let person = sheet.staff.find((s) => s.full_name === PERSON)?.staff_id;
+      if (!person) {
+        const created = await request.post("/api/v1/staff", {
+          headers: { ...WRITE, "Idempotency-Key": crypto.randomUUID() },
+          data: { full_name: PERSON, position: "Kỹ thuật viên", joined_on: `${MONTH}-01` },
+        });
+        expect(created.status(), await created.text()).toBe(201);
+        person = ((await created.json()) as { id: string }).id;
+      }
+      const attended = await request.put("/api/v1/attendance", {
+        headers: WRITE,
+        data: { entries: [{ staff_id: person, date: DAY, status: "present", check_in: "09:12", note: "Kẹt xe" }] },
+      });
+      expect(attended.status(), await attended.text()).toBe(200);
+      const reviewed = await request.put("/api/v1/daily-reviews", {
+        headers: WRITE,
+        data: { entries: [{ staff_id: person, date: DAY, compliments: 1, complaints: 0 }] },
+      });
+      expect(reviewed.status(), await reviewed.text()).toBe(200);
+      const profile = (await (await request.get(`/api/v1/staff/${person}`)).json()) as { version: number; status: string };
+      if (profile.status === "active") {
+        const left = await request.post(`/api/v1/staff/${person}/end`, {
+          headers: { ...WRITE, "If-Match": `"${String(profile.version)}"` },
+          data: { ended_on: `${MONTH}-30`, reason: "Nghỉ cuối tháng" },
+        });
+        expect(left.status(), await left.text()).toBe(200);
+      }
+      const run = credentials();
+      await closePayrollMonth(run.slug, run.phone, MONTH);
+      sheet = await sheetOf();
+    }
+    expect(sheet.closed).toBe(true);
+    expect(sheet.staff.map((s) => s.full_name)).toContain(PERSON);
+    await context.close();
+  });
+
+  test("a closed month's cell opens 'chỉ xem': no input, each book's history last in its part", async ({ page }) => {
+    const owner = credentials().fullName;
+    for (const width of [1280, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/nhan-vien?tab=month&month=${MONTH}`);
+      await expect(page.getByText("Tháng này đã chốt lương: chỉ xem.", { exact: false })).toBeVisible();
+      // Every cell of a closed month only opens to read (K52).
+      await expect(page.getByText("Bấm một ô để xem.", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: new RegExp(`^${PERSON}, .* 10/06/2025: Đi làm`) }).click();
+
+      const sheet = page.getByRole("dialog", { name: PERSON });
+      await expect(sheet.getByText(/· chỉ xem$/)).toBeVisible();
+      await expect(sheet.locator("input, select, textarea")).toHaveCount(0);
+      for (const [part, line] of [
+        ["Chấm công", `${owner} chấm công`],
+        ["Khen, phàn nàn", `${owner} ghi khen / phàn nàn`],
+      ] as const) {
+        const region = sheet.getByRole("region", { name: part });
+        const trace = region.getByRole("button", { name: new RegExp(`^Ghi bởi ${owner} · `) });
+        await expect(trace).toBeVisible();
+        // The history is the part's last element (design record-history §2.8).
+        expect(await region.evaluate((el) => {
+          const buttons = el.querySelectorAll("button");
+          const last = buttons[buttons.length - 1];
+          return Boolean(last && el.lastElementChild?.contains(last) && last.textContent?.startsWith("Ghi bởi "));
+        })).toBe(true);
+        await trace.click();
+        await expect(trace).toHaveAttribute("aria-expanded", "true");
+        await expect(region.getByText(line)).toBeVisible();
+      }
+      await expect(sheet.getByRole("region", { name: "Chấm công" })).toContainText("Kẹt xe");
+      if (width === 360) expect(await sidewaysOverflow(page)).toBe(0);
+      await expectAccessible(page, `record-history-closed-month-${String(width)}`);
+      await sheet.getByRole("button", { name: "Đóng" }).first().click();
+      await expect(sheet).toBeHidden();
+    }
   });
 });

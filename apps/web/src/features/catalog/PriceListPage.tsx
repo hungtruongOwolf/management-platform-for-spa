@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Icon } from "../../app/Icon";
 import { PageHeader } from "../../app/PageHeader";
 import { fieldMessage, messageFor } from "../../lib/errors";
@@ -49,19 +50,16 @@ export function PriceListPage() {
   const done = () => {
     setEditing(null);
   };
-  // After "Xóa nhóm" (K68) the button that had focus is gone: focus the next group's heading, or
-  // the page's title when the deleted group was the last one. Once the form has closed.
-  const [refocus, setRefocus] = useState<string | null>(null);
-  useEffect(() => {
-    if (refocus === null) return;
-    focusHeading(refocus);
-    setRefocus(null);
-  }, [refocus]);
+  // After "Xóa nhóm" (K68/K71) the button that had focus is gone: focus the next group's heading,
+  // or the page's title when the deleted group was the last one, once the form has closed.
+  // `categories` is the list this form was opened from, the deleted group still in it.
   const deleted = (id: string) => {
     const order = categories.data?.map((c) => c.id) ?? [];
     const next = order[order.indexOf(id) + 1];
-    setEditing(null);
-    setRefocus(next ? `cat-${next}` : "price-list-title");
+    flushSync(() => {
+      setEditing(null);
+    });
+    focusHeading(next ? `cat-${next}` : "price-list-title");
   };
 
   const header = (

@@ -212,6 +212,18 @@ Tài sản: tên người ghi / sửa, giá trị cũ → mới (tên, SĐT khá
 | D | Quét lịch sử hàng loạt (vòng qua mọi id) | một bản ghi / request, ≤ 100 dòng, 3–4 câu SQL theo index (chuỗi sửa thưởng / phạt: mỗi bước một câu, ≤ 20 bước mỗi chiều, đợt 2); cùng giới hạn tần suất chung của API; dữ liệu đúng loại người đó vốn xem được | bench p95 ≤ 100 ms (1) |
 | E | Màn Nhật ký thao tác bật lại ngoài ý muốn | cờ `activity_log` chỉ operator ghi (`app_rw` chỉ đọc `tenant_feature`); mặc định ở code là tắt, test khóa mặc định | `feature` unit + `platform.rs` (1) |
 
+## Xóa nhóm dịch vụ (`DELETE /service-categories/{id}`, secure review 2026-11-12, [spec record-history K68](../product/specs/record-history.md), migration 0054)
+Lần đầu `app_rw` có `DELETE` trên một bảng danh mục (0054 chỉ cấp cho `service_category`; `service` vẫn không xóa được, AC1.6). Tài sản: bảng giá (dịch vụ mất nhóm thì không hiện, báo cáo theo nhóm vỡ), dấu vết ai xóa gì.
+| STRIDE | Lạm dụng | Kiểm soát (server) | Test |
+|---|---|---|---|
+| E | Quản lý / KTV gọi thẳng `DELETE` bằng curl | `actor.require(catalog.manage)` trước mọi đọc (chỉ chủ spa); nút ẩn trên web chỉ là UX | `catalog_manage.rs::managers_cannot_change_the_price_list` (`403 auth.forbidden`, nhóm còn), `authz_matrix.rs` mọi vai trò |
+| I / T | IDOR: id nhóm của spa khác | `WHERE tenant_id = $1` tường minh ở cả khóa / đếm / xóa + RLS `tenant_isolation` (policy cho mọi lệnh, nên `DELETE` cũng chỉ thấy spa của session) → `404` | `catalog_manage.rs::another_spa_cannot_edit_this_catalog`, `authz_matrix.rs::ids_from_another_spa_are_not_found` |
+| T | Xóa nhóm còn dịch vụ (kể cả ngừng bán) làm dịch vụ mồ côi | kiểm `EXISTS` dịch vụ sau khi khóa dòng nhóm; FK `service.category_id` (NO ACTION) là bảo đảm cuối, vi phạm → `409 catalog.category_in_use` | `::a_group_with_a_service_on_sale_or_not_is_never_deleted` |
+| T | TOCTOU: dịch vụ được thêm / chuyển vào nhóm đúng lúc nhóm bị xóa | ghi dịch vụ giữ nhóm `FOR KEY SHARE` (`category_exists`); xóa khóa `FOR UPDATE` → một bên chờ bên kia: xóa sau thì thấy dịch vụ (`409`), ghi sau thì không còn nhóm (`422 category_id not_found`, không phải `500` FK); FK bắt mọi trường hợp còn lại | `::a_delete_waits_for_a_service_being_added_and_then_refuses`, `::a_service_added_while_its_group_is_deleted_is_refused` (khóa thật, chờ `pg_stat_activity`; bỏ `FOR KEY SHARE` → `500`) |
+| R | Chủ spa xóa rồi chối, hoặc mất dấu nhóm đã xóa | audit `catalog.category_delete` cùng transaction, `before` = tên + thứ tự; Nhật ký thao tác và lịch sử dịch vụ (đổi nhóm, K41) đọc tên nhóm đã xóa từ dòng này | `hardening.rs::every_catalog_and_profile_write_is_audited`, `catalog_manage.rs::an_empty_group_is_deleted_once_and_the_trail_keeps_its_name`, `activity_log.rs::a_deleted_group_keeps_its_name_on_every_line` |
+| D | Xóa hàng loạt / gọi lặp | một nhóm một request; lần hai `404`; cùng giới hạn tần suất chung | `::an_empty_group_is_deleted_once…` |
+| — | Giữ quyền `DELETE` rộng hơn cần | grant chỉ trên `app.service_category`; không trigger / hàm definer mới | review migration |
+
 ## Còn mở
 - Lịch sử trên từng bản ghi (ADR-0022): quản lý được bật thấy tên cũ của khách, không thấy SĐT cũ. Khi cờ `activity_log` tắt (mặc định), chủ spa không thấy việc của đội vận hành trên UI (sửa ADR-0018 D6 / ADR-0003); dữ liệu vẫn ghi, operator bật cờ khi cần.
 - Danh sách thao tác yêu cầu nhập lại mật khẩu: chỉ thao tác bảo mật tài khoản (EM 2026-11-05). Hiện dùng `AuthUser::require_recent_auth` ở tạo / đặt lại mật khẩu / đổi vai trò tài khoản nhân viên (ADR-0016, `staff_logins.rs::owner_login_actions_need_a_recent_reauth`); đổi mật khẩu của chính mình đòi mật khẩu hiện tại; cài đặt MFA sau đăng nhập chưa có route. Route mới loại này: dùng guard + test `401 auth.reauth_required`.

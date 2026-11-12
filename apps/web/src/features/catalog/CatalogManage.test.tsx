@@ -332,6 +332,8 @@ describe("owner edits the price list", () => {
       await user.click(within(sheet).getByRole("button", { name: "Thôi" }));
       expect(screen.queryByRole("dialog", { name: /^Xóa nhóm/ })).toBeNull();
       expect(form).toBeInTheDocument();
+      // Back on the button that opened the sheet.
+      expect(within(form).getByRole("button", { name: "Xóa nhóm Nhóm thêm nhầm" })).toHaveFocus();
       expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     });
 

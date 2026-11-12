@@ -107,3 +107,37 @@ export async function switchFeatureOn(slug: string, feature: string): Promise<vo
     await sql.end();
   }
 }
+
+/**
+ * Closes the payroll month `month` (`YYYY-MM`) of the run's spa as `POST /payroll/close` leaves it
+ * for the books: the period row `closed`, by the owner (no payslips). Idempotent: an already
+ * closed month stays as it was (0017: a closed month never changes).
+ *
+ * A row, not the API: the close needs pay terms and that month's evaluation for everyone employed
+ * then, and a profile without a start date (setup's "KTV E2E", most profiles other specs add)
+ * counts in every month; giving them pay terms would change other specs' data. The month is old
+ * and no other spec reads or writes it (spec record-history K69).
+ */
+export async function closePayrollMonth(slug: string, ownerPhone: string, month: string): Promise<void> {
+  const sql = postgres(stack.ownerDatabaseUrl(), {
+    max: 1,
+    onnotice: () => undefined,
+  });
+  try {
+    const rows = await sql`
+      INSERT INTO app.payroll_period (tenant_id, period, status, closed_at, closed_by)
+      SELECT t.id, ${`${month}-01`}::date, 'closed', now(), u.id
+        FROM app.tenant t, app.user_account u
+       WHERE t.slug = ${slug} AND u.phone_e164 = ${e164(ownerPhone)}
+      ON CONFLICT (tenant_id, period) DO UPDATE
+        SET status = 'closed', closed_at = EXCLUDED.closed_at, closed_by = EXCLUDED.closed_by
+        WHERE app.payroll_period.status = 'open'
+      RETURNING tenant_id`;
+    const closed = await sql`
+      SELECT 1 FROM app.payroll_period p JOIN app.tenant t ON t.id = p.tenant_id
+       WHERE t.slug = ${slug} AND p.period = ${`${month}-01`}::date AND p.status = 'closed'`;
+    if (closed.length === 0) throw new Error(`month ${month} of ${slug} not closed (${String(rows.length)} rows)`);
+  } finally {
+    await sql.end();
+  }
+}

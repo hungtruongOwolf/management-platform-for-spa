@@ -1,6 +1,7 @@
 import type { ServiceCategory } from "@vpyd/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { BottomSheet } from "../../components/BottomSheet";
 import { ApiError, api } from "../../lib/api";
 import { addMessages, fieldMessage, messageFor } from "../../lib/errors";
@@ -52,6 +53,7 @@ export function CategoryForm({
   const id = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const removeButton = useRef<HTMLButtonElement>(null);
   const [name, setName] = useState(category.name);
   const [touched, setTouched] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -139,6 +141,7 @@ export function CategoryForm({
             </button>
             {deletable && (
               <button
+                ref={removeButton}
                 type="button"
                 aria-label={`Xóa nhóm ${category.name}`}
                 onClick={() => {
@@ -157,7 +160,12 @@ export function CategoryForm({
         <DeleteCategory
           category={category}
           onClose={() => {
-            setConfirming(false);
+            // The sheet leaves the page open: back on the button that opened it (gone after a
+            // refused delete that showed the group's new service: then the form's title).
+            flushSync(() => {
+              setConfirming(false);
+            });
+            (removeButton.current ?? heading.current)?.focus();
           }}
           onDeleted={onDeleted ?? onDone}
         />

@@ -464,11 +464,13 @@ describe("HISTORY", () => {
     "tenant.suspended",
     "tenant.unsuspended",
     "tenant.owner_mfa_changed",
+    // A deleted group has no screen left (K68).
+    "catalog.category_delete",
   ];
 
-  it("places every audit action (a Record over AuditAction: a new one fails the typecheck): 37 with words, 27 without", () => {
+  it("places every audit action (a Record over AuditAction: a new one fails the typecheck): 37 with words, 28 without", () => {
     const keys = Object.keys(HISTORY) as AuditAction[];
-    expect(keys).toHaveLength(64);
+    expect(keys).toHaveLength(65);
     expect(keys.filter((k) => HISTORY[k] === null).sort()).toEqual([...NONE].sort());
     expect(keys.filter((k) => HISTORY[k] !== null)).toHaveLength(37);
   });

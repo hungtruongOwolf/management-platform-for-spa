@@ -72,6 +72,7 @@ Route nằm ở `apps/api/crates/*/src/http.rs` (lịch hẹn: `operations/src/a
 | `POST /auth/switch-tenant` | Đổi spa đang làm việc; **xoay token** (đổi quyền); spa không phải thành viên → `404` | membership | — | write |
 | `GET /service-categories` · `GET /services?active=` · `GET /package-plans?active=` | Bảng giá (US1) | `catalog.read` | — | read |
 | `POST /service-categories` · `PUT /service-categories/{id}` | Thêm / đổi tên + thứ tự nhóm (S4 ✅) | `catalog.manage` | — | write |
+| `DELETE /service-categories/{id}` | Xóa nhóm chưa có dịch vụ nào, kể cả ngừng bán (record-history K68, 0054): `204`; `404`; `409 catalog.category_in_use`; khóa nhóm `FOR UPDATE` + FK, ghi dịch vụ giữ nhóm `FOR KEY SHARE` | `catalog.manage` | — | write |
 | `POST /services` · `PUT /services/{id}` (If-Match) | Dịch vụ + `prices` (all \| female/male). **Ngừng bán = `active:false` trong PUT**, không có endpoint xóa (S4 ✅) | `catalog.manage` | — | write |
 | `POST /package-plans` · `PUT /package-plans/{id}` (If-Match) | Gói: items `service × sessions + bonus` (S4 ✅) | `catalog.manage` | — | write |
 | `GET /staff?status=active` | Picker KTV, người chốt; `status` = `active` (mặc định), `left` hoặc `all`; chỉ trả tên, chức vụ, trạng thái (S6 ✅) | `staff.read_basic` | — | read |

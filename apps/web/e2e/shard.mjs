@@ -27,6 +27,8 @@ const WEIGHTS = {
   "management.spec.ts": 16,
   "notes.spec.ts": 7,
   "onboarding.spec.ts": 6,
+  // Estimated (2026-11-12, "Xóa nhóm"): two short tests, 4 axe runs.
+  "price-list.spec.ts": 6,
   "quay-upsell.spec.ts": 31,
   "sales.spec.ts": 4,
   "staff.spec.ts": 30,
