@@ -33,6 +33,12 @@ export interface RecordTraceProps {
   onForbidden?: (() => void) | undefined;
   /** Focus the disclosure button once shown (opened from a row's ⋯ menu, whose item is gone). */
   autoFocus?: boolean | undefined;
+  /**
+   * When the record was opened (`Date.now()`; set by `LazyRecordTrace`, which may have asked
+   * already): a reply from then on is this open's and is not asked again; an older one (a
+   * previous open) is. Defaults to this component's mount.
+   */
+  openedAt?: number | undefined;
 }
 
 export const LOADING_TEXT = "Đang tải ai ghi, ai sửa…";
@@ -82,9 +88,14 @@ export function RecordTrace({
   focusOnHide,
   onForbidden,
   autoFocus = false,
+  openedAt,
 }: RecordTraceProps) {
   const queryClient = useQueryClient();
-  const history = useQuery(recordHistoryQuery(record));
+  const [mountedAt] = useState(Date.now);
+  const since = openedAt ?? mountedAt;
+  // One request per open: the cached reply of an earlier open is shown while it is asked again
+  // (another browser may have written since; writes here invalidate it anyway, lib/queryClient.ts).
+  const history = useQuery({ ...recordHistoryQuery(record), refetchOnMount: (q) => q.state.dataUpdatedAt < since });
   const [open, setOpen] = useState(defaultOpen);
   const generated = useId();
   const regionId = id ?? `rt-${generated}`;
