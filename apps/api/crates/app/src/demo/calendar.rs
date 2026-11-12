@@ -436,16 +436,54 @@ async fn family(
         return Ok(0);
     };
     let technicians = ctx.active_technicians();
-    let service = |name: &str| ctx.catalog.service(name);
+    // The days' bookings are drawn at random, so the technician drawn for the mother can already
+    // be busy at 10:00 on some dates (`appointment.staff_busy`, CI 2026-11-13): then the next one,
+    // then nobody yet ("chưa gán KTV"). The family is always booked.
+    let drawn = rng.pick(&technicians).copied();
+    let mut choices: Vec<Option<Uuid>> = vec![drawn];
+    choices.extend(
+        technicians
+            .iter()
+            .copied()
+            .filter(|t| Some(*t) != drawn)
+            .map(Some),
+    );
+    choices.push(None);
+    for staff in choices {
+        match book_family(ctx, customer_ids, (host, partner), day, staff).await {
+            Err(e) if e.code() == "appointment.staff_busy" => {}
+            Ok(_) => return Ok(3),
+            Err(e) if refused(&e) => return Ok(0),
+            Err(e) => return Err(fail("book a family")(e)),
+        }
+    }
+    Ok(0)
+}
+
+/// The family's group booking, the mother with `staff`.
+async fn book_family(
+    ctx: &Ctx<'_>,
+    customer_ids: &[Uuid],
+    (host, partner): (usize, usize),
+    day: NaiveDate,
+    staff: Option<Uuid>,
+) -> Result<(), AppError> {
+    let service = |name: &str| {
+        ctx.catalog
+            .service(name)
+            .map_err(|e| AppError::Internal(e.to_string()))
+    };
     let input = AppointmentGroupCreate {
-        starts_at: ctx.at(day, 10 * 60)?,
+        starts_at: ctx
+            .at(day, 10 * 60)
+            .map_err(|e| AppError::Internal(e.to_string()))?,
         note: Some("Gia đình đặt cùng giờ, xếp 3 giường cạnh nhau".to_owned()),
         people: vec![
             GroupPersonCreate {
                 customer_id: Some(customer_ids[host]),
                 guest: None,
                 service_ids: vec![service("Thân Tâm An Định")?],
-                staff_id: rng.pick(&technicians).copied(),
+                staff_id: staff,
                 starts_at: None,
                 duration_min: None,
             },
@@ -472,13 +510,9 @@ async fn family(
         companions: Vec::new(),
     };
     let (key, hash) = idempotency();
-    match retry(|| {
+    retry(|| {
         operations::appointments::service::book_group(ctx.app, &ctx.manager, key, hash, &input)
     })
     .await
-    {
-        Ok(_) => Ok(input.people.len()),
-        Err(e) if refused(&e) => Ok(0),
-        Err(e) => Err(fail("book a family")(e)),
-    }
+    .map(|_| ())
 }
