@@ -276,7 +276,13 @@ fn fields(action: Action) -> &'static [(&'static str, &'static str, ChangeFormat
         ],
         A::StaffLoginRole => &[("/role", "role", F::Code)],
         A::CustomerPackageExtend => &[("/expires_on", "expires_on", F::Date)],
-        A::AppointmentUpdate => &[("/starts_at", "starts_at", F::Instant)],
+        // The booking's technician and its note (changed or not, never the text) are worded by
+        // [`entry`]; `service_ids` / `companions` are written only when the edit touched them.
+        A::AppointmentUpdate => &[
+            ("/starts_at", "starts_at", F::Instant),
+            ("/service_ids", "services", F::Text),
+            ("/companions", "companions", F::Number),
+        ],
         // The technicians (`staff`, by name) and the session note (`session_note`, set or not)
         // are worded by [`visit_update_changes`].
         A::VisitUpdate => &[
@@ -399,6 +405,97 @@ fn visit_update_changes(
         });
     }
     changes
+}
+
+/// A staff-book cell rewritten with only its note's text changed (ADR-0022: "có sửa", never the
+/// text). The writers store a row only when something differs, and keep everything but the note's
+/// text: so a row whose kept fields are all equal and that has a note on both sides changed exactly
+/// that text. `changes` are the ones [`diff`] found.
+fn note_only_edit(
+    action: Action,
+    before: Option<&Value>,
+    after: Option<&Value>,
+    changes: &[ActivityChange],
+) -> bool {
+    let (Some(before), Some(after)) = (before, after) else {
+        return false;
+    };
+    let kept: &[&str] = match action {
+        // `late_minutes` follows the check-in and the shift: kept, though not shown.
+        Action::AttendanceRecord => &["status", "check_in", "check_out", "late_minutes"],
+        Action::EvaluationDailyReview => &["compliments", "complaints"],
+        _ => return false,
+    };
+    let noted = |side: &Value| side.get("has_note").and_then(Value::as_bool) == Some(true);
+    changes.is_empty()
+        && noted(before)
+        && noted(after)
+        && kept.iter().all(|k| before.get(*k) == after.get(*k))
+}
+
+/// The bonus / penalty fields an edit can change (`staff.adjustment` writes them all).
+const ADJUSTMENT_FIELDS: &[(&str, ChangeFormat)] = &[
+    ("kind", ChangeFormat::Code),
+    ("amount", ChangeFormat::Money),
+    ("points", ChangeFormat::Number),
+    ("occurred_on", ChangeFormat::Date),
+    ("corrects_month", ChangeFormat::Text),
+];
+
+/// One line for an edit of a bonus / penalty (spec record-history D9, architecture §4.3: `PUT
+/// /adjustments/{id}` voids the entry and records the corrected one in one transaction): the new
+/// entry's `staff.adjustment` with the void folded in, and what changed from the replaced entry —
+/// its own `staff.adjustment` row (`old`, absent when the trail has none) — field by field: the
+/// person (by name, an edit may move it to someone else), kind, amount, points, day, the corrected
+/// month and the reason. The money of the line is in the change, not repeated.
+pub(crate) fn replaced_adjustment(void: &Row, old: Option<&Row>, new: Row) -> ActivityEntry {
+    let was = old.and_then(|o| o.after.as_ref());
+    let is = new.after.clone();
+    let mut changes = Vec::new();
+    let was_name = old.map_or(&void.target_name, |o| &o.target_name);
+    if old.map_or(void.entity_id, |o| o.entity_id) != new.entity_id {
+        changes.push(ActivityChange {
+            field: "person".to_owned(),
+            format: ChangeFormat::Text,
+            old: was_name.clone(),
+            new: new.target_name.clone(),
+        });
+    }
+    fn present<'a>(side: Option<&'a Value>, key: &str) -> Option<&'a Value> {
+        side.and_then(|s| s.get(key)).filter(|v| !v.is_null())
+    }
+    for (key, format) in ADJUSTMENT_FIELDS {
+        // The void keeps the replaced entry's day: the one field known without its row.
+        let old_value = match (was, *key) {
+            (None, "occurred_on") => present(void.before.as_ref(), key),
+            (None, _) => continue,
+            (Some(w), _) => present(Some(w), key),
+        };
+        let new_value = present(is.as_ref(), key);
+        if old_value != new_value {
+            changes.push(ActivityChange {
+                field: (*key).to_owned(),
+                format: *format,
+                old: scalar(old_value),
+                new: scalar(new_value),
+            });
+        }
+    }
+    let old_reason = old.and_then(|o| o.reason.clone());
+    if old.is_some() && old_reason != new.reason {
+        changes.push(ActivityChange {
+            field: "reason".to_owned(),
+            format: ChangeFormat::Text,
+            old: old_reason,
+            new: new.reason.clone(),
+        });
+    }
+    let mut e = entry(new);
+    e.changes = changes;
+    e.amount = None;
+    e.reason = None;
+    e.folded = vec![void.action.clone()];
+    e
 }
 
 fn int(v: Option<&Value>) -> Option<i64> {
@@ -581,6 +678,16 @@ impl Row {
             && self.same_moment(over)
             && self.fold_keys.iter().any(|k| over.fold_keys.contains(k))
     }
+
+    /// The bonus / penalty a `staff.adjustment` / `staff.adjustment_void` row is about.
+    pub(crate) fn adjustment_id(&self) -> Option<Uuid> {
+        [self.after.as_ref(), self.before.as_ref()]
+            .into_iter()
+            .flatten()
+            .find_map(|side| side.get("adjustment_id"))
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse().ok())
+    }
 }
 
 /// The page's lines, in order, each with the rows folded into it (in the order they were
@@ -718,18 +825,44 @@ fn entry(r: Row) -> ActivityEntry {
         Some(a) => diff(a, before, after),
         None => Vec::new(),
     };
-    // The booking's technician, by name (the ids are resolved by the query).
+    // The booking's technician, by name (the ids are resolved by the query); a change between two
+    // people of the same name is still a change (the ids decide, as `edited` does).
+    let staff_id = |side: Option<&Value>| side.and_then(|s| s.get("staff_id")).cloned();
     if matches!(
         action,
         Some(Action::AppointmentUpdate | Action::AppointmentArrive)
-    ) && r.staff_before != r.staff_after
-        && after.is_some_and(|a| a.get("staff_id").is_some())
+    ) && after.is_some_and(|a| a.get("staff_id").is_some())
+        && staff_id(before) != staff_id(after)
     {
         changes.push(ActivityChange {
             field: "staff".to_owned(),
             format: ChangeFormat::Text,
             old: r.staff_before.clone(),
             new: r.staff_after.clone(),
+        });
+    }
+    if action == Some(Action::AppointmentUpdate)
+        && after
+            .and_then(|a| a.get("note_changed"))
+            .and_then(Value::as_bool)
+            == Some(true)
+    {
+        // The booking note changed: that it did, never its text.
+        changes.push(ActivityChange {
+            field: "booking_note".to_owned(),
+            format: ChangeFormat::Text,
+            old: None,
+            new: None,
+        });
+    }
+    if let Some(a) = action
+        && note_only_edit(a, before, after, &changes)
+    {
+        changes.push(ActivityChange {
+            field: "has_note".to_owned(),
+            format: ChangeFormat::Flag,
+            old: None,
+            new: None,
         });
     }
     ActivityEntry {

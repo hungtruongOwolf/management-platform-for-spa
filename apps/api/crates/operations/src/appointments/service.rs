@@ -310,17 +310,20 @@ fn dto(
         visit_id: r.visit_id,
         version: r.version,
         created_at: r.created_at,
+        edited: r.edited,
     })
 }
 
-/// Appointments with their services in two queries (no N+1).
+/// Appointments with their services in two queries (no N+1). `with_edited`: also whether each was
+/// moved or given another technician ("Đã sửa", ADR-0022), for `record.history.read` holders.
 async fn load(
     tx: &mut TenantTx,
     id: Option<Uuid>,
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
+    with_edited: bool,
 ) -> Result<Vec<AppointmentDto>, AppError> {
-    let rows = repo::appointments(tx, id, from, to).await?;
+    let rows = repo::appointments(tx, id, from, to, with_edited).await?;
     let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
     let mut services: HashMap<Uuid, Vec<AppointmentServiceDto>> = HashMap::new();
     for s in repo::services_of(tx, &ids).await? {
@@ -411,8 +414,16 @@ async fn walk_ins(
     Ok(out)
 }
 
-async fn load_one(tx: &mut TenantTx, id: Uuid) -> Result<AppointmentDto, AppError> {
-    load(tx, Some(id), None, None)
+/// One appointment as a write answers it: with `edited` when the caller may see it, so the
+/// calendar the answer is written into keeps its chip (`appointments/cache.ts`).
+async fn load_one(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<AppointmentDto, AppError> {
+    load(
+        tx,
+        Some(id),
+        None,
+        None,
+        actor.can(Permission::RecordHistoryRead),
+    )
         .await?
         .pop()
         .ok_or_else(|| AppError::Internal("appointment vanished".into()))
@@ -462,7 +473,10 @@ pub async fn calendar(
     if (to - from).num_days() >= domain::MAX_RANGE_DAYS {
         return Err(invalid("to", "range_too_long"));
     }
-    let appointments = load(&mut tx, None, Some(from), Some(to)).await?;
+    // "Đã sửa" only for the list view that asks (`marks=true`) and those who may see it: the day
+    // and week grids never show it, so they never pay for it.
+    let with_edited = query.marks == Some(true) && actor.can(Permission::RecordHistoryRead);
+    let appointments = load(&mut tx, None, Some(from), Some(to), with_edited).await?;
     // Entitled data only: walk-in visits are visit records (spec §10.1).
     let visits = if actor.can(Permission::VisitRead) {
         walk_ins(&mut tx, &spa, from, to).await?
@@ -652,7 +666,15 @@ pub async fn update_settings(
 pub async fn get(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
-    let found = load(&mut tx, Some(id), None, None).await?.pop();
+    let found = load(
+        &mut tx,
+        Some(id),
+        None,
+        None,
+        actor.can(Permission::RecordHistoryRead),
+    )
+    .await?
+    .pop();
     tx.commit().await?;
     found.ok_or(AppError::NotFound)
 }
@@ -904,7 +926,7 @@ pub async fn book_as_of(
     if host.is_some_and(|(_, host_day)| host_day != day) {
         return Err(invalid("starts_at", "not_same_day"));
     }
-    let body = serde_json::to_value(load_one(&mut tx, id).await?)
+    let body = serde_json::to_value(load_one(&mut tx, actor, id).await?)
         .map_err(|e| AppError::Internal(e.to_string()))?;
     idempotency::complete(&mut tx, actor, key, 201, &body).await?;
     tx.commit().await?;
@@ -989,7 +1011,7 @@ pub async fn book_group(
     }
     let mut appointments = Vec::with_capacity(ids.len());
     for id in ids {
-        appointments.push(load_one(&mut tx, id).await?);
+        appointments.push(load_one(&mut tx, actor, id).await?);
     }
     let body = serde_json::to_value(AppointmentGroupDto {
         group_id,
@@ -1190,7 +1212,7 @@ pub async fn update(
         None,
     )
     .await?;
-    let dto = load_one(&mut tx, id).await?;
+    let dto = load_one(&mut tx, actor, id).await?;
     tx.commit().await?;
     Ok(dto)
 }
@@ -1240,7 +1262,7 @@ pub async fn arrive(
         None,
     )
     .await?;
-    let dto = load_one(&mut tx, id).await?;
+    let dto = load_one(&mut tx, actor, id).await?;
     tx.commit().await?;
     Ok(dto)
 }
@@ -1286,7 +1308,7 @@ pub async fn undo_arrival(
         None,
     )
     .await?;
-    let dto = load_one(&mut tx, id).await?;
+    let dto = load_one(&mut tx, actor, id).await?;
     tx.commit().await?;
     Ok(dto)
 }
@@ -1449,10 +1471,10 @@ pub async fn move_group(
         not_moved: Vec::with_capacity(staying.len()),
     };
     for member in moved {
-        out.moved.push(load_one(&mut tx, member).await?);
+        out.moved.push(load_one(&mut tx, actor, member).await?);
     }
     for member in staying {
-        out.not_moved.push(load_one(&mut tx, member).await?);
+        out.not_moved.push(load_one(&mut tx, actor, member).await?);
     }
     out.moved.sort_by_key(|a| (a.starts_at, a.id));
     tx.commit().await?;
@@ -1527,7 +1549,7 @@ pub async fn close_as_of(
         Some(&reason),
     )
     .await?;
-    let dto = load_one(&mut tx, id).await?;
+    let dto = load_one(&mut tx, actor, id).await?;
     tx.commit().await?;
     Ok(dto)
 }
@@ -1640,7 +1662,7 @@ pub async fn complete_as_of(
     )
     .await?;
     let done = AppointmentCompleted {
-        appointment: load_one(&mut tx, id).await?,
+        appointment: load_one(&mut tx, actor, id).await?,
         // Like `POST /visits`, the stored response never carries the note.
         visit: crate::service::load_one(&mut tx, cipher, actor, visit_id, false).await?,
     };

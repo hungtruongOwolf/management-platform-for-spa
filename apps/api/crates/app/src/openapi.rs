@@ -117,6 +117,9 @@ use utoipa::OpenApi;
         reporting::http::refund_history,
         reporting::http::customer_package_history,
         reporting::http::customer_record_history,
+        reporting::http::appointment_history,
+        reporting::http::staff_day_history,
+        reporting::http::adjustment_history,
         platform::http::admin_login,
         platform::http::admin_logout,
         platform::http::admin_reauth,
@@ -160,6 +163,7 @@ use utoipa::OpenApi;
         reporting::dto::FollowUpFilter,
         reporting::dto::InactiveSort,
         reporting::notes_dto::NoteKind,
+        reporting::history_dto::StaffBook,
         reporting::activity_dto::ActivityKind,
         // Every action key, so the web's sentence table is checked against the code (ADR-0021).
         reporting::activity_dto::AuditAction,

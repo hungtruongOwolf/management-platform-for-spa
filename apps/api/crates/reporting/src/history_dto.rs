@@ -2,25 +2,52 @@
 
 use crate::activity_dto::{ActivityActor, ActivityEntry};
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::Serialize;
-use utoipa::ToSchema;
+use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+/// Which staff book a day's cell is read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StaffBook {
+    /// "Chấm công" (`attendance.record`).
+    Attendance,
+    /// "Khen, phàn nàn" (`evaluation.record`).
+    DailyReview,
+}
+
+/// `GET /record-history/staff-day/{staff_id}/{date}?book=`.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct StaffDayQuery {
+    pub book: StaffBook,
+}
+
 /// The kind of record a history is about, after re-anchoring (a sale's history is its visit's or
-/// its package's; a refund's is its package's). Later waves add the other kinds.
+/// its package's; a refund's is its package's). Wave 3 adds the catalogue and the settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RecordKind {
     Visit,
     CustomerPackage,
     Customer,
+    Appointment,
+    /// One staff member's attendance on one day (a cell of the book; it has no id).
+    Attendance,
+    /// One staff member's praise / complaints on one day (a cell of the book; it has no id).
+    DailyReview,
+    /// A bonus / penalty, with the entries its edits replaced.
+    Adjustment,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct RecordRef {
     #[serde(rename = "type")]
     pub kind: RecordKind,
-    pub id: Uuid,
+    /// Absent for a cell of a staff book (`attendance`, `daily_review`): it is a person and a day.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
 }
 
 /// Where "Ghi bởi / Tạo bởi" comes from (spec D12).
@@ -60,11 +87,11 @@ pub struct RecordLast {
 #[serde(rename_all = "snake_case")]
 pub enum RecordState {
     Active,
-    /// A visit voided ("Đã hủy").
+    /// A visit voided ("Đã hủy"); a bonus / penalty removed.
     Voided,
-    /// A visit replaced by "Sửa lượt" ("Đã thay").
+    /// A visit replaced by "Sửa lượt" ("Đã thay"); a bonus / penalty replaced by its edit.
     Replaced,
-    /// A package cancelled.
+    /// A package or a booking cancelled.
     Cancelled,
 }
 

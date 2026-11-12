@@ -399,14 +399,20 @@ pub struct AppointmentRow {
     pub companions: Vec<String>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
+    /// "Đã sửa" (ADR-0022 D9); `None` unless asked for (`record.history.read`).
+    pub edited: Option<bool>,
 }
 
-/// One appointment (`id`) or those of `from..=to`, earliest first.
+/// One appointment (`id`) or those of `from..=to`, earliest first. `with_edited`: also whether
+/// each was edited — an `appointment.update` that moved it or changed its technician; the same
+/// rule as `reporting::history::counts_as_edit` for a booking. The action list repeats the partial
+/// index's (`audit_log_edit_idx`, 0052) so its predicate holds for a prepared statement.
 pub async fn appointments(
     tx: &mut TenantTx,
     id: Option<Uuid>,
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
+    with_edited: bool,
 ) -> Result<Vec<AppointmentRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -429,7 +435,16 @@ pub async fn appointments(
                    SELECT sum(s.total) FROM app.sale s
                    WHERE s.tenant_id = v.tenant_id AND s.visit_id IN (SELECT id FROM lineage)
                      AND s.status = 'open' AND s.customer_id = v.customer_id)::bigint AS "sale_total?",
-                  a.group_id, a.companions, a.version, a.created_at
+                  a.group_id, a.companions, a.version, a.created_at,
+                  CASE WHEN $5::bool THEN EXISTS (
+                    SELECT 1 FROM app.audit_log l
+                    WHERE l.tenant_id = a.tenant_id AND l.entity_type = 'appointment'
+                      AND l.entity_id = a.id
+                      AND l.action IN ('visit.update', 'appointment.update')
+                      AND l.action = 'appointment.update'
+                      AND (l.before -> 'starts_at' IS DISTINCT FROM l.after -> 'starts_at'
+                           OR l.before -> 'staff_id' IS DISTINCT FROM l.after -> 'staff_id'))
+                  END AS "edited?"
            FROM app.appointment a
            LEFT JOIN app.customer c ON c.tenant_id = a.tenant_id AND c.id = a.customer_id
            LEFT JOIN app.staff st ON st.tenant_id = a.tenant_id AND st.id = a.staff_id
@@ -442,7 +457,8 @@ pub async fn appointments(
         tenant,
         id,
         from,
-        to
+        to,
+        with_edited
     )
     .fetch_all(tx.conn())
     .await?)
