@@ -539,7 +539,8 @@ test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
     }
     const asked: string[] = [];
     page.on("request", (r) => {
-      if (r.url().includes("/record-history/")) asked.push(r.url());
+      // The API's history routes, not the dev server's `src/features/record-history/*` modules.
+      if (r.url().includes("/api/v1/record-history/")) asked.push(r.url());
     });
     await page.goto("/bang-gia");
     await expect(page.getByRole("heading", { name: "Bảng giá dịch vụ" })).toBeVisible();
