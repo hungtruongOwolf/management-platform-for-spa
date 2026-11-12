@@ -1,6 +1,6 @@
 ---
 title: Thiết kế UI — lịch sử trên từng bản ghi + công tắc ở console admin
-updated: 2026-11-11
+updated: 2026-11-12
 sources: [raw/2026-11-11-em-decision-inline-record-history.md]
 related: [../product/specs/record-history.md, ../architecture/record-history.md, design-system.md, front-desk-flows.md, ../architecture/frontend.md]
 ---

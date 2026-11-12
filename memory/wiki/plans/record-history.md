@@ -1,6 +1,6 @@
 ---
 title: "Plan: lịch sử trên từng bản ghi (đợt 1a + 1b, 2, 3)"
-updated: 2026-11-11
+updated: 2026-11-12
 sources: [raw/2026-11-11-em-decision-inline-record-history.md]
 related: [../product/specs/record-history.md, ../architecture/record-history.md, ../design/record-history.md, ../decisions/ADR-0022-inline-record-history.md]
 ---

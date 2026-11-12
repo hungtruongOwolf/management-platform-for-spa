@@ -1,6 +1,6 @@
 ---
 title: Threat model (R1)
-updated: 2026-11-11
+updated: 2026-11-12
 sources: [architecture/system.md, product/specs/front-desk-and-packages.md, product/specs/platform-admin.md, decisions/ADR-0018-platform-admin-console.md]
 ---
 

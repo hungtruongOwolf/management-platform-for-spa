@@ -1,6 +1,6 @@
 ---
 title: Glossary — ubiquitous language (draft)
-updated: 2026-11-11
+updated: 2026-11-12
 sources: [raw/2026-11-04-idea-internal-platform.md, raw/2026-11-05-em-review-round4.md, raw/2026-11-06-em-upsell-and-convert-to-package.md]
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: Authorization matrix
-updated: 2026-11-11
+updated: 2026-11-12
 sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, product/specs/staff-management.md, product/specs/appointments.md, product/specs/platform-admin.md, decisions/ADR-0003-multi-tenancy.md, decisions/ADR-0004-authentication.md, decisions/ADR-0018-platform-admin-console.md]
 ---
 

@@ -551,8 +551,11 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
     let (with_p50, with_p95) = (p(&mut with, 0.5), p(&mut with, 0.95));
     let (p50, p95) = (p(&mut without, 0.5), p(&mut without, 0.95));
     println!("marks: p50 {with_p50:>4} / {p50:>4} ms  p95 {with_p95:>4} / {p95:>4} ms  {grid}");
-    if with_p95 > p95 + EDITED_BUDGET_MS {
-        over.push(format!("{grid}: marks add {} ms at p95", with_p95 - p95));
+    // The 14 days' grid itself takes ~450 ms on a debug build (walk-ins, each booking's sale
+    // lineage), so its p95 swings ±25 ms from run to run and hides a ~1 ms probe (EXPLAIN below:
+    // 350 bookings through `audit_log_edit_idx` in ~1 ms). The median is what the marks move.
+    if with_p50 > p50 + EDITED_BUDGET_MS {
+        over.push(format!("{grid}: marks add {} ms at p50", with_p50 - p50));
     }
 
     // `edited` costs: the same lists with the right (the owner's default) and without it, in
