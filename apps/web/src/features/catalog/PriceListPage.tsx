@@ -33,7 +33,8 @@ type Editing =
  * Round-5 layout (EM 2026-11-06 kept it): one card per group, services divided by hairlines.
  * "Thêm nhóm dịch vụ" sits in the page header, where "Mẫu gói liệu trình" has "Tạo mẫu gói", and
  * opens its form at the top of the page; "Sửa nhóm" on a group's heading opens its rename form
- * under the heading (spec record-history K39, K48).
+ * under the heading (spec record-history K39, K48), where a group with no service can also be
+ * deleted (K68).
  */
 export function PriceListPage() {
   const { data: me } = useSuspenseQuery(meQuery);
@@ -46,6 +47,23 @@ export function PriceListPage() {
   });
   const [editing, setEditing] = useState<Editing>(null);
   const done = () => {
+    setEditing(null);
+  };
+  // After "Xóa nhóm" (K68/K71) the button that had focus is gone: focus the next group's heading,
+  // or the page's title when the deleted group was the last one, once the form has closed (the
+  // effect after that render). `categories` is the list the form was opened from, the deleted
+  // group still in it. A ref and an effect, not `flushSync`: `react-dom` exported to this chunk
+  // costs startup bytes on every path.
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (refocus.current === null) return;
+    focusHeading(refocus.current);
+    refocus.current = null;
+  });
+  const deleted = (id: string) => {
+    const order = categories.data?.map((c) => c.id) ?? [];
+    const next = order[order.indexOf(id) + 1];
+    refocus.current = next ? `cat-${next}` : "price-list-title";
     setEditing(null);
   };
 
@@ -144,7 +162,18 @@ export function PriceListPage() {
                 </div>
               )}
             </div>
-            {renaming && <CategoryForm category={category} onDone={done} traced={traced} />}
+            {renaming && (
+              <CategoryForm
+                category={category}
+                onDone={done}
+                traced={traced}
+                // Every service counts, on sale or not: the owner's list has them all (K68).
+                deletable={items.length === 0}
+                onDeleted={() => {
+                  deleted(category.id);
+                }}
+              />
+            )}
             {adding && <ServiceForm categories={categories.data} defaultCategoryId={category.id} onDone={done} />}
             {items.length === 0 && !adding && (
               <p className="py-2 text-sm text-text-muted">Nhóm này chưa có dịch vụ. Bấm “Thêm dịch vụ” để thêm dịch vụ đầu tiên.</p>
@@ -198,6 +227,14 @@ export function PriceListPage() {
       })}
     </section>
   );
+}
+
+/** Moves focus to a heading of the page, focusable from script only (not a tab stop). */
+function focusHeading(id: string) {
+  const heading = document.getElementById(id);
+  if (!heading) return;
+  if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
+  heading.focus();
 }
 
 /** "Thêm nhóm dịch vụ": opened from the page header, at the top of the page. */

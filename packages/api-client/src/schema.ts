@@ -1712,7 +1712,8 @@ export interface paths {
         get?: never;
         put: operations["update_category"];
         post?: never;
-        delete?: never;
+        /** Deletes a group with no service in it (on sale or not); its name stays in the trail. */
+        delete: operations["delete_category"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2592,7 +2593,7 @@ export interface components {
             entries: components["schemas"]["AttendanceEntryWrite"][];
         };
         /** @enum {string} */
-        AuditAction: "visit.create" | "visit.addition" | "visit.update" | "visit.correct" | "visit.void" | "visit.convert_to_package" | "sale.create" | "sale.void" | "sale.note_update" | "customer_package.create" | "customer_package.extend" | "customer_package.cancel" | "customer_package.use_expired_override" | "opening_balance.import" | "sale.paper_book" | "appointment.create" | "appointment.update" | "appointment.arrive" | "appointment.undo_arrival" | "appointment.complete" | "appointment.no_show" | "appointment.cancel" | "appointment.settings" | "customer.create" | "customer.update" | "customer.health_note_set" | "customer.follow_up" | "attendance.record" | "evaluation.daily_review" | "evaluation.record" | "staff.adjustment" | "staff.adjustment_void" | "staff.create" | "staff.update" | "staff.end" | "staff.rehire" | "staff.pay_update" | "staff.account_link" | "payroll.rules_update" | "payroll.close" | "catalog.category_create" | "catalog.category_update" | "catalog.service_create" | "catalog.service_update" | "catalog.plan_create" | "catalog.plan_update" | "staff.login_create" | "staff.login_password_reset" | "staff.login_role" | "account.password_change" | "account.password_reset_requested" | "account.password_reset_dismissed" | "account.locked_by_platform" | "account.unlocked_by_platform" | "account.mfa_reset_by_platform" | "account.sessions_revoked_by_platform" | "account.password_reset_by_platform" | "role.permissions_changed" | "role.permissions_reset" | "feature.changed" | "tenant.created" | "tenant.suspended" | "tenant.unsuspended" | "tenant.owner_mfa_changed";
+        AuditAction: "visit.create" | "visit.addition" | "visit.update" | "visit.correct" | "visit.void" | "visit.convert_to_package" | "sale.create" | "sale.void" | "sale.note_update" | "customer_package.create" | "customer_package.extend" | "customer_package.cancel" | "customer_package.use_expired_override" | "opening_balance.import" | "sale.paper_book" | "appointment.create" | "appointment.update" | "appointment.arrive" | "appointment.undo_arrival" | "appointment.complete" | "appointment.no_show" | "appointment.cancel" | "appointment.settings" | "customer.create" | "customer.update" | "customer.health_note_set" | "customer.follow_up" | "attendance.record" | "evaluation.daily_review" | "evaluation.record" | "staff.adjustment" | "staff.adjustment_void" | "staff.create" | "staff.update" | "staff.end" | "staff.rehire" | "staff.pay_update" | "staff.account_link" | "payroll.rules_update" | "payroll.close" | "catalog.category_create" | "catalog.category_update" | "catalog.category_delete" | "catalog.service_create" | "catalog.service_update" | "catalog.plan_create" | "catalog.plan_update" | "staff.login_create" | "staff.login_password_reset" | "staff.login_role" | "account.password_change" | "account.password_reset_requested" | "account.password_reset_dismissed" | "account.locked_by_platform" | "account.unlocked_by_platform" | "account.mfa_reset_by_platform" | "account.sessions_revoked_by_platform" | "account.password_reset_by_platform" | "role.permissions_changed" | "role.permissions_reset" | "feature.changed" | "tenant.created" | "tenant.suspended" | "tenant.unsuspended" | "tenant.owner_mfa_changed";
         /** @description `GET /appointments`: the spa's grid and its appointments over `from..=to`. */
         CalendarDto: {
             /** @description Every status, earliest first. */
@@ -11819,6 +11820,50 @@ export interface operations {
                 content?: never;
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_category: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description catalog.category_in_use: the group still has services (on sale or not) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

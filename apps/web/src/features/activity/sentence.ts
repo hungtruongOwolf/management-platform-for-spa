@@ -127,6 +127,8 @@ const PHRASES: Record<AuditAction, Words> = {
   // Danh mục & cài đặt
   "catalog.category_create": () => ({ lead: "thêm nhóm dịch vụ" }),
   "catalog.category_update": () => ({ lead: "sửa nhóm dịch vụ" }),
+  // The group is gone: the server names it as its delete recorded it (spec record-history K68).
+  "catalog.category_delete": () => ({ lead: "xóa nhóm dịch vụ" }),
   "catalog.service_create": () => ({ lead: "thêm dịch vụ" }),
   "catalog.service_update": () => ({ lead: "sửa dịch vụ" }),
   "catalog.plan_create": () => ({ lead: "thêm mẫu gói" }),
@@ -213,6 +215,8 @@ export const HISTORY: Record<AuditAction, ((e: ActivityEntry) => string) | null>
   "catalog.category_update": () => "sửa nhóm dịch vụ",
   "payroll.rules_update": () => "sửa quy tắc lương",
   // Shown another way already (spec D11) or not about a record the spa opens (spec §4.2).
+  // A deleted group has no screen left to read its history on (K68).
+  "catalog.category_delete": null,
   "customer.follow_up": null,
   "evaluation.record": null,
   "staff.create": null,

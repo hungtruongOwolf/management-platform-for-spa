@@ -249,11 +249,13 @@ Phần tử cuối của form sửa / `RulesSheet` / sheet số khách tối đa
 │ Tên nhóm dịch vụ  [Gội đầu dưỡng sinh            ]               │
 │ Chỉ đổi tên; nhóm giữ nguyên vị trí trong bảng giá.              │
 │ Sửa lần cuối bởi Lan · 12/11/2026 · đã sửa 1 lần ▾               │   ← phần tử cuối, trên hàng nút
-│ [Lưu nhóm dịch vụ] [Hủy]                                         │
+│ [Lưu nhóm dịch vụ] [Hủy] [Xóa nhóm]                              │   ← "Xóa nhóm" chỉ khi nhóm chưa có dịch vụ
 │ (các dịch vụ của nhóm…)                                          │
 └──────────────────────────────────────────────────────────────────┘
 ```
 Chỉ tên, không thứ tự (K48); 360 px: hai nút xuống dòng dưới tên nhóm (`flex-wrap`). Mở ra: "Lan sửa nhóm dịch vụ · Tên: Gội đầu → Gội đầu dưỡng sinh".
+
+**"Xóa nhóm" (K68, K71, 2026-11-12):** nút thứ ba của hàng nút (`btn-ghost text-danger`, `aria-label` "Xóa nhóm {tên}"), chỉ khi nhóm **không có dịch vụ nào**, kể cả dịch vụ ngừng bán (danh sách của chủ spa có cả hai; server vẫn quyết, `409`). Bấm → sheet xác nhận (khuôn "Xóa khoản này" của sổ thưởng / phạt, `BottomSheet`, ngoài `<form>` để Esc chỉ đóng sheet): tiêu đề "Xóa nhóm {tên}?", thân "Nhóm này chưa có dịch vụ nào. Xóa xong, nhóm không còn trên bảng giá.", footer "Thôi" / "Xóa nhóm" (`btn-danger`); "Thôi" / Esc / ✕ đóng sheet và trả focus về nút "Xóa nhóm". Xóa xong: invalidate `["catalog"]`, form đóng, focus vào tiêu đề nhóm kế tiếp, hoặc tiêu đề trang "Bảng giá dịch vụ" nếu nhóm vừa xóa là nhóm cuối (tiêu đề nhận focus bằng script, `tabindex=-1`, không thành điểm Tab). `409 catalog.category_in_use` (máy khác vừa thêm dịch vụ vào nhóm): sheet giữ nguyên, báo "Không xóa được: nhóm này đang có dịch vụ (có thể vừa được thêm ở máy khác). Chỉ xóa được nhóm chưa có dịch vụ nào.", bảng giá tải lại nên dịch vụ đó hiện ra và nút "Xóa nhóm" mất. `404` (đã bị xóa ở máy khác) tính như xóa xong. Nhóm đã xóa không có lịch sử tại chỗ (không còn màn); Nhật ký thao tác: "Lan xóa nhóm dịch vụ “Nhóm thêm nhầm”".
 
 ## 3. Console admin `/admin/spa/<id>` — đợt 1a
 

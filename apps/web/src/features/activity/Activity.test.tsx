@@ -144,6 +144,14 @@ describe("activity sentences", () => {
     );
     expect(sentence(entry({ action: "payroll.close", kind: "payroll", detail: "2026-10", amount: 42_000_000 }))).toBe("Quản lý Hà chốt lương tháng 10/2026");
     expect(sentence(entry({ action: "staff.adjustment", kind: "staff", detail: "penalty", subject: { kind: "staff", name: "KTV Lan" } }))).toBe("Quản lý Hà ghi phạt cho KTV Lan");
+    // A deleted group, named as its delete recorded it (spec record-history K68), like its other lines.
+    const group = { kind: "service_category", name: "Nhóm thêm nhầm" } as const;
+    expect(sentence(entry({ action: "catalog.category_delete", kind: "settings", actor: by("Chủ Spa"), subject: group }))).toBe(
+      "Chủ Spa xóa nhóm dịch vụ “Nhóm thêm nhầm”",
+    );
+    expect(sentence(entry({ action: "catalog.category_create", kind: "settings", actor: by("Chủ Spa"), subject: group }))).toBe(
+      "Chủ Spa thêm nhóm dịch vụ “Nhóm thêm nhầm”",
+    );
   });
 
   it("reads one action as one line: a visit carries its sales, a package sale names its packages", () => {

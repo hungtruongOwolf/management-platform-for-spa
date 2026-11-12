@@ -831,6 +831,24 @@ async fn every_catalog_and_profile_write_is_audited(pool: PgPool) -> TestResult 
     )
     .await;
     assert_eq!(renamed.status, StatusCode::OK, "{}", renamed.body);
+    let mistake = call(
+        &s.h.app,
+        "POST",
+        "/service-categories",
+        Some(&s.owner),
+        Some(json!({"name": "Nhóm thêm nhầm"})),
+    )
+    .await;
+    assert_eq!(mistake.status, StatusCode::CREATED, "{}", mistake.body);
+    let dropped = call(
+        &s.h.app,
+        "DELETE",
+        &format!("/service-categories/{}", str_of(&mistake.body["id"])),
+        Some(&s.owner),
+        None,
+    )
+    .await;
+    assert_eq!(dropped.status, StatusCode::NO_CONTENT, "{}", dropped.body);
     let service = |name: &str| {
         json!({
             "category_id": category_id, "name": name, "description": null,
@@ -894,6 +912,7 @@ async fn every_catalog_and_profile_write_is_audited(pool: PgPool) -> TestResult 
     for action in [
         "catalog.category_create",
         "catalog.category_update",
+        "catalog.category_delete",
         "catalog.service_create",
         "catalog.service_update",
         "catalog.plan_create",

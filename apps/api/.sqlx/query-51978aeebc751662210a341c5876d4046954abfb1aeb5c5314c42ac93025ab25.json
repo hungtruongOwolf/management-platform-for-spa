@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT 1 AS one FROM app.service_category WHERE tenant_id = $1 AND id = $2",
+  "query": "SELECT 1 AS one FROM app.service_category WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE",
   "describe": {
     "columns": [
       {
@@ -20,5 +20,5 @@
       null
     ]
   },
-  "hash": "0f66c07ded7f1ef9bfca011f602c23fa95a661f2ee719b747331fcbcd22c7e85"
+  "hash": "51978aeebc751662210a341c5876d4046954abfb1aeb5c5314c42ac93025ab25"
 }

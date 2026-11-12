@@ -1,0 +1,15 @@
+-- 0054: the owner may delete a group of services nothing uses (spec record-history K68,
+-- `DELETE /api/v1/service-categories/{id}`, `catalog.manage`).
+--
+-- Only the privilege is new. `tenant_isolation` (0003) is a policy for every command, so a DELETE
+-- reaches only the caller's spa. What may go stays decided by the data: `service.category_id`
+-- references the group (0003, NO ACTION), so a group with any service, on sale or not, cannot be
+-- deleted, including one added by a transaction that commits while the delete runs (the foreign
+-- key re-checks against committed rows; `catalog::commands::delete_category` locks the group first
+-- and maps the violation to `409 catalog.category_in_use`). Services themselves stay undeletable
+-- (deactivate instead, AC1.6).
+--
+-- Deploy: independent of the binary. A GRANT rewrites nothing; the previous binary never deletes
+-- a group and is unaffected. The new binary's delete answers 500 until this has run, so migrate
+-- first.
+GRANT DELETE ON app.service_category TO app_rw;

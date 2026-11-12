@@ -102,7 +102,7 @@ Spec: [staff-management](../memory/wiki/product/specs/staff-management.md), quy 
 - **Khách của tôi**: lịch kiểu Google Calendar (ngày / tuần / danh sách) gồm lịch hẹn gán cho mình và lượt mình đã làm, chỉ đọc.
 
 ### 2.8 Danh mục
-- **Bảng giá dịch vụ** (`/bang-gia`): dịch vụ theo nhóm, giá chung hoặc Nữ / Nam, thời lượng, dịch vụ gợi ý; chủ spa thêm nhóm ("Thêm nhóm dịch vụ"), đổi tên nhóm ("Sửa nhóm" trên tên nhóm; thứ tự nhóm giữ nguyên); menu thật của spa có 35 dịch vụ trong 10 nhóm ([service-catalog](../memory/wiki/product/service-catalog.md)).
+- **Bảng giá dịch vụ** (`/bang-gia`): dịch vụ theo nhóm, giá chung hoặc Nữ / Nam, thời lượng, dịch vụ gợi ý; chủ spa thêm nhóm ("Thêm nhóm dịch vụ"), đổi tên nhóm ("Sửa nhóm" trên tên nhóm; thứ tự nhóm giữ nguyên), xóa nhóm chưa có dịch vụ nào ("Xóa nhóm" trong form "Sửa nhóm", hỏi lại trước khi xóa; nhóm còn dịch vụ, kể cả dịch vụ ngừng bán, không xóa được; Nhật ký thao tác giữ tên nhóm đã xóa); menu thật của spa có 35 dịch vụ trong 10 nhóm ([service-catalog](../memory/wiki/product/service-catalog.md)).
 - **Mẫu gói liệu trình** (`/bang-gia/goi`): dịch vụ + số buổi + buổi tặng theo từng dịch vụ, giá, quà tặng, hạn dùng.
 
 ### 2.9 Ai ghi, ai sửa trên từng bản ghi

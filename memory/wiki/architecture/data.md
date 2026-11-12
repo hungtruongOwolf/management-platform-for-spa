@@ -150,6 +150,7 @@ File ở `apps/api/migrations/`, mới nhất **0040**. Số **0008, 0010, 0031 
 | `0050_owner_mfa_switch` | `tenant.owner_mfa_required`; `user_requires_mfa` chỉ tính role `requires_mfa` ở spa bật (nghiêm nhất thắng, spa ngưng vẫn tính); `platform_set_owner_mfa`; `platform_tenant_overview` thêm cột (ADR-0020) |
 | `0051_activity_log` · `0052_record_history` | Index `audit_log_tenant_at_id_idx`, `audit_log_tenant_actor_at_idx` (ADR-0021) · `record.history.read` spa-local, cờ `activity_log` mặc định tắt, `audit_log_edit_idx`, `audit_log_staff_day_idx` (ADR-0022) |
 | `0053_audit_write_time` | Default `audit_log.at` = `clock_timestamp()` (giờ insert, không phải giờ bắt đầu transaction) cho writer SQL; writer Rust tự truyền `at` ([ADR-0023](../decisions/ADR-0023-audit-instant-is-write-time.md)); chỉ đổi catalog, binary cũ chạy được |
+| `0054_service_category_delete` | `GRANT DELETE ON app.service_category TO app_rw` (xóa nhóm chưa có dịch vụ, [spec record-history K68](../product/specs/record-history.md)); FK `service.category_id` (NO ACTION) giữ nhóm còn dịch vụ, kể cả ngừng bán; ghi dịch vụ giữ nhóm `FOR KEY SHARE`, xóa khóa `FOR UPDATE`. Binary cũ chạy được; migrate trước binary mới |
 
 Từ 0016 crate `kernel` có `build.rs` (`rerun-if-changed=../../migrations`): trước đó thêm file migration mới không làm build lại migrator nhúng, `app migrate` lặng lẽ bỏ qua nó. Kế hoạch tách riêng migration RLS/grants ban đầu đã bỏ: mỗi migration tự bật RLS và cấp quyền cho bảng của nó.
 

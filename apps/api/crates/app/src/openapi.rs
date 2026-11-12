@@ -23,6 +23,7 @@ use utoipa::OpenApi;
         catalog::http::list_package_plans,
         catalog::http::create_category,
         catalog::http::update_category,
+        catalog::http::delete_category,
         catalog::http::create_service,
         catalog::http::update_service,
         catalog::http::create_plan,

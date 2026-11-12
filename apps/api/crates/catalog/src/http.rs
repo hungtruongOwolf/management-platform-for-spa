@@ -127,7 +127,10 @@ where
             "/service-categories",
             get(list_categories).post(create_category),
         )
-        .route("/service-categories/{id}", put(update_category))
+        .route(
+            "/service-categories/{id}",
+            put(update_category).delete(delete_category),
+        )
         .route("/services", get(list_services).post(create_service))
         .route("/services/{id}", put(update_service))
         .route("/package-plans", get(list_package_plans).post(create_plan))
@@ -317,6 +320,20 @@ pub async fn update_category(
     let row =
         commands::update_category(&pool, &user.actor, id, &body.name, body.sort_order).await?;
     Ok(Json(row.into()))
+}
+
+/// Deletes a group with no service in it (on sale or not); its name stays in the trail.
+#[utoipa::path(delete, path = "/api/v1/service-categories/{id}", tag = "catalog",
+    params(("id" = Uuid, Path)),
+    responses((status = 204), (status = 401), (status = 403), (status = 404),
+              (status = 409, description = "catalog.category_in_use: the group still has services (on sale or not)")))]
+pub async fn delete_category(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    commands::delete_category(&pool, &user.actor, id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(post, path = "/api/v1/services", tag = "catalog", request_body = ServiceWrite,
