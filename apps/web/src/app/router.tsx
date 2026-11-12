@@ -13,17 +13,17 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { authQuery, authRetry, type Me } from "../features/auth/session";
 import { customersSearch, historySearch } from "../features/customers/search";
 import { frontDeskSearch } from "../features/front-desk/search";
-import { FrontDeskPage } from "../features/front-desk/FrontDeskPage";
 import { inactiveSearch, packagesSearch, reportsSearch } from "../features/reports/search";
 import { myWorkSearch, staffSearch } from "../features/staff/search";
 import { safeNextPath } from "../lib/api";
 import { ForbiddenRoute, mayOpen } from "./access";
 import { AppShell } from "./AppShell";
+import { loadFrontDesk, loadHome } from "./screens";
 import { recordLocation } from "./trail";
 
-// Other business screens are separate chunks so the first paint does not wait for their code
-// (Lighthouse LCP budget, testing.md §4). The front desk stays in the main bundle: it is the screen
-// kept open all day, and a lazy chunk would add a request after the shell to its LCP.
+// Business screens are separate chunks so the first paint does not wait for their code (Lighthouse
+// LCP budget, testing.md §4). So are the front desk and home (app/screens.ts): opening the app on
+// one of them fetches its chunk next to the startup chunk, not after it.
 const customersModule = () => import("../features/customers/CustomersPage");
 const reportsPage = () => import("../features/reports/ReportsPage");
 const packagesPage = () => import("../features/reports/PackagesOverviewPage");
@@ -188,8 +188,6 @@ const authedRoute = createRoute({
   component: AppShell,
 });
 
-const homePage = () => import("./HomePage");
-
 /*
  * Loaders start a screen's queries together with its chunk, from the URL alone (perf page §4d):
  * on a click, and earlier on hover or touch (`defaultPreload: "intent"`). They import the screen's
@@ -199,10 +197,10 @@ const homePage = () => import("./HomePage");
 const homeRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/",
-  loader: ({ context }) => homePage().then((m) => {
+  loader: ({ context }) => loadHome().then((m) => {
       m.prefetchHome(context.queryClient);
     }),
-  component: lazyRouteComponent(homePage, "HomePage"),
+  component: lazyRouteComponent(loadHome, "HomePage"),
 });
 
 /*
@@ -319,13 +317,17 @@ const plansRoute = createRoute({
   ),
 });
 
-/** The front desk (S7): the screen the manager-cashier keeps open all day. */
+/**
+ * The front desk (S7): the screen the manager-cashier keeps open all day. Its chunk starts with the
+ * startup chunk when the app opens here, after the first paint of any other screen for those who
+ * may open it (AppShell), and with the sign-in request when sign-in leads here (LoginPage).
+ */
 const frontDeskRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/quay",
   beforeLoad: only(mayOpen.frontDesk),
   validateSearch: frontDeskSearch.validate,
-  component: FrontDeskPage,
+  component: lazyRouteComponent(loadFrontDesk, "FrontDeskPage"),
 });
 
 const customersRoute = createRoute({

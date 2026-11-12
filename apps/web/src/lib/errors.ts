@@ -1,9 +1,10 @@
-import { ApiError } from "./api";
+import { ApiError, NETWORK_MESSAGE } from "./api";
 
 /**
  * Vietnamese messages for stable API error codes. Unknown codes fall back to a generic message.
  * Codes only a lazy screen can meet are added by that screen (`addMessages`, e.g. staff/api.ts), so
- * their text stays out of the startup chunk.
+ * their text stays out of their chunks. This module is not in the startup chunk either: the
+ * sign-in page loads it after its first paint (LoginPage), every other screen is a lazy chunk.
  */
 const MESSAGES: Record<string, string> = {
   "auth.invalid_credentials": "Số điện thoại hoặc mật khẩu không đúng.",
@@ -104,7 +105,7 @@ export function messageFor(error: unknown): string {
   if (error instanceof ApiError) {
     return MESSAGES[error.code] ?? "Có lỗi xảy ra. Vui lòng thử lại.";
   }
-  return "Không kết nối được máy chủ. Vui lòng kiểm tra mạng.";
+  return NETWORK_MESSAGE;
 }
 
 /** The text of the server's refusal of `field`: the form's own `texts` first, then the shared ones. */

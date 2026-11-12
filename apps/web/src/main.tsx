@@ -1,6 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+// The front desk's JS is a chunk of its own (app/screens.ts), its styles stay here: one stylesheet
+// on /quay as before, in the same cascade order, and no stylesheet to wait for when it opens.
+import "./features/front-desk/front-desk.css";
 import { App } from "./app/App";
 import { applyTheme, readTheme } from "./app/prefs";
 
