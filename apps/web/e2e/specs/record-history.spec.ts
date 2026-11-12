@@ -402,14 +402,24 @@ test.describe("lịch sử trên từng bản ghi, đợt 2", () => {
 test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
   const SERVICE = `Gội thử lịch sử ${stamp}`;
   const PLAN = `Gói thử lịch sử ${stamp}`;
+  /** A group of its own (no service in it, last on the list): added, renamed once through the API. */
+  const GROUP_FIRST = `Nhóm thử ${stamp}`;
+  const GROUP = `Nhóm thử lịch sử ${stamp}`;
   const today = spaDay().split("-").reverse().join("/");
   let service = "";
   let plan = "";
+  let group = "";
   let grace = 0;
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext({ storageState: ownerState });
     const request = (await context.newPage()).request;
+    const added = await request.post("/api/v1/service-categories", { headers: WRITE, data: { name: GROUP_FIRST } });
+    expect(added.status(), await added.text()).toBe(201);
+    const fresh = (await added.json()) as { id: string; sort_order: number };
+    group = fresh.id;
+    const renamed = await request.put(`/api/v1/service-categories/${group}`, { headers: WRITE, data: { name: GROUP, sort_order: fresh.sort_order } });
+    expect(renamed.status(), await renamed.text()).toBe(200);
     const categories = (await (await request.get("/api/v1/service-categories")).json()) as { id: string }[];
     const write = (female: number) => ({
       category_id: categories[0]?.id,
@@ -480,6 +490,36 @@ test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
     }
   });
 
+  test("a group's 'Sửa nhóm' form: who renamed it last above its buttons, Tên old → new; renamed here, one more edit", async ({ page }) => {
+    const owner = credentials().fullName;
+    for (const width of [1280, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/bang-gia");
+      await page.getByRole("button", { name: `Sửa nhóm ${GROUP}` }).click();
+      const form = page.getByRole("form", { name: `Sửa nhóm: ${GROUP}` });
+      const trace = form.getByRole("button", { name: `Sửa lần cuối bởi ${owner} · ${today} · đã sửa 1 lần` });
+      await expect(trace).toHaveAttribute("aria-expanded", "false");
+      await trace.click();
+      const lines = form.getByRole("list", { name: `Lịch sử nhóm dịch vụ ${GROUP}` });
+      await expect(lines.getByText(`${owner} thêm nhóm dịch vụ`)).toBeVisible();
+      await expect(lines.getByText(`Tên: ${GROUP_FIRST} → ${GROUP}`)).toBeVisible();
+      if (width === 360) expect(await sidewaysOverflow(page)).toBe(0);
+      await expectAccessible(page, `record-history-group-${String(width)}`);
+      await form.getByRole("button", { name: "Hủy" }).click();
+    }
+    // Renamed through the form: the heading follows, the group's history gains the edit.
+    const RENAMED = `${GROUP} (đổi tên)`;
+    await page.getByRole("button", { name: `Sửa nhóm ${GROUP}` }).click();
+    const form = page.getByRole("form", { name: `Sửa nhóm: ${GROUP}` });
+    await form.getByLabel("Tên nhóm dịch vụ").fill(RENAMED);
+    await form.getByRole("button", { name: "Lưu nhóm dịch vụ" }).click();
+    await expect(page.getByRole("heading", { level: 2, name: RENAMED })).toBeVisible();
+    await page.getByRole("button", { name: `Sửa nhóm ${RENAMED}` }).click();
+    const again = page.getByRole("form", { name: `Sửa nhóm: ${RENAMED}` });
+    await again.getByRole("button", { name: `Sửa lần cuối bởi ${owner} · ${today} · đã sửa 2 lần` }).click();
+    await expect(again.getByRole("list", { name: `Lịch sử nhóm dịch vụ ${RENAMED}` }).getByText(`Tên: ${GROUP} → ${RENAMED}`)).toBeVisible();
+  });
+
   test("a plan's edit form: its price old → new", async ({ page }) => {
     const owner = credentials().fullName;
     for (const width of [1280, 360]) {
@@ -518,6 +558,8 @@ test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
       await limit.getByRole("button", { name: edited }).click();
       const saves = limit.getByRole("list", { name: "Lịch sử số khách tối đa" });
       await expect(saves.getByText("Số khách tối đa mỗi khung giờ: 4 → 6")).toBeVisible();
+      // Back to no limit: the empty value said as the setting it is (K50), not "bỏ 6".
+      await expect(saves.getByText("Số khách tối đa mỗi khung giờ: 6 → không giới hạn")).toBeVisible();
       if (width === 360) expect(await sidewaysOverflow(page)).toBe(0);
       await expectAccessible(page, `record-history-slot-limit-${String(width)}`);
       await limit.getByRole("button", { name: "Thôi" }).click();
@@ -532,6 +574,7 @@ test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
     for (const path of [
       `/api/v1/record-history/service/${service}`,
       `/api/v1/record-history/package-plan/${plan}`,
+      `/api/v1/record-history/service-category/${group}`,
       "/api/v1/record-history/settings/payroll-rules",
       "/api/v1/record-history/settings/appointment-settings",
     ]) {
@@ -546,6 +589,7 @@ test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
     await expect(page.getByRole("heading", { name: "Bảng giá dịch vụ" })).toBeVisible();
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("button", { name: `Sửa ${SERVICE}` })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Sửa nhóm/ })).toHaveCount(0);
     await page.goto("/bang-gia/goi");
     await expect(page.getByRole("heading", { name: "Mẫu gói liệu trình" })).toBeVisible();
     await page.waitForLoadState("networkidle");
