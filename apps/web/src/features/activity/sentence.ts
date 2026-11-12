@@ -309,14 +309,16 @@ const FIELD: Record<string, string> = {
   price: "Giá",
   price_female: "Giá Nữ",
   price_male: "Giá Nam",
+  // The price list's own words (ServiceForm, PlanForm: "★ Khuyên dùng", "Đang bán").
   category: "Nhóm dịch vụ",
-  recommended: "Gợi ý cho khách",
-  active: "Đang dùng",
+  recommended: "Khuyên dùng",
+  active: "Đang bán",
   validity_months: "Hạn dùng (tháng)",
   items: "Dịch vụ trong gói",
+  sort_order: "Thứ tự",
   max_per_slot: "Số khách tối đa mỗi khung giờ",
   free_leave_days: "Ngày nghỉ không trừ lương",
-  free_leave_codes: "Loại nghỉ được trừ vào ngày nghỉ",
+  free_leave_codes: "Loại nghỉ tính vào ngày không trừ lương",
   default_shift_start: "Giờ vào ca mặc định",
   late_grace_minutes: "Số phút đi muộn bỏ qua",
   late_penalty_amount: "Tiền phạt đi muộn",
@@ -379,6 +381,14 @@ const CODE: Record<string, Record<string, string>> = {
   gender: { female: "Nữ", male: "Nam" },
   kind: { bonus: "Thưởng", penalty: "Phạt" },
   result: { m1: "Mức 1", m2: "Mức 2", m3: "Mức 3", fail: "Chưa đạt" },
+  // The payroll rules' choices, as RulesSheet words them (shortened).
+  loyalty_partial_month: {
+    fifteen_days: "Đủ tháng nếu làm từ 15 ngày",
+    prorate: "Theo số ngày làm",
+    full: "Đủ cả tháng",
+    none_if_partial: "Không tính",
+  },
+  meal_allowance_basis: { monthly: "Cố định mỗi tháng", days_worked: "Theo số ngày đi làm" },
 };
 
 const OUTCOME: Record<string, string> = {

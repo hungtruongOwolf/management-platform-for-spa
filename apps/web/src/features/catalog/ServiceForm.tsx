@@ -1,10 +1,11 @@
 import type { Service, ServiceCategory, ServiceWrite } from "@vpyd/api-client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { fieldMessage, messageFor } from "../../lib/errors";
+import { LazyRecordTrace } from "../record-history/lazy";
 import { saveService } from "./api";
 import { CATALOG_FIELDS } from "./messages";
 
@@ -111,14 +112,19 @@ export function ServiceForm({
   service,
   defaultCategoryId,
   onDone,
+  traced = false,
 }: {
   categories: ServiceCategory[];
   service?: Service;
   defaultCategoryId: string;
   onDone: () => void;
+  /** Editing: "ai ghi, ai sửa" as the form's last element (ADR-0022; `canTrace`, UX only). */
+  traced?: boolean;
 }) {
   const queryClient = useQueryClient();
   const id = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const trace = traced && service !== undefined;
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: initialValues(service, defaultCategoryId),
@@ -160,7 +166,9 @@ export function ServiceForm({
       }}
       className="row-form"
     >
-      <h3 className="panel-title">{title}</h3>
+      <h3 ref={heading} className="panel-title" tabIndex={trace ? -1 : undefined}>
+        {title}
+      </h3>
       <div className="form-grid">
         <div className="field">
           <label htmlFor={`${id}-name`}>Tên dịch vụ</label>
@@ -243,6 +251,13 @@ export function ServiceForm({
             <input type="checkbox" {...form.register("active")} /> Đang bán
           </label>
         </div>
+        {traced && service && (
+          // The edit form's last element, above its buttons (design record-history §2.10); on 403
+          // focus goes to the form's title, which never depends on the right.
+          <div className="span-2">
+            <LazyRecordTrace record={{ type: "service", id: service.id }} noun={`dịch vụ ${service.name}`} focusOnHide={() => heading.current} />
+          </div>
+        )}
         {mutation.isError && (
           <p role="alert" className="alert span-2">
             {messageFor(mutation.error)}

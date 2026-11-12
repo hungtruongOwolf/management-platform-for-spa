@@ -391,3 +391,173 @@ test.describe("lịch sử trên từng bản ghi, đợt 2", () => {
     await context.close();
   });
 });
+
+/**
+ * Wave 3 (design record-history §2.10): the last element of a service's and a plan's edit form, of
+ * "Quy tắc lương" and of "Số khách tối đa", above their buttons: "Sửa lần cuối bởi …". The owner
+ * at 1280 and 360 px; a manager cannot open these screens, sends no request, and the API refuses.
+ * Other specs share this spa: the service and the plan are made "ngừng bán", the rules and the
+ * limit are put back as they were.
+ */
+test.describe("lịch sử trên từng bản ghi, đợt 3", () => {
+  const SERVICE = `Gội thử lịch sử ${stamp}`;
+  const PLAN = `Gói thử lịch sử ${stamp}`;
+  const today = spaDay().split("-").reverse().join("/");
+  let service = "";
+  let plan = "";
+  let grace = 0;
+
+  test.beforeAll(async ({ browser }) => {
+    const context = await browser.newContext({ storageState: ownerState });
+    const request = (await context.newPage()).request;
+    const categories = (await (await request.get("/api/v1/service-categories")).json()) as { id: string }[];
+    const write = (female: number) => ({
+      category_id: categories[0]?.id,
+      name: SERVICE,
+      description: null,
+      duration_min: 45,
+      recommended: false,
+      active: false,
+      prices: { female, male: 150_000 },
+    });
+    const made = await request.post("/api/v1/services", { headers: WRITE, data: write(150_000) });
+    expect(made.status(), await made.text()).toBe(201);
+    service = ((await made.json()) as { id: string }).id;
+    const edited = await request.put(`/api/v1/services/${service}`, { headers: { ...WRITE, "If-Match": '"1"' }, data: write(170_000) });
+    expect(edited.status(), await edited.text()).toBe(200);
+
+    const flat = await flatService(request);
+    const planBody = (price: number) => ({
+      name: PLAN,
+      price,
+      validity_months: 6,
+      gift_note: null,
+      active: false,
+      items: [{ service_id: flat.id, sessions: 10, bonus_sessions: 0 }],
+    });
+    const planned = await request.post("/api/v1/package-plans", { headers: WRITE, data: planBody(1_500_000) });
+    expect(planned.status(), await planned.text()).toBe(201);
+    plan = ((await planned.json()) as { id: string }).id;
+    const repriced = await request.put(`/api/v1/package-plans/${plan}`, { headers: { ...WRITE, "If-Match": '"1"' }, data: planBody(1_800_000) });
+    expect(repriced.status(), await repriced.text()).toBe(200);
+
+    // The rules: one more minute of grace, then back (two saves, the rules unchanged after).
+    const read = (await (await request.get("/api/v1/payroll/rules")).json()) as { version: number; rules: { late_grace_minutes: number } };
+    grace = read.rules.late_grace_minutes;
+    let version = read.version;
+    for (const minutes of [grace + 1, grace]) {
+      const saved = await request.put("/api/v1/payroll/rules", {
+        headers: { ...WRITE, "If-Match": `"${String(version)}"` },
+        data: { ...read.rules, late_grace_minutes: minutes },
+      });
+      expect(saved.status(), await saved.text()).toBe(200);
+      version = ((await saved.json()) as { version: number }).version;
+    }
+    // "Số khách tối đa": 4, 6, then no limit again.
+    for (const max of [4, 6, null]) {
+      const saved = await request.put("/api/v1/appointment-settings", { headers: WRITE, data: { max_per_slot: max } });
+      expect(saved.status(), await saved.text()).toBe(200);
+    }
+    await context.close();
+  });
+
+  test("a service's edit form: 'Sửa lần cuối bởi …' above its buttons, Giá Nữ old → new", async ({ page }) => {
+    const owner = credentials().fullName;
+    for (const width of [1280, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/bang-gia");
+      await page.getByRole("button", { name: `Sửa ${SERVICE}` }).click();
+      const form = page.getByRole("form", { name: `Sửa: ${SERVICE}` });
+      const trace = form.getByRole("button", { name: `Sửa lần cuối bởi ${owner} · ${today} · đã sửa 1 lần` });
+      await expect(trace).toHaveAttribute("aria-expanded", "false");
+      await trace.click();
+      const lines = form.getByRole("list", { name: `Lịch sử dịch vụ ${SERVICE}` });
+      await expect(lines.getByText(`${owner} thêm dịch vụ`)).toBeVisible();
+      await expect(lines.getByText("Giá Nữ: 150.000đ → 170.000đ")).toBeVisible();
+      if (width === 360) expect(await sidewaysOverflow(page)).toBe(0);
+      await expectAccessible(page, `record-history-service-${String(width)}`);
+      await form.getByRole("button", { name: "Hủy" }).click();
+    }
+  });
+
+  test("a plan's edit form: its price old → new", async ({ page }) => {
+    const owner = credentials().fullName;
+    for (const width of [1280, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/bang-gia/goi");
+      await page.getByRole("button", { name: `Sửa mẫu gói ${PLAN}` }).click();
+      const form = page.getByRole("form", { name: `Sửa mẫu gói: ${PLAN}` });
+      const trace = form.getByRole("button", { name: `Sửa lần cuối bởi ${owner} · ${today} · đã sửa 1 lần` });
+      await trace.click();
+      await expect(form.getByRole("list", { name: `Lịch sử mẫu gói ${PLAN}` }).getByText("Giá: 1.500.000đ → 1.800.000đ")).toBeVisible();
+      if (width === 360) expect(await sidewaysOverflow(page)).toBe(0);
+      await expectAccessible(page, `record-history-plan-${String(width)}`);
+      await form.getByRole("button", { name: "Hủy" }).click();
+    }
+  });
+
+  test("'Quy tắc lương' and 'Số khách tối đa': every save after the first is an edit", async ({ page }) => {
+    const owner = credentials().fullName;
+    const edited = new RegExp(`^Sửa lần cuối bởi ${owner} · ${today} · đã sửa \\d+ lần$`);
+    for (const width of [1280, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/nhan-vien?tab=payroll");
+      await page.getByRole("button", { name: "Quy tắc lương" }).click();
+      const rules = page.getByRole("dialog", { name: "Quy tắc lương của spa" });
+      await rules.getByRole("button", { name: edited }).click();
+      const lines = rules.getByRole("list", { name: "Lịch sử quy tắc lương" });
+      await expect(lines.getByText(`Số phút đi muộn bỏ qua: ${String(grace + 1)} → ${String(grace)}`)).toBeVisible();
+      if (width === 360) expect(await sidewaysOverflow(page)).toBe(0);
+      await expectAccessible(page, `record-history-payroll-rules-${String(width)}`);
+      await rules.getByRole("button", { name: "Đóng" }).first().click();
+      await expect(rules).toBeHidden();
+
+      await page.goto("/quay?view=lich");
+      await page.getByRole("button", { name: "Số khách tối đa", exact: true }).click();
+      const limit = page.getByRole("dialog", { name: "Số khách tối đa mỗi khung giờ" });
+      await limit.getByRole("button", { name: edited }).click();
+      const saves = limit.getByRole("list", { name: "Lịch sử số khách tối đa" });
+      await expect(saves.getByText("Số khách tối đa mỗi khung giờ: 4 → 6")).toBeVisible();
+      if (width === 360) expect(await sidewaysOverflow(page)).toBe(0);
+      await expectAccessible(page, `record-history-slot-limit-${String(width)}`);
+      await limit.getByRole("button", { name: "Thôi" }).click();
+      await expect(limit).toBeHidden();
+    }
+  });
+
+  test("a manager: none of these screens open, no history request is sent, the API refuses", async ({ browser }) => {
+    await signInAsManager(browser);
+    const context = await browser.newContext({ storageState: managerState, viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    for (const path of [
+      `/api/v1/record-history/service/${service}`,
+      `/api/v1/record-history/package-plan/${plan}`,
+      "/api/v1/record-history/settings/payroll-rules",
+      "/api/v1/record-history/settings/appointment-settings",
+    ]) {
+      expect((await page.request.get(path)).status(), path).toBe(403);
+    }
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/record-history/")) asked.push(r.url());
+    });
+    await page.goto("/bang-gia");
+    await expect(page.getByRole("heading", { name: "Bảng giá dịch vụ" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("button", { name: `Sửa ${SERVICE}` })).toHaveCount(0);
+    await page.goto("/bang-gia/goi");
+    await expect(page.getByRole("heading", { name: "Mẫu gói liệu trình" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("button", { name: `Sửa mẫu gói ${PLAN}` })).toHaveCount(0);
+    const calendar = page.waitForResponse((r) => r.url().includes("/api/v1/appointments?"));
+    await page.goto("/quay?view=lich");
+    await calendar;
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("button", { name: /^Số khách tối đa/ })).toHaveCount(0);
+    await page.goto("/nhan-vien");
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("button", { name: "Quy tắc lương" })).toHaveCount(0);
+    expect(asked).toEqual([]);
+    await context.close();
+  });
+});

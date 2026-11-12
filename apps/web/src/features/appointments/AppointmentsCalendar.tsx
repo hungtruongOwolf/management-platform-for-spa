@@ -29,7 +29,7 @@ import { spaToday } from "../../lib/format";
 import type { CartLine } from "../front-desk/api";
 import { cartFromAppointment } from "../front-desk/prefill";
 import { frontDeskSearch } from "../front-desk/search";
-import { usePreloadRecordHistory } from "../record-history/lazy";
+import { LazyRecordTrace, usePreloadRecordHistory } from "../record-history/lazy";
 import { canTrace } from "../record-history/query";
 import { formatDate } from "../sales/api";
 import { BookingSheet, type Draft } from "./BookingSheet";
@@ -415,6 +415,7 @@ export function AppointmentsCalendar({
       {limitOpen && cal.data && (
         <SlotLimitSheet
           current={cal.data.max_per_slot ?? null}
+          traced={canTrace(me, "appointment_settings")}
           onClose={() => {
             setLimitOpen(false);
           }}
@@ -862,9 +863,12 @@ function VisitSheet({ v, onClose }: { v: CalendarVisit; onClose: () => void }) {
 /** Owner only: "số khách tối đa mỗi khung giờ" (empty = no limit). Advisory, never blocks. */
 function SlotLimitSheet({
   current,
+  traced,
   onClose,
 }: {
   current: number | null;
+  /** "Ai ghi, ai sửa" as the body's last element (ADR-0022 wave 3; `canTrace`, UX only). */
+  traced: boolean;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -940,6 +944,15 @@ function SlotLimitSheet({
           </p>
         )}
       </form>
+      {traced && (
+        // The body's last element, above the footer (design record-history §2.10); on 403 focus
+        // goes to the sheet's close button, which never depends on the right (K31).
+        <LazyRecordTrace
+          record={{ type: "appointment_settings" }}
+          noun="số khách tối đa"
+          focusOnHide={() => document.getElementById("slot-limit-form")?.closest("dialog")?.querySelector<HTMLElement>(".sheet-close")}
+        />
+      )}
     </BottomSheet>
   );
 }

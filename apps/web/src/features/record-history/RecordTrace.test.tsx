@@ -308,6 +308,58 @@ describe("metaText", () => {
   it("a bonus edited once: 'đã sửa 1 lần'", () => {
     expect(metaText({ ...base, record: { type: "adjustment", id: VISIT } }, DAY)).toBe("Ghi bởi Hà · 10:07 · đã sửa 1 lần");
   });
+  // Wave 3 (design §2.10, K37): the price list and the settings say who edited them last.
+  it("the price list: 'Sửa lần cuối bởi …' by the newest save; only added: 'Ghi bởi …'; seeded: 'Chưa rõ ai ghi'", () => {
+    const last = { actor: LAN, at: "2027-01-05T03:30:00Z", day: "2027-01-05" };
+    for (const type of ["service", "package_plan", "service_category"] as const) {
+      const record = { type, id: VISIT };
+      expect(metaText({ ...base, record, summary: { ...base.summary, last, edits: 2 } })).toBe("Sửa lần cuối bởi Lan · 05/01/2027 · đã sửa 2 lần");
+      expect(metaText({ ...base, record, summary: { ...base.summary, edits: 0 } })).toBe("Ghi bởi Hà · 12/11/2026");
+      expect(metaText({ record, summary: { edits: 0, state: "active" }, items: [], omitted: 0 })).toBe("Chưa rõ ai ghi");
+      // Seeded, then edited: the edit says who.
+      expect(metaText({ ...base, record, summary: { last, edits: 1, state: "active" } })).toBe("Sửa lần cuối bởi Lan · 05/01/2027 · đã sửa 1 lần");
+    }
+  });
+  it("the settings: every save is a 'sửa'; never saved → 'Chưa có ai sửa'", () => {
+    for (const type of ["payroll_rules", "appointment_settings"] as const) {
+      expect(metaText({ ...base, record: { type }, summary: { ...base.summary, edits: 0 } })).toBe("Sửa lần cuối bởi Hà · 12/11/2026");
+      expect(metaText({ record: { type }, summary: { edits: 0, state: "active" }, items: [], omitted: 0 })).toBe("Chưa có ai sửa");
+    }
+  });
+});
+
+describe("recordHistoryQuery / canTrace (wave 3)", () => {
+  it("the catalogue by id, the settings by their route (no id)", async () => {
+    const fetch = serve(
+      history({ record: { type: "service", id: VISIT } }),
+      history({ record: { type: "package_plan", id: VISIT } }),
+      history({ record: { type: "payroll_rules" } }),
+      history({ record: { type: "appointment_settings" } }),
+    );
+    const client = createQueryClient();
+    await client.query(recordHistoryQuery({ type: "service", id: VISIT }));
+    await client.query(recordHistoryQuery({ type: "package_plan", id: VISIT }));
+    await client.query(recordHistoryQuery({ type: "payroll_rules" }));
+    await client.query(recordHistoryQuery({ type: "appointment_settings" }));
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      `/api/v1/record-history/service/${VISIT}`,
+      `/api/v1/record-history/package-plan/${VISIT}`,
+      "/api/v1/record-history/settings/payroll-rules",
+      "/api/v1/record-history/settings/appointment-settings",
+    ]);
+    expect(recordHistoryQuery({ type: "payroll_rules" }).queryKey).toEqual(["record-history", "payroll_rules"]);
+    expect(recordHistoryQuery({ type: "customer_package", id: VISIT }).queryKey).toEqual(["record-history", "customer_package", VISIT]);
+  });
+  it("each screen's own right after the history right: catalog.manage, payroll.read, appointment.settings", () => {
+    const me = (permissions: string[]) => ({ permissions }) as unknown as Parameters<typeof canTrace>[0];
+    const rights = { catalog: "catalog.manage", payroll_rules: "payroll.read", appointment_settings: "appointment.settings" } as const;
+    for (const [anchor, right] of Object.entries(rights) as [keyof typeof rights, string][]) {
+      expect(canTrace(me(["record.history.read", right]), anchor)).toBe(true);
+      expect(canTrace(me([right]), anchor)).toBe(false);
+      // A manager shown the history: catalog.read, appointment.manage are not enough (spec §7).
+      expect(canTrace(me(["record.history.read", "catalog.read", "appointment.manage", "visit.read"]), anchor)).toBe(false);
+    }
+  });
 });
 
 describe("recordHistoryQuery / canTrace (wave 2)", () => {
@@ -411,6 +463,29 @@ describe("HISTORY", () => {
       ),
     ).toEqual(["Dịch vụ (đã đổi)", "Ghi chú lịch hẹn (đã đổi)"]);
     expect(lines(line({ action: "attendance.record", changes: [{ field: "has_note", format: "flag" }] }))).toEqual(["Ghi chú (đã đổi)"]);
+  });
+
+  it("the changes of wave 3 read in the forms' own words (design §2.10)", () => {
+    const lines = (action: AuditAction, changes: ActivityEntry["changes"]) => changeLines(line({ action, changes }));
+    expect(
+      lines("catalog.service_update", [
+        { field: "price_female", format: "money", old: "150000", new: "170000" },
+        { field: "price_male", format: "money", new: "160000" },
+        { field: "category", format: "text", old: "Gội đầu", new: "Massage" },
+        { field: "recommended", format: "flag", old: "false", new: "true" },
+        { field: "active", format: "flag", old: "true", new: "false" },
+      ]),
+    ).toEqual(["Giá Nữ: 150.000đ → 170.000đ", "Giá Nam: 160.000đ", "Nhóm dịch vụ: Gội đầu → Massage", "Khuyên dùng: Không → Có", "Đang bán: Có → Không"]);
+    expect(lines("catalog.category_update", [{ field: "sort_order", format: "number", old: "1", new: "3" }])).toEqual(["Thứ tự: 1 → 3"]);
+    expect(
+      lines("payroll.rules_update", [
+        { field: "loyalty_partial_month", format: "code", old: "fifteen_days", new: "prorate" },
+        { field: "meal_allowance_basis", format: "code", old: "monthly", new: "days_worked" },
+        { field: "late_penalty_amount", format: "money", old: "0", new: "30000" },
+      ]),
+    ).toEqual(["Thưởng gắn bó tháng lẻ: Đủ tháng nếu làm từ 15 ngày → Theo số ngày làm", "Cách tính tiền ăn: Cố định mỗi tháng → Theo số ngày đi làm", "Tiền phạt đi muộn: 0đ → 30.000đ"]);
+    expect(lines("appointment.settings", [{ field: "max_per_slot", format: "number", old: "4", new: "6" }])).toEqual(["Số khách tối đa mỗi khung giờ: 4 → 6"]);
+    expect(lines("appointment.settings", [{ field: "max_per_slot", format: "number", old: "6" }])).toEqual(["Số khách tối đa mỗi khung giờ: bỏ 6"]);
   });
 
   it("a cancel gives money back: 'Trả lại', not 'Đảo'", () => {

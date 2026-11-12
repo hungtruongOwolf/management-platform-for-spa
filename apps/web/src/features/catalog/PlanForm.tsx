@@ -1,11 +1,12 @@
 import type { PackagePlan, PlanWrite, Service } from "@vpyd/api-client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { Icon } from "../../app/Icon";
 import { z } from "zod";
 import { fieldMessage, messageFor } from "../../lib/errors";
+import { LazyRecordTrace } from "../record-history/lazy";
 import { savePlan } from "./api";
 import { CATALOG_FIELDS } from "./messages";
 
@@ -87,13 +88,17 @@ export function PlanForm({
   services,
   plan,
   onDone,
+  traced = false,
 }: {
   services: Service[];
   plan?: PackagePlan;
   onDone: () => void;
+  /** Editing: "ai ghi, ai sửa" as the form's last element (ADR-0022; `canTrace`, UX only). */
+  traced?: boolean;
 }) {
   const queryClient = useQueryClient();
   const id = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: initialValues(plan),
@@ -128,7 +133,9 @@ export function PlanForm({
       }}
       className="row-form"
     >
-      <h3 className="panel-title">{title}</h3>
+      <h3 ref={heading} className="panel-title" tabIndex={traced && plan ? -1 : undefined}>
+        {title}
+      </h3>
       <div className="form-grid">
         <div className="field">
           <label htmlFor={`${id}-name`}>Tên gói</label>
@@ -273,6 +280,13 @@ export function PlanForm({
             <input type="checkbox" {...form.register("active")} /> Đang bán
           </label>
         </div>
+        {traced && plan && (
+          // The edit form's last element, above its buttons (design record-history §2.10); on 403
+          // focus goes to the form's title, which never depends on the right.
+          <div className="span-2">
+            <LazyRecordTrace record={{ type: "package_plan", id: plan.id }} noun={`mẫu gói ${plan.name}`} focusOnHide={() => heading.current} />
+          </div>
+        )}
         {mutation.isError && (
           <p role="alert" className="alert span-2">
             {messageFor(mutation.error)}

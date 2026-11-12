@@ -180,6 +180,30 @@ ANALYZE app.appointment;
 ANALYZE app.audit_log;
 "#;
 
+/// Wave 3 (ADR-0022): three years of catalogue and settings saves on top of [`AUDIT_SEED`]: every
+/// service edited twice a month, the payroll rules and the calendar's "số khách tối đa" saved
+/// every month (rows about the spa itself, `entity_type = 'tenant'`, as `hr::rules::put` and
+/// `appointments::service::update_settings` write them).
+const SETTINGS_SEED: &str = r#"
+INSERT INTO app.audit_log (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, at, before, after)
+SELECT gen_random_uuid(), t.id, u.id, 'user', s.action, 'tenant', t.id,
+       (current_date - m * 30) + time '20:00', jsonb_build_object('max_per_slot', m), jsonb_build_object('max_per_slot', m + 1)
+FROM app.tenant t
+CROSS JOIN (SELECT id FROM app.user_account ORDER BY id LIMIT 1) u
+CROSS JOIN generate_series(1, 36) m
+CROSS JOIN (VALUES ('payroll.rules_update'), ('appointment.settings')) s(action)
+WHERE t.slug = 'vpyd'
+UNION ALL
+SELECT gen_random_uuid(), t.id, u.id, 'user', 'catalog.service_update', 'service', sv.id,
+       (current_date - m * 15) + time '19:00', '{"prices": {"all": 140000}}'::jsonb, '{"prices": {"all": 150000}}'::jsonb
+FROM app.tenant t
+CROSS JOIN (SELECT id FROM app.user_account ORDER BY id LIMIT 1) u
+JOIN app.service sv ON sv.tenant_id = t.id
+CROSS JOIN generate_series(1, 72) m
+WHERE t.slug = 'vpyd';
+ANALYZE app.audit_log;
+"#;
+
 /// The bench spa: one owner, a technician, one service, one plan, then three years of books.
 async fn books(pool: PgPool) -> Result<(Harness, String), Box<dyn std::error::Error>> {
     let h = harness(pool).await?;
@@ -390,8 +414,8 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
 
 /// Budgets of "ai ghi, ai sửa" (ADR-0022, architecture/record-history §6) with a real-sized audit
 /// trail (~60.000 rows a year × 3): one record's history p95 ≤ 100 ms (a three-version "Sửa lượt"
-/// chain, the busiest package, the busiest customer); a staff-book cell ≤ 50 ms (wave 2, 0052's
-/// day index); the day's visits and a 92-day revenue book with `edited` within +10 ms of the same
+/// chain, the busiest package, the busiest customer; wave 3: a service, the payroll rules, the
+/// calendar settings); a staff-book cell ≤ 50 ms (wave 2, 0052's day index); the day's visits and a 92-day revenue book with `edited` within +10 ms of the same
 /// lists without it, and 14 days of bookings with `marks=true` within +10 ms of the grids;
 /// "Nhật ký thao tác" after the `rows_by_ids` refactor within the management views' 300 ms.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
@@ -508,6 +532,23 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
         over.push(format!(
             "{cell}: p95 {p95} ms (budget {STAFF_DAY_BUDGET_MS} ms)"
         ));
+    }
+    // Wave 3: the service edited twice a month for three years, the spa's settings saved every
+    // month (rows about the spa itself, `entity_type = 'tenant'`), among the trail above; the
+    // entity index answers both (EXPLAIN below), ≤ 100 ms.
+    sqlx::raw_sql(SETTINGS_SEED).execute(&h.owner).await?;
+    for path in [
+        format!("/record-history/service/{service}"),
+        "/record-history/settings/payroll-rules".to_owned(),
+        "/record-history/settings/appointment-settings".to_owned(),
+    ] {
+        let (p50, p95) = timed(&h, &owner, &path, &mut n).await;
+        println!("p50 {p50:>4} ms  p95 {p95:>4} ms  {path}");
+        if p95 > HISTORY_BUDGET_MS {
+            over.push(format!(
+                "{path}: p95 {p95} ms (budget {HISTORY_BUDGET_MS} ms)"
+            ));
+        }
     }
     // `/appointments` over 14 days: the list view's `marks=true` within +10 ms of the grids.
     let (from, to): (String, String) =
@@ -626,6 +667,14 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
         (
             "staff-day cell (audit_log_staff_day_idx)",
             "EXPLAIN (ANALYZE, BUFFERS) SELECT a.id FROM app.audit_log a WHERE a.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND a.entity_id = (SELECT id FROM app.staff LIMIT 1) AND a.action IN ('attendance.record', 'evaluation.daily_review') AND coalesce(a.after ->> 'date', a.before ->> 'date') = (current_date - 3)::text AND a.action = 'attendance.record' AND a.entity_type = 'staff'",
+        ),
+        (
+            "settings members (entity index, wave 3)",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT a.id FROM app.audit_log a WHERE a.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND a.entity_type = 'tenant' AND a.entity_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND a.action = 'payroll.rules_update'",
+        ),
+        (
+            "service members (entity index, wave 3)",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT a.id FROM app.audit_log a WHERE a.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND a.entity_type = 'service' AND a.entity_id = (SELECT id FROM app.service LIMIT 1) AND a.action = ANY(ARRAY['catalog.service_create', 'catalog.service_update'])",
         ),
         (
             "booking edited probe (partial index)",
