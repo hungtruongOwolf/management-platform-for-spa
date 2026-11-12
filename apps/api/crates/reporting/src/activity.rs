@@ -321,6 +321,11 @@ fn diff(action: Action, before: Option<&Value>, after: Option<&Value>) -> Vec<Ac
             if old == new || (new.is_none() && after.is_some_and(|a| a.pointer(path).is_none())) {
                 return None;
             }
+            // A new staff-book cell without a note says nothing about it ("Ghi chú: Không" on
+            // every first write was noise); with one it reads "Ghi chú: Có".
+            if *name == "has_note" && before.is_none() && new == Some(Value::Bool(false)) {
+                return None;
+            }
             let opaque =
                 |v: &Option<Value>| v.as_ref().is_some_and(|v| v.is_array() || v.is_object());
             let hide_ids = *name == "category";
@@ -1417,6 +1422,32 @@ mod tests {
         );
         r.before = Some(cell("09:20", 20, true));
         assert_eq!(fields_of(&entry(r)), [("has_note", None, None)]);
+        // A first write says what it set; no note is nothing to say, a note is "Có".
+        let first = |note: bool| {
+            let r = row(
+                Action::AttendanceRecord,
+                true,
+                &[],
+                Some(cell("09:05", 5, note)),
+            );
+            fields_of(&entry(r))
+                .into_iter()
+                .map(|(f, _, new)| (f.to_owned(), new.map(str::to_owned)))
+                .collect::<Vec<_>>()
+        };
+        let set = |f: &str, v: &str| (f.to_owned(), Some(v.to_owned()));
+        assert_eq!(
+            first(false),
+            [set("status", "present"), set("check_in", "09:05")]
+        );
+        assert_eq!(
+            first(true),
+            [
+                set("status", "present"),
+                set("check_in", "09:05"),
+                set("has_note", "true")
+            ]
+        );
         let mut r = row(
             Action::AttendanceRecord,
             true,
