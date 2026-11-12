@@ -1187,3 +1187,91 @@ async fn a_legacy_action_reads_as_other_and_a_gone_subject_as_nameless(pool: PgP
     );
     Ok(())
 }
+
+/// A deleted group of services (spec record-history K68) still reads by the name it had: its own
+/// lines (added, renamed, deleted), and the move of a service out of it before it went (K41).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_deleted_group_keeps_its_name_on_every_line(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let group = call(
+        &s.h.app,
+        "POST",
+        "/service-categories",
+        Some(&s.owner),
+        Some(json!({"name": "Nhóm tạm"})),
+    )
+    .await;
+    assert_eq!(group.status, StatusCode::CREATED, "{}", group.body);
+    let group_id = id(&group);
+    let renamed = call(
+        &s.h.app,
+        "PUT",
+        &format!("/service-categories/{group_id}"),
+        Some(&s.owner),
+        Some(json!({"name": "Nhóm tạm (sửa)", "sort_order": group.body["sort_order"]})),
+    )
+    .await;
+    assert_eq!(renamed.status, StatusCode::OK, "{}", renamed.body);
+    // The fixture's service goes into the group and back to "Dưỡng sinh" (version 2 → 3 → 4).
+    let home: Uuid = sqlx::query_scalar("SELECT category_id FROM app.service WHERE id = $1")
+        .bind(s.service)
+        .fetch_one(&s.h.owner)
+        .await?;
+    for (to, version) in [(group_id, "\"2\""), (home, "\"3\"")] {
+        let moved = call_with_headers(
+            &s.h.app,
+            "PUT",
+            &format!("/services/{}", s.service),
+            Some(&s.owner),
+            Some(json!({
+                "category_id": to, "name": "Gội đầu dưỡng sinh", "description": null,
+                "duration_min": 60, "recommended": false, "active": true, "prices": {"all": NEW_PRICE}
+            })),
+            &[("If-Match", version)],
+        )
+        .await;
+        assert_eq!(moved.status, StatusCode::OK, "{}", moved.body);
+    }
+    let deleted = call(
+        &s.h.app,
+        "DELETE",
+        &format!("/service-categories/{group_id}"),
+        Some(&s.owner),
+        None,
+    )
+    .await;
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.body);
+
+    let page = log(&s, &s.owner, "?kind=settings&limit=100").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    let list = items(&page);
+    let about_the_group: Vec<(String, Value)> = list
+        .iter()
+        .filter(|e| e["subject"]["name"] == "Nhóm tạm (sửa)")
+        .map(|e| (e["action"].as_str().unwrap_or_default().to_owned(), e["subject"].clone()))
+        .collect();
+    let subject = json!({"kind": "service_category", "name": "Nhóm tạm (sửa)"});
+    assert_eq!(
+        about_the_group,
+        vec![
+            ("catalog.category_delete".to_owned(), subject.clone()),
+            ("catalog.category_update".to_owned(), subject.clone()),
+            ("catalog.category_create".to_owned(), subject),
+        ],
+        "{list:?}"
+    );
+    let moves: Vec<Value> = list
+        .iter()
+        .filter(|e| e["action"] == "catalog.service_update")
+        .flat_map(|e| e["changes"].as_array().cloned().unwrap_or_default())
+        .filter(|c| c["field"] == "category")
+        .collect();
+    assert_eq!(
+        moves,
+        vec![
+            json!({"field": "category", "format": "text", "old": "Nhóm tạm (sửa)", "new": "Dưỡng sinh"}),
+            json!({"field": "category", "format": "text", "old": "Dưỡng sinh", "new": "Nhóm tạm (sửa)"}),
+        ]
+    );
+    Ok(())
+}

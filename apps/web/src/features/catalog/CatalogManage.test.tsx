@@ -272,6 +272,120 @@ describe("owner edits the price list", () => {
     expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1);
   });
 
+  describe("'Xóa nhóm': a group with no service (K68)", () => {
+    const MISTAKE = { id: "c2", name: "Nhóm thêm nhầm", sort_order: 1 };
+    const FEET = { id: "c3", name: "Chăm sóc chân", sort_order: 2 };
+    /** Off sale ("Ngừng bán"): still a service of its group. */
+    const OFF_SALE = { ...CO_BAN, id: "s3", category_id: "c3", name: "Ngâm chân cũ", active: false };
+
+    /** The price list with `groups`, `MISTAKE` gone once deleted; `refuse` answers the delete instead. */
+    function spa(groups: unknown[], refuse?: Response) {
+      let gone = false;
+      let filled = false;
+      const calls = serve(OWNER, (c) => {
+        if (c.method === "DELETE" && c.path === "/api/v1/service-categories/c2") {
+          if (refuse) {
+            filled = true;
+            return refuse;
+          }
+          gone = true;
+          return new Response(null, { status: 204 });
+        }
+        if (c.method === "GET" && c.path === "/api/v1/service-categories")
+          return Response.json(gone ? groups.filter((g) => g !== MISTAKE) : groups);
+        if (c.method === "GET" && c.path === "/api/v1/services")
+          // Someone added a service to the group from another device.
+          return Response.json([THU_GIAN, CO_BAN, OFF_SALE, ...(filled ? [{ ...CO_BAN, id: "s4", category_id: "c2", name: "Vừa thêm" }] : [])]);
+        return undefined;
+      });
+      return calls;
+    }
+
+    async function openDelete(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole("button", { name: "Sửa nhóm Nhóm thêm nhầm" }));
+      const form = screen.getByRole("form", { name: "Sửa nhóm: Nhóm thêm nhầm" });
+      await user.click(within(form).getByRole("button", { name: "Xóa nhóm Nhóm thêm nhầm" }));
+      return { form, sheet: await screen.findByRole("dialog", { name: "Xóa nhóm Nhóm thêm nhầm?" }) };
+    }
+
+    it("only on a group with no service: one on sale or off sale keeps the button away", async () => {
+      spa([CATEGORIES[0], MISTAKE, FEET]);
+      at("/bang-gia");
+      const user = userEvent.setup();
+      for (const group of ["Gội đầu dưỡng sinh", "Chăm sóc chân"]) {
+        await user.click(await screen.findByRole("button", { name: `Sửa nhóm ${group}` }));
+        const form = screen.getByRole("form", { name: `Sửa nhóm: ${group}` });
+        expect(within(form).queryByRole("button", { name: /^Xóa nhóm/ })).toBeNull();
+        await user.click(within(form).getByRole("button", { name: "Hủy" }));
+      }
+      await user.click(screen.getByRole("button", { name: "Sửa nhóm Nhóm thêm nhầm" }));
+      const form = screen.getByRole("form", { name: "Sửa nhóm: Nhóm thêm nhầm" });
+      expect(within(form).getByRole("button", { name: "Xóa nhóm Nhóm thêm nhầm" })).toHaveTextContent("Xóa nhóm");
+    });
+
+    it("asks first, in a sheet; 'Thôi' sends nothing and keeps the form", async () => {
+      const calls = spa([CATEGORIES[0], MISTAKE, FEET]);
+      at("/bang-gia");
+      const user = userEvent.setup();
+      const { form, sheet } = await openDelete(user);
+      expect(sheet).toHaveTextContent("Nhóm này chưa có dịch vụ nào. Xóa xong, nhóm không còn trên bảng giá.");
+      await user.click(within(sheet).getByRole("button", { name: "Thôi" }));
+      expect(screen.queryByRole("dialog", { name: /^Xóa nhóm/ })).toBeNull();
+      expect(form).toBeInTheDocument();
+      expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    });
+
+    it("deletes, refetches the catalogue and focuses the next group's heading", async () => {
+      const calls = spa([CATEGORIES[0], MISTAKE, FEET]);
+      at("/bang-gia");
+      const user = userEvent.setup();
+      const { sheet } = await openDelete(user);
+      await user.click(within(sheet).getByRole("button", { name: "Xóa nhóm" }));
+
+      expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/api/v1/service-categories/c2"]);
+      const next = await screen.findByRole("heading", { level: 2, name: "Chăm sóc chân" });
+      await vi.waitFor(() => {
+        expect(next).toHaveFocus();
+      });
+      expect(screen.queryByRole("heading", { name: "Nhóm thêm nhầm" })).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("form", { name: /^Sửa nhóm/ })).toBeNull();
+      // ["catalog"] invalidated: every picker drops the group too.
+      expect(calls.filter((c) => c.path === "/api/v1/service-categories" && c.method === "GET").length).toBe(2);
+      // A heading takes focus from script only: never a tab stop.
+      expect(next).toHaveAttribute("tabindex", "-1");
+    });
+
+    it("the last group: focus goes back to the page title", async () => {
+      spa([CATEGORIES[0], MISTAKE]);
+      at("/bang-gia");
+      const user = userEvent.setup();
+      const { sheet } = await openDelete(user);
+      await user.click(within(sheet).getByRole("button", { name: "Xóa nhóm" }));
+      await vi.waitFor(() => {
+        expect(screen.getByRole("heading", { level: 1, name: "Bảng giá dịch vụ" })).toHaveFocus();
+      });
+      expect(screen.queryByRole("heading", { name: "Nhóm thêm nhầm" })).toBeNull();
+    });
+
+    it("a group filled from another device: the sheet says why in Vietnamese, the list refetches, the button goes", async () => {
+      spa(
+        [CATEGORIES[0], MISTAKE, FEET],
+        Response.json({ status: 409, code: "catalog.category_in_use" }, { status: 409 }),
+      );
+      at("/bang-gia");
+      const user = userEvent.setup();
+      const { form, sheet } = await openDelete(user);
+      await user.click(within(sheet).getByRole("button", { name: "Xóa nhóm" }));
+      expect(await within(sheet).findByRole("alert")).toHaveTextContent(
+        "Không xóa được: nhóm này đang có dịch vụ (có thể vừa được thêm ở máy khác). Chỉ xóa được nhóm chưa có dịch vụ nào.",
+      );
+      expect(await screen.findByText("Vừa thêm")).toBeInTheDocument();
+      expect(within(form).queryByRole("button", { name: /^Xóa nhóm/ })).toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "Nhóm thêm nhầm" })).toBeInTheDocument();
+    });
+  });
+
   it("blocks an active service without a price before calling the API", async () => {
     const calls = serve(OWNER);
     at("/bang-gia");

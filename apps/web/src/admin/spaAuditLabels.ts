@@ -25,6 +25,7 @@ const ACTIONS: Record<string, string> = {
   "branch.create": "Tạo chi nhánh",
   "catalog.category_create": "Thêm nhóm dịch vụ",
   "catalog.category_update": "Sửa nhóm dịch vụ",
+  "catalog.category_delete": "Xóa nhóm dịch vụ",
   "catalog.service_create": "Thêm dịch vụ",
   "catalog.service_update": "Sửa dịch vụ",
   "catalog.plan_create": "Thêm gói liệu trình",

@@ -185,6 +185,13 @@ const ROUTES: &[Route] = &[
     )
     .id(Target::Category)
     .body(category_update_body),
+    // The fixture's group has a service: the owner's call is a 409, never a delete.
+    route(
+        "DELETE",
+        "/api/v1/service-categories/{id}",
+        Access::Perm(P::CatalogManage, OWNER_ONLY),
+    )
+    .id(Target::Category),
     route(
         "POST",
         "/api/v1/services",

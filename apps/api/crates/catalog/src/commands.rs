@@ -102,6 +102,43 @@ pub async fn update_category(
     Ok(row)
 }
 
+/// Deletes a group of services nothing uses (spec record-history K68), e.g. one added by mistake.
+/// The group is locked first, so a service added at the same moment either lands before the check
+/// (`409 catalog.category_in_use`) or after the delete (that write's `422 category_id not_found`);
+/// the foreign key of `service.category_id` is the guarantee behind both. No `If-Match`: a group
+/// has no version (K53), and the name its delete records is the one it had when locked.
+pub async fn delete_category(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<(), AppError> {
+    actor.require(Permission::CatalogManage)?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
+    let row = repo::lock_category(&mut tx, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if repo::category_in_use(&mut tx, id).await? {
+        return Err(AppError::Conflict {
+            code: repo::CATEGORY_IN_USE,
+        });
+    }
+    if !repo::delete_category(&mut tx, id).await? {
+        return Err(AppError::NotFound);
+    }
+    audit::record(
+        &mut tx,
+        actor,
+        AuditEntry {
+            action: Action::CatalogCategoryDelete,
+            entity_type: "service_category",
+            entity_id: row.id,
+            // The row is gone: the trail keeps what it was called (the screens name it from here).
+            before: Some(json!({"name": row.name, "sort_order": row.sort_order})),
+            after: None,
+            reason: None,
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------- services
 
 pub struct ServiceInput {

@@ -78,6 +78,7 @@ pub const fn kind_of(action: Action) -> ActivityKind {
         A::StaffPayUpdate | A::PayrollRulesUpdate | A::PayrollClose => K::Payroll,
         A::CatalogCategoryCreate
         | A::CatalogCategoryUpdate
+        | A::CatalogCategoryDelete
         | A::CatalogServiceCreate
         | A::CatalogServiceUpdate
         | A::CatalogPlanCreate
@@ -1204,8 +1205,16 @@ pub(crate) async fn rows_by_ids(
              SELECT NULL, NULL, NULL, NULL, pp.name, NULL, NULL FROM app.package_plan pp
              WHERE a.entity_type = 'package_plan' AND pp.tenant_id = a.tenant_id AND pp.id = a.entity_id
              UNION ALL
-             SELECT NULL, NULL, NULL, NULL, sc.name, NULL, NULL FROM app.service_category sc
-             WHERE a.entity_type = 'service_category' AND sc.tenant_id = a.tenant_id AND sc.id = a.entity_id
+             -- A deleted group (spec record-history K68) by the name its delete recorded.
+             SELECT NULL, NULL, NULL, NULL,
+                    coalesce((SELECT sc.name FROM app.service_category sc
+                              WHERE sc.tenant_id = a.tenant_id AND sc.id = a.entity_id),
+                             (SELECT g.before ->> 'name' FROM app.audit_log g
+                              WHERE g.tenant_id = a.tenant_id AND g.entity_type = 'service_category'
+                                AND g.entity_id = a.entity_id AND g.action = 'catalog.category_delete'
+                              LIMIT 1)),
+                    NULL, NULL
+             WHERE a.entity_type = 'service_category'
              UNION ALL
              SELECT NULL, NULL, NULL, NULL, ua.full_name, NULL, NULL FROM app.user_account ua
              WHERE a.entity_type = 'user' AND ua.id = a.entity_id
@@ -1218,11 +1227,30 @@ pub(crate) async fn rows_by_ids(
              AND sb.id = CASE WHEN a.entity_type = 'appointment' THEN (a.before ->> 'staff_id')::uuid END
            LEFT JOIN app.staff sa ON sa.tenant_id = a.tenant_id
              AND sa.id = CASE WHEN a.entity_type = 'appointment' THEN (a.after ->> 'staff_id')::uuid END
-           -- A service's group of services before / after (ids written by the catalogue).
-           LEFT JOIN app.service_category cb ON cb.tenant_id = a.tenant_id
-             AND cb.id = CASE WHEN a.action = 'catalog.service_update' THEN (a.before ->> 'category_id')::uuid END
-           LEFT JOIN app.service_category ca ON ca.tenant_id = a.tenant_id
-             AND ca.id = CASE WHEN a.action = 'catalog.service_update' THEN (a.after ->> 'category_id')::uuid END
+           -- A service's group of services before / after (ids written by the catalogue); a group
+           -- deleted since (K68) by the name its delete recorded.
+           LEFT JOIN LATERAL (
+             SELECT coalesce(
+                      (SELECT c.name FROM app.service_category c
+                       WHERE c.tenant_id = a.tenant_id AND c.id = g.id),
+                      (SELECT d.before ->> 'name' FROM app.audit_log d
+                       WHERE d.tenant_id = a.tenant_id AND d.entity_type = 'service_category'
+                         AND d.entity_id = g.id AND d.action = 'catalog.category_delete'
+                       LIMIT 1)) AS name
+             FROM (SELECT (a.before ->> 'category_id')::uuid AS id) g
+             WHERE a.action = 'catalog.service_update'
+           ) cb ON true
+           LEFT JOIN LATERAL (
+             SELECT coalesce(
+                      (SELECT c.name FROM app.service_category c
+                       WHERE c.tenant_id = a.tenant_id AND c.id = g.id),
+                      (SELECT d.before ->> 'name' FROM app.audit_log d
+                       WHERE d.tenant_id = a.tenant_id AND d.entity_type = 'service_category'
+                         AND d.entity_id = g.id AND d.action = 'catalog.category_delete'
+                       LIMIT 1)) AS name
+             FROM (SELECT (a.after ->> 'category_id')::uuid AS id) g
+             WHERE a.action = 'catalog.service_update'
+           ) ca ON true
            WHERE a.tenant_id = $1 AND a.id = ANY($3)
            ORDER BY a.at DESC, a.id DESC"#,
         tenant,

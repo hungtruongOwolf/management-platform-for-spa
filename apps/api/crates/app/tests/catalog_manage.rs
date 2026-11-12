@@ -53,6 +53,53 @@ impl Owner {
             .unwrap_or_default()
             .to_owned()
     }
+    /// A new group of services with nothing in it; its id.
+    async fn new_group(&self, name: &str) -> String {
+        let created = self
+            .send("POST", "/service-categories", json!({ "name": name }))
+            .await;
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
+        created.body["id"].as_str().unwrap_or_default().to_owned()
+    }
+    async fn delete_group(&self, id: &str) -> Reply {
+        call(
+            &self.h.app,
+            "DELETE",
+            &format!("/service-categories/{id}"),
+            Some(&self.token),
+            None,
+        )
+        .await
+    }
+    async fn count(&self, sql: &'static str) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar(sql).fetch_one(&self.h.owner).await
+    }
+}
+
+/// A service body in `category_id`, on sale or not.
+fn service_in(category_id: &str, name: &str, active: bool) -> Value {
+    json!({
+        "category_id": category_id, "name": name, "description": null, "duration_min": 30,
+        "recommended": false, "active": active, "prices": {"all": 50_000},
+    })
+}
+
+/// Waits until some session of the test database waits on a row lock (the owner pool sees every
+/// session's wait event).
+async fn until_a_request_waits_on_a_lock(owner: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
+    for _ in 0..2_000 {
+        let waiting: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM pg_stat_activity
+             WHERE datname = current_database() AND wait_event_type = 'Lock'",
+        )
+        .fetch_one(owner)
+        .await?;
+        if waiting > 0 {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    Err("the request never waited on the other transaction's lock".into())
 }
 
 fn ten_shampoo_plan(service_id: &Value) -> Value {
@@ -355,6 +402,21 @@ async fn managers_cannot_change_the_price_list(pool: PgPool) -> TestResult {
     )
     .await;
     assert_eq!(create.status, StatusCode::FORBIDDEN);
+    // Not even an empty group (K68): only the owner deletes one.
+    let empty = o.new_group("Nhóm trống").await;
+    let delete = call(
+        &o.h.app,
+        "DELETE",
+        &format!("/service-categories/{empty}"),
+        Some(&manager),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (delete.status, delete.body["code"].as_str()),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+    );
+    assert!(!o.category_id("Nhóm trống").await.is_empty(), "still there");
     Ok(())
 }
 
@@ -392,6 +454,18 @@ async fn another_spa_cannot_edit_this_catalog(pool: PgPool) -> TestResult {
         "foreign id behaves as missing"
     );
     assert_eq!(o.service("Thư Giãn").await["prices"]["male"], 99_000);
+    // An empty group of this spa (K68): another spa's owner cannot delete it either.
+    let empty = o.new_group("Nhóm trống").await;
+    let delete = call(
+        &o.h.app,
+        "DELETE",
+        &format!("/service-categories/{empty}"),
+        Some(&other),
+        None,
+    )
+    .await;
+    assert_eq!(delete.status, StatusCode::NOT_FOUND, "{}", delete.body);
+    assert_eq!(o.category_id("Nhóm trống").await, empty, "still there");
     Ok(())
 }
 
@@ -430,5 +504,170 @@ async fn categories_can_be_added_and_renamed(pool: PgPool) -> TestResult {
         )
         .await;
     assert_eq!(duplicate.status, StatusCode::UNPROCESSABLE_ENTITY);
+    Ok(())
+}
+
+// ---------------------------------------------------------------- deleting a group (K68)
+
+/// A group added by mistake goes: `204`, off the list, once (`404` after), and the trail keeps
+/// its last name and who deleted it. Its own history is gone with it (`404`).
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn an_empty_group_is_deleted_once_and_the_trail_keeps_its_name(pool: PgPool) -> TestResult {
+    let o = owner(pool).await?;
+    let id = o.new_group("Nhóm nhầm").await;
+    let renamed = o
+        .send(
+            "PUT",
+            &format!("/service-categories/{id}"),
+            json!({"name": "Nhóm nhầm (sửa)", "sort_order": 10}),
+        )
+        .await;
+    assert_eq!(renamed.status, StatusCode::OK, "{}", renamed.body);
+
+    let deleted = o.delete_group(&id).await;
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.body);
+    assert!(o.category_id("Nhóm nhầm (sửa)").await.is_empty(), "off the list");
+    assert_eq!(
+        o.delete_group(&id).await.status,
+        StatusCode::NOT_FOUND,
+        "a group goes once"
+    );
+    let history = o
+        .get(&format!("/record-history/service-category/{id}"))
+        .await;
+    assert_eq!(history.status, StatusCode::NOT_FOUND, "{}", history.body);
+
+    let (actor, before, after): (Option<String>, Value, Option<Value>) = sqlx::query_as(
+        "SELECT u.full_name, a.before, a.after FROM app.audit_log a
+           LEFT JOIN app.user_account u ON u.id = a.actor_user_id
+          WHERE a.action = 'catalog.category_delete' AND a.entity_type = 'service_category'
+            AND a.entity_id = $1::uuid AND a.actor_kind = 'user'",
+    )
+    .bind(&id)
+    .fetch_one(&o.h.owner)
+    .await?;
+    assert_eq!(actor.as_deref(), Some("Chủ Spa"));
+    assert_eq!(before, json!({"name": "Nhóm nhầm (sửa)", "sort_order": 10}));
+    assert_eq!(after, None);
+    Ok(())
+}
+
+/// Any service keeps its group: one on sale, and one off sale (the price list's "Ngừng bán", which
+/// stays in the database for ever, AC1.6). `409 catalog.category_in_use`, nothing deleted or audited.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_group_with_a_service_on_sale_or_not_is_never_deleted(pool: PgPool) -> TestResult {
+    let o = owner(pool).await?;
+    let seeded = o.category_id("Gội đầu dưỡng sinh").await;
+    let off_sale = o.new_group("Nhóm ngừng bán").await;
+    let made = o
+        .send(
+            "POST",
+            "/services",
+            service_in(&off_sale, "Dịch vụ đã ngừng", false),
+        )
+        .await;
+    assert_eq!(made.status, StatusCode::CREATED, "{}", made.body);
+    assert_eq!(made.body["active"], false);
+
+    for (case, id) in [("on sale", &seeded), ("off sale", &off_sale)] {
+        let refused = o.delete_group(id).await;
+        assert_eq!(
+            (refused.status, refused.body["code"].as_str()),
+            (StatusCode::CONFLICT, Some("catalog.category_in_use")),
+            "{case}: {}",
+            refused.body
+        );
+    }
+    assert_eq!(o.category_id("Gội đầu dưỡng sinh").await, seeded);
+    assert_eq!(o.category_id("Nhóm ngừng bán").await, off_sale);
+    assert_eq!(
+        o.count("SELECT count(*) FROM app.audit_log WHERE action = 'catalog.category_delete'")
+            .await?,
+        0
+    );
+    Ok(())
+}
+
+/// The race: a service is being added to an empty group when its delete arrives. The delete waits
+/// for that write, then finds the service and refuses; the service keeps its group.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_delete_waits_for_a_service_being_added_and_then_refuses(pool: PgPool) -> TestResult {
+    let o = owner(pool).await?;
+    let id = o.new_group("Nhóm đang thêm").await;
+    let tenant: uuid::Uuid = sqlx::query_scalar("SELECT id FROM app.tenant WHERE slug = 'vpyd'")
+        .fetch_one(&o.h.owner)
+        .await?;
+    // The other request, mid-transaction: its service row is written, not yet committed.
+    let mut adding = o.h.owner.begin().await?;
+    sqlx::query(
+        "INSERT INTO app.service (id, tenant_id, category_id, name) VALUES ($1, $2, $3::uuid, 'Vừa thêm')",
+    )
+    .bind(uuid::Uuid::now_v7())
+    .bind(tenant)
+    .bind(&id)
+    .execute(&mut *adding)
+    .await?;
+
+    let delete = {
+        let (app, token, path) = (
+            o.h.app.clone(),
+            o.token.clone(),
+            format!("/service-categories/{id}"),
+        );
+        tokio::spawn(async move { call(&app, "DELETE", &path, Some(&token), None).await })
+    };
+    until_a_request_waits_on_a_lock(&o.h.owner).await?;
+    adding.commit().await?;
+    let refused = delete.await?;
+    assert_eq!(
+        (refused.status, refused.body["code"].as_str()),
+        (StatusCode::CONFLICT, Some("catalog.category_in_use")),
+        "{}",
+        refused.body
+    );
+    assert_eq!(o.service("Vừa thêm").await["category_id"], json!(id));
+    Ok(())
+}
+
+/// The other order: the delete holds the group when a service is added to it. The write waits,
+/// then finds no group: `422 category_id not_found` (not a foreign-key 500), and no service
+/// points at a group that is gone.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_service_added_while_its_group_is_deleted_is_refused(pool: PgPool) -> TestResult {
+    let o = owner(pool).await?;
+    let id = o.new_group("Nhóm đang xóa").await;
+    // The delete, mid-transaction: the group's row is deleted, not yet committed.
+    let mut deleting = o.h.owner.begin().await?;
+    sqlx::query("DELETE FROM app.service_category WHERE id = $1::uuid")
+        .bind(&id)
+        .execute(&mut *deleting)
+        .await?;
+
+    let add = {
+        let (app, token) = (o.h.app.clone(), o.token.clone());
+        let body = service_in(&id, "Thêm muộn", true);
+        tokio::spawn(async move { call(&app, "POST", "/services", Some(&token), Some(body)).await })
+    };
+    until_a_request_waits_on_a_lock(&o.h.owner).await?;
+    deleting.commit().await?;
+    let refused = add.await?;
+    assert_eq!(
+        (refused.status, refused.body["errors"].clone()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!([{"field": "category_id", "code": "not_found"}])
+        ),
+        "{}",
+        refused.body
+    );
+    assert_eq!(
+        o.count(
+            "SELECT count(*) FROM app.service s WHERE NOT EXISTS (
+               SELECT 1 FROM app.service_category c WHERE c.tenant_id = s.tenant_id AND c.id = s.category_id)"
+        )
+        .await?,
+        0
+    );
+    assert_eq!(o.service("Thêm muộn").await, Value::Null);
     Ok(())
 }

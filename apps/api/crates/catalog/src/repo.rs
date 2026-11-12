@@ -73,10 +73,14 @@ pub async fn categories(tx: &mut TenantTx) -> Result<Vec<CategoryRow>, AppError>
         .collect())
 }
 
+/// Whether the group exists, holding it (`FOR KEY SHARE`, what the service's foreign key takes)
+/// until the transaction ends: a delete of the group waits for this write and then finds the
+/// service; a write that waited on a delete finds no group (`422`, not a foreign-key error).
+/// A rename does not conflict with it.
 pub async fn category_exists(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     let found = sqlx::query_scalar!(
-        "SELECT 1 AS one FROM app.service_category WHERE tenant_id = $1 AND id = $2",
+        "SELECT 1 AS one FROM app.service_category WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE",
         tenant,
         id
     )
@@ -84,6 +88,67 @@ pub async fn category_exists(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppErr
     .await?;
     Ok(found.is_some())
 }
+
+/// The group, locked for its delete (`FOR UPDATE`): waits for a write that holds it
+/// ([`category_exists`]), so the services counted after it include that write's.
+pub async fn lock_category(tx: &mut TenantTx, id: Uuid) -> Result<Option<CategoryRow>, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let row = sqlx::query!(
+        "SELECT id, name, sort_order FROM app.service_category WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+        tenant,
+        id
+    )
+    .fetch_optional(tx.conn())
+    .await?;
+    Ok(row.map(|r| CategoryRow {
+        id: r.id,
+        name: r.name,
+        sort_order: r.sort_order,
+    }))
+}
+
+/// Whether any service, on sale or not, is in the group.
+pub async fn category_in_use(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let used = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM app.service WHERE tenant_id = $1 AND category_id = $2) AS "used!""#,
+        tenant,
+        id
+    )
+    .fetch_one(tx.conn())
+    .await?;
+    Ok(used)
+}
+
+/// Deletes the group. A row still referencing it (a foreign-key violation, the guarantee behind
+/// [`category_in_use`]) is `409 catalog.category_in_use`.
+pub async fn delete_category(tx: &mut TenantTx, id: Uuid) -> Result<bool, AppError> {
+    let tenant = tx.tenant().as_uuid();
+    let deleted = sqlx::query!(
+        "DELETE FROM app.service_category WHERE tenant_id = $1 AND id = $2",
+        tenant,
+        id
+    )
+    .execute(tx.conn())
+    .await
+    .map_err(|error| {
+        let referenced = error
+            .as_database_error()
+            .and_then(sqlx::error::DatabaseError::code)
+            .is_some_and(|c| c == "23503");
+        if referenced {
+            AppError::Conflict {
+                code: CATEGORY_IN_USE,
+            }
+        } else {
+            AppError::Database(error)
+        }
+    })?;
+    Ok(deleted.rows_affected() == 1)
+}
+
+/// `409`: the group still has services (on sale or not), or another row references it.
+pub const CATEGORY_IN_USE: &str = "catalog.category_in_use";
 
 pub async fn insert_category(
     tx: &mut TenantTx,

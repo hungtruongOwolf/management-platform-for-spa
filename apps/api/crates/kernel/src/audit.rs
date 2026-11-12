@@ -95,6 +95,8 @@ actions! {
     // Catalog.
     CatalogCategoryCreate => "catalog.category_create",
     CatalogCategoryUpdate => "catalog.category_update",
+    /// The group's name and order in `before` (the row is gone; the trail still names it).
+    CatalogCategoryDelete => "catalog.category_delete",
     CatalogServiceCreate => "catalog.service_create",
     CatalogServiceUpdate => "catalog.service_update",
     CatalogPlanCreate => "catalog.plan_create",
