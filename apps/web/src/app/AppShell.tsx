@@ -8,7 +8,9 @@ import {
 import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { useBackdropClose, useModalDialog } from "../components/useModalDialog";
 import { can, logout, meQuery } from "../features/auth/session";
+import { useAfterFirstPaint } from "../lib/afterFirstPaint";
 import { longDate } from "../lib/format";
+import { mayOpen } from "./access";
 import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
 import { InShell } from "./inShell";
@@ -26,6 +28,7 @@ function activeFor(item: NavItem) {
   };
 }
 import { readSidebarCollapsed, saveSidebarCollapsed } from "./prefs";
+import { loadFrontDesk } from "./screens";
 import { resetTrail } from "./trail";
 import { UserMenu } from "./UserMenu";
 import { SkipLink } from "../components/SkipLink";
@@ -150,6 +153,15 @@ export function AppShell() {
   const [firstPath] = useState(pathname);
   const [navigated, setNavigated] = useState(false);
   if (!navigated && pathname !== firstPath) setNavigated(true);
+
+  // The front desk is a chunk of its own (app/screens.ts): fetched once this screen has painted,
+  // for whoever may open it, so the nav item, the date chip and every "Sửa lượt" link open it at
+  // once, as when it was part of the startup chunk.
+  const painted = useAfterFirstPaint();
+  const opensDesk = mayOpen.frontDesk(me);
+  useEffect(() => {
+    if (painted && opensDesk) void loadFrontDesk();
+  }, [painted, opensDesk]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

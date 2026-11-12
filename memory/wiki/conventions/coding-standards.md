@@ -1,6 +1,6 @@
 ---
 title: Coding standards
-updated: 2026-11-09
+updated: 2026-11-12
 sources: [runbooks/local-merge-gate.md, conventions/testing.md]
 ---
 
@@ -39,6 +39,7 @@ Single source of truth for code quality. `build` and `pr-review` skills apply ev
 - Styling through design tokens only; raw hex colors and magic pixel values live in the token layer.
 - ESLint + `tsc --noEmit` clean (`pnpm lint`, `pnpm typecheck`; CI enforces both). No formatter is enforced: Prettier was listed but never configured or run (≈150 of 213 web files differ from its output), and was removed 2026-11-09; adopting one means a one-time reformat PR plus a CI check.
 - Accessibility: semantic HTML first, keyboard reachable, visible focus, `prefers-reduced-motion` respected.
+- **Keep the startup chunk lean** (budget 125 KiB gzip, gate `pnpm --filter web budget`; rules and numbers in [frontend § Perf budget](../architecture/frontend.md#perf-budget-critical-path)). Startup modules (`main.tsx`, `app/App.tsx`, `app/router.tsx`, `app/AppShell.tsx`, `app/nav.ts`, `app/access.ts`, `app/screens.ts`, `features/auth/session.ts`, `features/auth/LoginPage.tsx`, `lib/api.ts`, `lib/queryClient.ts`, `lib/afterFirstPaint.ts`, `lib/searchState.ts`, the `features/*/search.ts` schemas) never statically import a screen, a feature's API module or `lib/errors.ts`: reach them with `import()` (`lazyRouteComponent`, `React.lazy`, a loader in `app/screens.ts`). A first screen that must not wait a round trip on a cold start goes in `app/screens.ts` + `ROUTE_PRELOAD` (vite.config.ts), never as a static import or a `<link rel="modulepreload">` in `index.html`. Type-only imports from a lazy module use `import type { … }`: with `verbatimModuleSyntax`, `import { type X }` keeps the module as a side-effect import.
 
 ## Git
 - Branch per slice: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`.
