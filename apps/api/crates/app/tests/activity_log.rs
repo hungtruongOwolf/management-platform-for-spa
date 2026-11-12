@@ -1248,7 +1248,12 @@ async fn a_deleted_group_keeps_its_name_on_every_line(pool: PgPool) -> TestResul
     let about_the_group: Vec<(String, Value)> = list
         .iter()
         .filter(|e| e["subject"]["name"] == "Nhóm tạm (sửa)")
-        .map(|e| (e["action"].as_str().unwrap_or_default().to_owned(), e["subject"].clone()))
+        .map(|e| {
+            (
+                e["action"].as_str().unwrap_or_default().to_owned(),
+                e["subject"].clone(),
+            )
+        })
         .collect();
     let subject = json!({"kind": "service_category", "name": "Nhóm tạm (sửa)"});
     assert_eq!(

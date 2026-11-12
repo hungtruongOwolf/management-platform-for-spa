@@ -526,7 +526,10 @@ async fn an_empty_group_is_deleted_once_and_the_trail_keeps_its_name(pool: PgPoo
 
     let deleted = o.delete_group(&id).await;
     assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.body);
-    assert!(o.category_id("Nhóm nhầm (sửa)").await.is_empty(), "off the list");
+    assert!(
+        o.category_id("Nhóm nhầm (sửa)").await.is_empty(),
+        "off the list"
+    );
     assert_eq!(
         o.delete_group(&id).await.status,
         StatusCode::NOT_FOUND,
