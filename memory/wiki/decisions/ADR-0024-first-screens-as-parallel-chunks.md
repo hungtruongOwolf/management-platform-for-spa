@@ -28,7 +28,7 @@ Chọn **C**. `app/screens.ts` giữ loader của màn đầu lazy (router, `App
 
 ## Consequences
 - Positive: startup chung 124,90 → 113,67 KiB (~11 KiB headroom cho shell và mọi màn khác); `/quay` 124,90 → 123,86 (giảm thật); `/` 122,16 tải song song; Lighthouse vẫn đo `/quay` và `/dang-nhap` trên bản build.
-- Negative / accepted trade-offs: headroom của riêng đường `/quay` chỉ ~1,1 KiB; mã mới của màn đầu quầy phải vào chunk lazy (sau lần vẽ đầu). Một file script nhỏ thêm vào mỗi lần mở app. Dev server không chạy script (màn lazy tải như các màn khác). Nhóm `codeSplitting` (`FrontDeskPage`, `common`) phải sửa khi đổi import của các module trong đó.
+- Negative / accepted trade-offs: Lighthouse CI (vite preview, HTTP/1.1, lantern) `/quay` 2112 → 2263 ms, `/dang-nhap` 1955 → 2036 ms, do lantern h1 phạt request thêm; trên HTTP/2 (đo local) `/quay` chênh +53 ms trong nhiễu, `/dang-nhap` −150, `/` −35. Lề `/quay` của gate còn ~240 ms. Headroom của riêng đường `/quay` chỉ ~1,1 KiB; mã mới của màn đầu quầy phải vào chunk lazy (sau lần vẽ đầu). Một file script nhỏ thêm vào mỗi lần mở app. Dev server không chạy script (màn lazy tải như các màn khác). Nhóm `codeSplitting` (`FrontDeskPage`, `common`) phải sửa khi đổi import của các module trong đó.
 - Follow-ups: theo dõi Lighthouse CI `/quay` (trước 2112 ms trung vị); nếu thêm màn đầu khác (ví dụ `/nhan-vien` của KTV) thì thêm vào `ROUTE_PRELOAD` + `app/screens.ts`.
 
 ## Revisit when
