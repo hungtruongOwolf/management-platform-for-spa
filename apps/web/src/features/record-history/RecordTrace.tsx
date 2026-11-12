@@ -93,9 +93,13 @@ export function RecordTrace({
   const queryClient = useQueryClient();
   const [mountedAt] = useState(Date.now);
   const since = openedAt ?? mountedAt;
-  // One request per open: the cached reply of an earlier open is shown while it is asked again
-  // (another browser may have written since; writes here invalidate it anyway, lib/queryClient.ts).
-  const history = useQuery({ ...recordHistoryQuery(record), refetchOnMount: (q) => q.state.dataUpdatedAt < since });
+  // One request per open: the reply of an earlier open is shown while it is asked again (another
+  // browser may have written since), and so is one a write in this browser made stale
+  // (lib/queryClient.ts); this open's own reply, from the prefetch, is not asked twice.
+  const history = useQuery({
+    ...recordHistoryQuery(record),
+    refetchOnMount: (q) => q.state.isInvalidated || q.state.dataUpdatedAt < since,
+  });
   const [open, setOpen] = useState(defaultOpen);
   const generated = useId();
   const regionId = id ?? `rt-${generated}`;
