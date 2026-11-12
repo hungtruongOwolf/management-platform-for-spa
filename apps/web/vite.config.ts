@@ -49,12 +49,12 @@ export default defineConfig({
             { name: "app", tags: ["$initial"] },
             {
               name: "FrontDeskPage",
-              test: /src[\\/](features[\\/](front-desk[\\/](FrontDeskPage|api|Tip)|appointments[\\/]complete|customers[\\/](CustomerSearch|api)|sales[\\/]api)|lib[\\/]invalidate|app[\\/]CustomerName)\.tsx?$/,
+              test: /src[\\/](features[\\/](front-desk[\\/](FrontDeskPage|desk|Tip)|customers[\\/](CustomerSearch|api)|sales[\\/]api)|app[\\/]CustomerName)\.tsx?$/,
               includeDependenciesRecursively: false,
             },
             {
               name: "common",
-              test: /(react-query[\\/]build[\\/]modern[\\/](useQuery|useMutation)|query-core[\\/]build[\\/]modern[\\/]mutationObserver)\.js$|packages[\\/]ui[\\/]src[\\/]format[\\/]money\.ts$|src[\\/]lib[\\/]errors\.ts$/,
+              test: /(react-query[\\/]build[\\/]modern[\\/](useQuery|useMutation)|query-core[\\/]build[\\/]modern[\\/]mutationObserver)\.js$|packages[\\/]ui[\\/]src[\\/](format[\\/]money|index)\.ts$|src[\\/]lib[\\/]errors\.ts$/,
               includeDependenciesRecursively: false,
             },
           ],

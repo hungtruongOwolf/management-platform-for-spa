@@ -3,7 +3,7 @@ import type {
   Customer,
   CustomerSummary,
   Visit,
-  VisitPackageSaleCreate,
+  VisitCreate,
 } from "@vpyd/api-client";
 import {
   useMutation,
@@ -11,7 +11,6 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { formatVnd } from "@vpyd/ui";
 import {
   Suspense,
   lazy,
@@ -21,50 +20,30 @@ import {
   useState,
 } from "react";
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
-import { ApiError } from "../../lib/api";
-import { invalidateManagementViews } from "../../lib/invalidate";
 import { useSearchState } from "../../lib/searchState";
-import { fieldMessage, messageFor } from "../../lib/errors";
+import { messageFor } from "../../lib/errors";
 import { can, meQuery } from "../auth/session";
 import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
-import { completeAppointment } from "../appointments/complete";
-import { activeStaffQuery, exceedsCap, parseAmount } from "../sales/api";
-import {
-  type CartLine,
-  type DiscountDraft,
-  type PackageSaleDraft,
-  type PaymentMode,
-  amountDue,
-  byServiceTime,
-  coverage,
-  discountPreview,
-  inCart,
-  packagesDue,
-  paymentsFor,
-  recordVisit,
-  savedSummary,
-  serviceInstant,
-  staffByUse,
-  timeOf,
-  todayVisitsQuery,
-  visitBody,
+import { activeStaffQuery } from "../sales/api";
+import type {
+  CartLine,
+  DiscountDraft,
+  PackageSaleDraft,
+  PaymentMode,
 } from "./api";
+import type { CorrectionToSave, DeskSaves } from "./CheckoutPanel";
+import { inCart, todayVisitsQuery } from "./desk";
 import type { CartDraft } from "./draftCart";
 import { Tip } from "./Tip";
 import "./front-desk.css";
-import type {
-  CorrectionDraft,
-  CorrectionPlan,
-  CorrectionSaved,
-  CorrectionStart,
-} from "./correction";
+import type { CorrectionSaved, CorrectionStart } from "./correction";
 // The countdown ticks from just after the first paint (own chunk; its box is reserved meanwhile).
 const DayCountdown = lazy(() =>
   import("./DayCountdown").then((m) => ({ default: m.DayCountdown })),
 );
 import { frontDeskSearch } from "./search";
-import { spaToday } from "../../lib/format";
+import { spaTime, spaToday } from "../../lib/format";
 
 // The new-customer form (react-hook-form + zod) is only needed when no match is found, so it is a
 // separate chunk: it stays off the front desk's first paint (frontend.md, perf budget).
@@ -97,48 +76,26 @@ const loadCartOptions = () => import("./CartOptions");
 const TodayVisits = lazy(() =>
   loadTodayVisits().then((m) => ({ default: m.TodayVisits })),
 );
-const ServiceTime = lazy(() =>
-  loadCartOptions().then((m) => ({ default: m.ServiceTime })),
-);
-const DiscountField = lazy(() =>
-  loadCartOptions().then((m) => ({ default: m.DiscountField })),
-);
-const AddOneOff = lazy(() =>
-  loadCartOptions().then((m) => ({ default: m.AddOneOff })),
-);
 const LeaveCartConfirm = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.LeaveCartConfirm })),
 );
 const WalkInInfo = lazy(() =>
   loadCartOptions().then((m) => ({ default: m.WalkInInfo })),
 );
-const CartContextBars = lazy(() =>
-  loadCartOptions().then((m) => ({ default: m.CartContextBars })),
-);
 // Round 6: packages sold in the checkout (spec §10.4.1), and the unsaved-cart
 // draft (Q-U8). Prefetched after the first paint, never on the startup path.
 const loadCartPackages = () => import("./CartPackages");
-const PackageSales = lazy(() =>
-  loadCartPackages().then((m) => ({ default: m.PackageSales })),
-);
-const CartLines = lazy(() =>
-  loadCartOptions().then((m) => ({ default: m.CartLines })),
-);
-const PaymentChoices = lazy(() =>
-  loadCartOptions().then((m) => ({ default: m.PaymentChoices })),
-);
 const DraftKeeper = lazy(() =>
   loadCartPackages().then((m) => ({ default: m.DraftKeeper })),
 );
+// The cart under its title (lines, payment, Lưu) and what each save does: its own chunk, mounted
+// after the first paint like the cart's other parts (/quay critical path, frontend.md).
+const loadCheckout = () => import("./CheckoutPanel");
+const CheckoutPanel = lazy(() =>
+  loadCheckout().then((m) => ({ default: m.CheckoutPanel })),
+);
 // "Sửa lượt" (US6b): only when a recorded visit is opened for correction.
 const loadCorrection = () => import("./correction");
-const loadCorrectionPanel = () => import("./CorrectionPanel");
-const CorrectionPanel = lazy(() =>
-  loadCorrectionPanel().then((m) => ({ default: m.CorrectionPanel })),
-);
-const CorrectionTotal = lazy(() =>
-  loadCorrectionPanel().then((m) => ({ default: m.CorrectionTotal })),
-);
 
 // Placeholders for the lazy pieces until they are mounted after the first paint: the same boxes,
 // so swapping them in shifts nothing (CLS budget).
@@ -148,11 +105,10 @@ const todayVisitsSkeleton = (
     <div aria-hidden="true" className="h-24 skeleton" />
   </section>
 );
-
-// The one-off picker's box (label + field) while its chunk loads: nothing shifts when it lands.
-const addOneOffBox = <div aria-hidden="true" className="h-[78px]" />;
-// "Gói bán hôm nay" (label + one button) while its chunk loads.
-const packagesBox = <div aria-hidden="true" className="h-[70px]" />;
+// The empty cart of the first paint, drawn here until the checkout chunk lands.
+const emptyCart = (
+  <p className="empty-note">Chọn khách để bắt đầu ghi lượt.</p>
+);
 
 /** "+84905111222" → "0905 111 222" (the booking carries E.164). */
 function localPhone(e164: string): string {
@@ -185,11 +141,6 @@ function isTyping(el: Element | null): boolean {
   );
 }
 
-/** "HH:MM" now in the spa's zone. */
-function nowHm(): string {
-  return timeOf(new Date().toISOString());
-}
-
 /**
  * /quay — the front desk. Two tabs: "Ghi lượt" (default; the walk-in fast path, design/front-desk-flows.md:
  * find the customer + Enter → "Trừ 1 buổi" → pick the technician → Lưu, Ctrl+Enter) and "Lịch hẹn"
@@ -218,6 +169,7 @@ export function FrontDeskPage() {
     void loadTodayVisits();
     void loadCartOptions();
     void loadCartPackages();
+    void loadCheckout();
     if (traces) void loadRecordHistory();
   }, [painted, traces]);
   const todayIso = spaToday();
@@ -286,16 +238,6 @@ export function FrontDeskPage() {
     };
   }, [toast]);
 
-  // Lines a package sold today covers are today's session from it: 0đ (spec §10.4.1).
-  const covered = coverage(lines, sales);
-  const due = amountDue(lines, covered);
-  const discountAmount = discountPreview(due, discount);
-  const packagesTotal = packagesDue(sales);
-  const payable = due - discountAmount + packagesTotal;
-  const planOf = (ref: string | undefined) =>
-    sales.find((s) => s.ref === ref)?.plan?.name ?? "gói mua hôm nay";
-  const cashPart = parseAmount(cashText);
-  const technicians = staffByUse(staff.data ?? [], today.data ?? []);
   const mayBackdate = can(me, "visit.backdate");
 
   const resetVisit = () => {
@@ -349,157 +291,38 @@ export function FrontDeskPage() {
     setRestored(true);
   };
 
+  // The three saves keep their state here, so a save in flight outlives the calendar tab; what each
+  // one sends and does afterwards comes from the checkout chunk, where every save starts.
+  const saves = useRef<DeskSaves | null>(null);
+  const on = () => {
+    if (!saves.current) throw new Error("checkout not loaded");
+    return saves.current;
+  };
   const mutation = useMutation({
-    mutationFn: async (body: Parameters<typeof recordVisit>[0]) => {
-      if (!appointment) return recordVisit(body, idempotencyKey);
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { customer_id, ...visit } = body;
-      const done = await completeAppointment(
-        appointment.id,
-        visit,
-        idempotencyKey,
-      );
-      return done.visit;
-    },
+    mutationFn: (body: VisitCreate) => on().recordVisit(body),
     onSuccess: (visit: Visit, body) => {
-      const sentNote = body.note;
-      // Both cached lists of today: the peek and, once "Xem tất cả" opened it, the whole day.
-      queryClient.setQueriesData<Visit[]>(
-        { queryKey: todayVisitsQuery.queryKey },
-        (old) =>
-          old && visit.business_date === todayIso
-            ? byServiceTime([
-                // The saved response never carries the note (health data): show the one just typed.
-                { ...visit, ...(sentNote ? { note: sentNote } : {}) },
-                ...old.filter((v) => v.id !== visit.id),
-              ])
-            : old,
-      );
-      // Walk-ins are on the calendar too (spec appointments.md §10.1), not only completed bookings.
-      void queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      if (visit.business_date !== todayIso)
-        void queryClient.invalidateQueries({
-          queryKey: ["visits", visit.business_date],
-        });
-      // Not awaited: the toast does not wait a round trip for the balance (perf page §4d). The
-      // balance refetches behind it and has a 5 s staleTime, so the next open of this customer asks again.
-      void queryClient.invalidateQueries({
-        queryKey: ["customer-packages", visit.customer_id],
-      });
-      void invalidateManagementViews(queryClient, visit.customer_id);
-      // The server wrote the Nữ / Nam picked for pricing on a profile without a gender (F2).
-      if (visit.customer_gender && !customer?.gender)
-        void queryClient.invalidateQueries({
-          queryKey: ["customers", "one", visit.customer_id],
-        });
-      for (const ps of visit.package_sales)
-        if (ps.beneficiary_customer_id)
-          void queryClient.invalidateQueries({
-            queryKey: ["customer-packages", ps.beneficiary_customer_id],
-          });
-      forgetDraft(visit.customer_id);
-      showToast(
-        savedSummary(visit) +
-          visit.package_sales
-            .map(
-              (p) =>
-                ` · bán ${p.description}${p.beneficiary_name ? ` cho ${p.beneficiary_name}` : ""}`,
-            )
-            .join("") +
-          (visit.business_date !== todayIso
-            ? ` · nhập bù ngày ${visit.business_date.split("-").reverse().join("/")}`
-            : ""),
-      );
-      resetVisit();
+      on().visitSaved(visit, body);
     },
-    onError: async (error) => {
-      if (error instanceof ApiError && error.status === 409 && customer) {
-        // Another device used the session: show fresh counts, keep the other lines.
-        await queryClient.invalidateQueries({
-          queryKey: ["customer-packages", customer.id],
-        });
-      }
-      showToast(messageFor(error), true);
-    },
+    onError: (error) => on().visitFailed(error),
   });
-
   const correction = useMutation({
-    mutationFn: async (
-      plan: Exclude<CorrectionPlan, { kind: "none" }>,
-    ): Promise<CorrectionSaved> => {
-      if (!correcting) throw new Error("no visit to correct");
-      const m = await loadCorrection();
-      return m.saveCorrection(correcting.visit, plan, idempotencyKey);
-    },
-    onSuccess: (saved) => {
-      const old = correcting?.visit;
-      void queryClient.invalidateQueries({ queryKey: ["visits"] });
-      void queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
-      void invalidateManagementViews(queryClient, saved.visit.customer_id);
-      if (old && old.customer_id !== saved.visit.customer_id)
-        void invalidateManagementViews(queryClient, old.customer_id);
-      showToast(saved.summary);
-      resetVisit();
+    mutationFn: (plan: CorrectionToSave) => on().saveCorrection(plan),
+    onSuccess: (saved: CorrectionSaved) => {
+      on().correctionSaved(saved);
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.status === 409) {
-        void queryClient.invalidateQueries({ queryKey: ["visits"] });
-        void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
-      }
-      showToast(
-        fieldMessage(error, "check_in_at") ??
-          fieldMessage(error, "reason") ??
-          messageFor(error),
-        true,
-      );
+      on().correctionFailed(error);
     },
   });
-  // A cart with packages and no service is a plain package sale (spec §10.4.1, US10): one package
-  // → `POST /sales`; several (EM 2026-11-07 item 4) → `POST /sales/checkout`, one save and one
-  // payment for all of them.
   const packageOnly = useMutation({
-    mutationFn: async (drafts: PackageSaleDraft[]) => {
-      if (!customer) throw new Error("no customer");
-      const m = await loadCartPackages();
-      return m.sellCart(
-        customer,
-        drafts,
-        paymentsFor(payable, mode, cashPart),
-        idempotencyKey,
-      );
-    },
-    onSuccess: (soldText, drafts) => {
-      void queryClient.invalidateQueries({ queryKey: ["customer-packages"] });
-      // The day list shows package-only sales under the visits (F6).
-      void queryClient.invalidateQueries({ queryKey: ["sales", "day"] });
-      void invalidateManagementViews(queryClient, customer?.id);
-      for (const d of drafts)
-        if (d.beneficiary)
-          void invalidateManagementViews(queryClient, d.beneficiary.id);
-      forgetDraft(customer?.id);
-      showToast(soldText);
-      resetVisit();
+    mutationFn: (drafts: PackageSaleDraft[]) => on().sellPackages(drafts),
+    onSuccess: (soldText: string, drafts) => {
+      on().packagesSold(soldText, drafts);
     },
     onError: (error) => {
-      showToast(messageFor(error), true);
+      on().packagesFailed(error);
     },
   });
-  const saving =
-    mutation.isPending || correction.isPending || packageOnly.isPending;
-  const correctionDraft: CorrectionDraft | null =
-    correcting && customer
-      ? {
-          customerId: customer.id,
-          lines,
-          payments: paymentsFor(payable, mode, cashPart),
-          discount: due > 0 ? discount : null,
-          checkInAt: serviceInstant(serviceDay || todayIso, serviceTime),
-          note,
-          canWriteNote: can(me, "customer.health_notes.write"),
-          reason,
-        }
-      : null;
   /** Sessions the visit being corrected holds: given back before the correction re-uses them. */
   const heldByCorrected = (itemId: string) =>
     correcting && customer?.id === correcting.visit.customer_id
@@ -507,95 +330,6 @@ export function FrontDeskPage() {
           .filter((l) => l.customer_package_item_id === itemId)
           .reduce((n, l) => n + l.qty, 0)
       : 0;
-
-  // No one-off amount left (a package covers the lines): the field is gone and nothing is sent.
-  const discountProblem =
-    due > 0 &&
-    discount !== null &&
-    (discountAmount <= 0 || discount.reason.trim() === "");
-  const problems = {
-    staff: lines.some((l) => l.staffId === ""),
-    cash:
-      payable > 0 &&
-      mode === "mixed" &&
-      (Number.isNaN(cashPart) || cashPart <= 0 || cashPart >= payable),
-    time: serviceDay !== "" && serviceTime === "",
-  };
-
-  /** `packageSales`: the cart's packages in wire form (built by the lazy cart chunk). */
-  const record = (packageSales?: VisitPackageSaleCreate[]) => {
-    if (!customer) return;
-    mutation.mutate(
-      visitBody(
-        customer.id,
-        lines,
-        paymentsFor(payable, mode, cashPart),
-        can(me, "customer.health_notes.write") ? note : "",
-        {
-          discount: due > 0 ? discount : null,
-          checkInAt: serviceInstant(serviceDay || todayIso, serviceTime),
-          ...(packageSales ? { packageSales, covered } : {}),
-          companions,
-        },
-      ),
-    );
-  };
-
-  const save = () => {
-    if (!customer || (lines.length === 0 && sales.length === 0) || saving)
-      return;
-    setAttempted(true);
-    if (problems.staff) {
-      showToast("Mỗi dịch vụ cần chọn KTV thực hiện.", true);
-      const missing = lines.find((l) => l.staffId === "");
-      if (missing) staffSelects.current.get(missing.key)?.focus();
-      return;
-    }
-    if (problems.cash) {
-      showToast("Tiền mặt phải lớn hơn 0 và nhỏ hơn số phải trả.", true);
-      return;
-    }
-    if (discountProblem) {
-      showToast("Giảm giá cần mức giảm hợp lệ và lý do.", true);
-      return;
-    }
-    if (problems.time) {
-      showToast("Chọn giờ làm cho ngày nhập bù.", true);
-      return;
-    }
-    if (correcting && correctionDraft) {
-      const old = correcting;
-      void loadCorrection().then((m) => {
-        const plan = m.planCorrection(old.visit, old.note, correctionDraft);
-        if (plan.kind === "none") {
-          showToast("Chưa có gì thay đổi so với lượt đã ghi.", true);
-          return;
-        }
-        if (plan.kind === "correct" && plan.body.reason === "") {
-          showToast("Cần ghi lý do sửa lượt.", true);
-          return;
-        }
-        correction.mutate(plan);
-      });
-      return;
-    }
-    if (sales.length > 0) {
-      void loadCartPackages().then((m) => {
-        const problem = m.checkoutProblem(
-          sales,
-          lines.length,
-          appointment !== null,
-          can(me, "sale.discount_unlimited"),
-          customer.named,
-        );
-        if (problem) showToast(problem, true);
-        else if (lines.length > 0) record(m.packageSalesBody(sales));
-        else packageOnly.mutate(sales);
-      });
-      return;
-    }
-    record();
-  };
 
   /** A save that failed for the previous customer says nothing about the next one. */
   const forgetSaveErrors = () => {
@@ -625,10 +359,8 @@ export function FrontDeskPage() {
       setLeaving(() => go);
     else go();
   };
-  const saveRef = useRef(save);
   const dropRef = useRef(dropCustomer);
   useEffect(() => {
-    saveRef.current = save;
     dropRef.current = () => {
       if (leaving) setLeaving(null);
       else leaveCart(dropCustomer);
@@ -649,7 +381,8 @@ export function FrontDeskPage() {
         searchInput.current?.focus();
       } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        saveRef.current();
+        // The checkout's "Lưu"; before its chunk lands no customer is picked: nothing to save.
+        saves.current?.save();
       } else if (e.key === "Escape" && !typing) {
         dropRef.current();
       }
@@ -725,7 +458,7 @@ export function FrontDeskPage() {
     setSearch({ view: "ghi" }, { push: true });
     if (a.business_date !== todayIso) {
       setServiceDay(a.business_date);
-      setServiceTime(timeOf(a.arrived_at ?? a.starts_at));
+      setServiceTime(spaTime(a.arrived_at ?? a.starts_at));
     }
   };
 
@@ -1007,260 +740,70 @@ export function FrontDeskPage() {
               <h2 id="cart-title" className="panel-title scroll-mt-20">
                 {correcting ? "Sửa lượt khách" : "Lượt khách đang ghi"}
               </h2>
-              {(correcting || appointment || (restored && customer)) && (
-                <Suspense fallback={null}>
-                  <CartContextBars
-                    correcting={correcting?.visit ?? null}
-                    onStopCorrecting={resetVisit}
-                    appointment={appointment}
-                    today={todayIso}
-                    restoredFor={
-                      restored && !correcting
-                        ? (customer?.full_name ?? null)
-                        : null
-                    }
-                    onUnlink={() => {
-                      setAppointment(null);
-                      setServiceDay("");
-                      setServiceTime("");
-                    }}
-                    onDiscard={() => {
-                      if (!customer) return;
-                      forgetDraft(customer.id);
-                      select(customer, true);
-                      setFocusDeduct(false);
-                    }}
-                  />
-                </Suspense>
-              )}
-              {!customer && (
-                <p className="empty-note">Chọn khách để bắt đầu ghi lượt.</p>
-              )}
-              {customer && lines.length === 0 && sales.length === 0 && (
-                <p className="empty-note">
-                  Chưa có dịch vụ. Bấm “Trừ 1 buổi” ở gói liệu trình, chọn dịch
-                  vụ lẻ bên dưới, hoặc bán gói liệu trình.
-                </p>
-              )}
-              {lines.length > 0 && (
-                <Suspense fallback={null}>
-                  <CartLines
-                    lines={lines}
-                    onLines={setLines}
-                    covered={covered}
-                    planName={planOf}
-                    attempted={attempted}
-                    staff={staff.data ?? []}
-                    staffPending={staff.isPending}
-                    technicians={technicians}
-                    staffSelects={staffSelects}
-                    focusLineKey={focusLineKey}
-                    openKey={openItem}
-                    onOpen={setOpenItem}
-                  />
-                </Suspense>
-              )}
-
-              {customer && (
-                <Suspense fallback={addOneOffBox}>
-                  <AddOneOff
-                    key={customer.id}
+              {painted ? (
+                <Suspense
+                  fallback={
+                    customer ? (
+                      <div aria-hidden="true" className="h-40 skeleton" />
+                    ) : (
+                      emptyCart
+                    )
+                  }
+                >
+                  <CheckoutPanel
+                    me={me}
                     customer={customer}
                     lines={lines}
-                    onAdd={(service, priceVariant, price, categoryName) => {
-                      addLine({
-                        key: nextKey.current++,
-                        source: "one_off",
-                        serviceId: service.id,
-                        serviceName: service.name,
-                        ...(categoryName ? { categoryName } : {}),
-                        priceVariant,
-                        price,
-                        staffId: appointment?.staff_id ?? "",
-                      });
-                    }}
-                    onProblem={(m) => {
-                      showToast(m, true);
-                    }}
-                  />
-                </Suspense>
-              )}
-
-              {customer && !correcting && can(me, "package.sell") && (
-                <Suspense fallback={packagesBox}>
-                  <PackageSales
+                    onLines={setLines}
                     sales={sales}
                     onSales={setSales}
-                    lines={lines}
-                    covered={covered}
-                    staff={staff.data ?? []}
-                    customerId={customer.id}
-                    canDiscount={
-                      can(me, "sale.discount") ||
-                      can(me, "sale.discount_unlimited")
-                    }
-                    unlimitedDiscount={can(me, "sale.discount_unlimited")}
+                    mode={mode}
+                    onMode={setMode}
+                    cashText={cashText}
+                    onCashText={setCashText}
+                    note={note}
+                    onNote={setNote}
+                    discount={discount}
+                    onDiscount={setDiscount}
+                    serviceDay={serviceDay}
+                    onServiceDay={setServiceDay}
+                    serviceTime={serviceTime}
+                    onServiceTime={setServiceTime}
+                    correcting={correcting}
+                    reason={reason}
+                    onReason={setReason}
+                    appointment={appointment}
+                    onAppointment={setAppointment}
+                    companions={companions}
+                    restored={restored}
                     attempted={attempted}
-                    serverError={mutation.error}
-                    openPlanId={openPlan}
-                    onOpened={clearOpenPlan}
-                    ownerNamed={customer.named}
-                    openRef={openItem}
-                    onOpenRef={setOpenItem}
-                    onLines={setLines}
-                    canWriteNote={can(me, "customer.health_notes.write")}
-                    onTodaySession={(saleRef, s) => {
-                      addLine({
-                        key: nextKey.current++,
-                        source: "new_package",
-                        saleRef,
-                        ...s,
-                        staffId: appointment?.staff_id ?? "",
-                      });
-                    }}
+                    onAttempted={setAttempted}
+                    openItem={openItem}
+                    onOpenItem={setOpenItem}
+                    openPlan={openPlan}
+                    onOpenedPlan={clearOpenPlan}
+                    onFocusDeduct={setFocusDeduct}
+                    staff={staff.data ?? []}
+                    staffPending={staff.isPending}
+                    today={today.data ?? []}
+                    idempotencyKey={idempotencyKey}
+                    todayIso={todayIso}
+                    staffSelectsRef={staffSelects}
+                    focusLineKeyRef={focusLineKey}
+                    nextKeyRef={nextKey}
+                    addLine={addLine}
+                    resetVisit={resetVisit}
+                    select={select}
+                    forgetDraft={forgetDraft}
+                    showToast={showToast}
+                    visit={mutation}
+                    correction={correction}
+                    packageOnly={packageOnly}
+                    savesRef={saves}
                   />
                 </Suspense>
-              )}
-              {companions.length > 0 && (
-                <p className="field-hint">
-                  Người đi cùng (ghi chú của lịch hẹn): {companions.join(", ")}
-                </p>
-              )}
-
-              {customer && (lines.length > 0 || sales.length > 0) && (
-                <>
-                  <div className="cart-options">
-                    <Suspense fallback={null}>
-                      {lines.length > 0 && (
-                        <ServiceTime
-                          mayBackdate={mayBackdate}
-                          today={todayIso}
-                          day={serviceDay}
-                          time={serviceTime}
-                          invalid={attempted && problems.time}
-                          onDay={(d) => {
-                            setServiceDay(d === todayIso ? "" : d);
-                            if (d !== todayIso && serviceTime === "")
-                              setServiceTime(nowHm());
-                          }}
-                          onTime={setServiceTime}
-                        />
-                      )}
-                      {due > 0 &&
-                        (can(me, "sale.discount") ||
-                          can(me, "sale.discount_unlimited")) && (
-                        <DiscountField
-                          due={due}
-                          draft={discount}
-                          onChange={setDiscount}
-                          overCap={
-                            discountAmount > 0 &&
-                            exceedsCap(
-                              due,
-                              discountAmount,
-                              can(me, "sale.discount_unlimited"),
-                            )
-                          }
-                        />
-                      )}
-                    </Suspense>
-                  </div>
-                  {payable > 0 && (
-                    <Suspense fallback={null}>
-                      <PaymentChoices
-                        name="visit-payment"
-                        mode={mode}
-                        onMode={setMode}
-                        cashText={cashText}
-                        onCashText={setCashText}
-                        total={payable}
-                        invalid={attempted && problems.cash}
-                      />
-                    </Suspense>
-                  )}
-                  {can(me, "customer.health_notes.write") &&
-                    lines.length > 0 && (
-                      <label className="field">
-                        <span>
-                          Ghi chú buổi{" "}
-                          <span className="font-normal text-text-muted">
-                            (không bắt buộc)
-                          </span>
-                        </span>
-                        <textarea
-                          value={note}
-                          onChange={(e) => {
-                            setNote(e.target.value);
-                          }}
-                          rows={2}
-                          maxLength={2000}
-                          className="input"
-                        />
-                      </label>
-                    )}
-                  {correcting && correctionDraft && (
-                    <Suspense fallback={null}>
-                      <CorrectionPanel
-                        visit={correcting.visit}
-                        oldNote={correcting.note}
-                        draft={correctionDraft}
-                        invalid={attempted && reason.trim() === ""}
-                        onReason={setReason}
-                      />
-                    </Suspense>
-                  )}
-                  {(mutation.isError || correction.isError) &&
-                    !(mutation.error instanceof ApiError) &&
-                    !(correction.error instanceof ApiError) && (
-                      <p role="alert" className="alert">
-                        Chưa lưu được. Bấm Lưu để thử lại (không bị ghi đôi).
-                      </p>
-                    )}
-                  <div role="group" aria-label="Lưu lượt" className="checkout">
-                    {correcting ? (
-                      <Suspense fallback={null}>
-                        <CorrectionTotal
-                          total={payable}
-                          paid={correcting.visit.total}
-                        />
-                      </Suspense>
-                    ) : (
-                      <p className="checkout-total" aria-live="polite">
-                        <span>Phải trả</span>
-                        <span className="checkout-amount">
-                          {discountAmount > 0 && <s>{formatVnd(due)}</s>}
-                          {formatVnd(payable)}
-                        </span>
-                      </p>
-                    )}
-                    {packagesTotal > 0 && (
-                      <p className="checkout-split">
-                        Dịch vụ lẻ {formatVnd(due - discountAmount)} + gói{" "}
-                        {formatVnd(packagesTotal)}
-                      </p>
-                    )}
-                    {payable === 0 && sales.length === 0 && (
-                      <p className="checkout-split">
-                        Lượt này chỉ trừ buổi liệu trình, không phát sinh tiền.
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={save}
-                      aria-disabled={saving}
-                      aria-busy={saving}
-                      className="btn btn-primary btn-lg btn-block"
-                    >
-                      {saving
-                        ? "Đang lưu…"
-                        : correcting
-                          ? "Lưu sửa lượt"
-                          : lines.length === 0
-                            ? "Lưu hóa đơn gói"
-                            : "Lưu lượt khách"}
-                    </button>
-                  </div>
-                </>
+              ) : (
+                emptyCart
               )}
             </section>
           </div>
