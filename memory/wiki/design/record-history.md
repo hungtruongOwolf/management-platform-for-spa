@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../architecture/record-history.md,
 
 # UI: lịch sử trên từng bản ghi
 
-Spec: [record-history](../product/specs/record-history.md). Backend: [architecture/record-history](../architecture/record-history.md). Theo rulebook + token của [design-system](design-system.md) (chip trạng thái: quy tắc 7, một bộ `.badge`, luôn có chữ). Bản sửa sau review độc lập 2026-11-11 (spec, Review lượt 3). **Đợt 1a (§3–4) và 1b (§1, §2.1–2.6) đã build**; chỗ build chọn khi design chưa nói: spec Review log K12–K20 (focus khi `403`, prefetch chunk, tên nút giờ hàng hủy / hoàn, bố cục một dòng, CSS ở `components.css`). **Đợt 2 (§2.7–2.9) đã build** (2026-11-12): K21 (một dòng "sửa khoản thưởng"), K23 ("Chưa có ai ghi"), K27 (meta theo §1.2), K30 (ô chỉ xem qua sheet ghi được), K31 (⋯ riêng ở Sổ thưởng, phạt, `403` → focus về tiêu đề sổ; trong sheet → nút "Đóng").
+Spec: [record-history](../product/specs/record-history.md). Backend: [architecture/record-history](../architecture/record-history.md). Theo rulebook + token của [design-system](design-system.md) (chip trạng thái: quy tắc 7, một bộ `.badge`, luôn có chữ). Bản sửa sau review độc lập 2026-11-11 (spec, Review lượt 3). **Đợt 1a (§3–4) và 1b (§1, §2.1–2.6) đã build**; chỗ build chọn khi design chưa nói: spec Review log K12–K20 (focus khi `403`, prefetch chunk, tên nút giờ hàng hủy / hoàn, bố cục một dòng, CSS ở `components.css`). **Đợt 2 (§2.7–2.9) đã build** (2026-11-12): K21 (một dòng "sửa khoản thưởng"), K23 ("Chưa có ai ghi"), K27 (meta theo §1.2), K30 (ô chỉ xem qua sheet ghi được), K31 (⋯ riêng ở Sổ thưởng, phạt, `403` → focus về tiêu đề sổ; trong sheet → nút "Đóng"). **Đợt 3 (§2.10) đã build** (2026-11-12): K37 (meta "Sửa lần cuối bởi" theo lần lưu mới nhất + "· đã sửa N lần"; chỉ mới thêm → "Ghi bởi"), K38 ("Chưa có ai sửa" cho cài đặt chưa ai lưu), K39 (nhóm dịch vụ chưa có form sửa trên web), K42 (nhãn trường theo chữ của form), K44 (giờ của dòng: hôm nay chỉ giờ, ngày khác kèm ngày), K45 (focus khi `403`).
 
 ## 1. Thành phần dùng chung
 
@@ -79,7 +79,7 @@ Một chip mỗi hàng; ba điều kiện **loại trừ nhau** (code hiện ki�
 | Meta, gói | "Ghi bởi {Tên} · {dd/mm/yyyy}[ · đã hủy]" (không "đã sửa": vòng đời gói, D9) |
 | Ghi chú buổi (`visit.update` `session_note`) | "Ghi chú buổi: Có" / "Ghi chú buổi: Không" (web `FIELD.session_note` = "Ghi chú buổi"; `FIELD.note` vẫn "Ghi chú hồ sơ") |
 | KTV đổi (`visit.update`) | "KTV: {tên cũ} → {tên mới}", một dòng cho mỗi dịch vụ đổi KTV |
-| Meta, danh mục / quy tắc lương / cài đặt | "Sửa lần cuối bởi {Tên} · {dd/mm/yyyy}" |
+| Meta, danh mục / quy tắc lương / cài đặt | "Sửa lần cuối bởi {Tên} · {dd/mm/yyyy}[ · đã sửa {n} lần]" (K37; dịch vụ / mẫu gói chỉ mới thêm: "Ghi bởi {Tên} · {dd/mm/yyyy}"; cài đặt chưa ai lưu: "Chưa có ai sửa", K38) |
 | Meta, sổ giấy | "Nhập từ sổ giấy · {dd/mm/yyyy}" |
 | Meta, không có dòng tạo | "Chưa rõ ai ghi" |
 | Động từ người ghi | "Ghi bởi" ở **mọi** nơi (lượt, hóa đơn, gói, lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt) — không "Bán bởi" (lẫn với "Người chốt" / "chốt bởi") |
@@ -219,6 +219,8 @@ Khả năng tìm thấy: ở `DailyBook`, sheet mở qua nút "Giờ & ghi chú"
 
 ### 2.10 Bảng giá, mẫu gói, nhóm dịch vụ, quy tắc lương, cài đặt lịch hẹn — đợt 3
 Phần tử cuối của form sửa / `RulesSheet` / sheet số khách tối đa (trên footer nút): "Sửa lần cuối bởi Lan · 12/11/2026 ▾" → "Lan sửa dịch vụ · Giá Nữ: 150.000 ₫ → 170.000 ₫". Danh sách không chip.
+
+Đã build (2026-11-12): `ServiceForm` / `PlanForm` khi **sửa** (khối `span-2` ngay trước lỗi + hàng nút; form thêm mới không có), `RulesForm` (ngay trước lỗi + "Lưu quy tắc"), `SlotLimitSheet` (sau form trong thân sheet, trên footer "Thôi" / "Lưu số khách tối đa"). Meta theo K37: "Sửa lần cuối bởi Lan · 12/11/2026 · đã sửa 2 lần"; dịch vụ / mẫu gói chỉ mới thêm: "Ghi bởi Hà · 03/02/2026"; có sẵn từ lúc tạo spa: "Chưa rõ ai ghi" + "Chưa có lịch sử thay đổi."; cài đặt chưa ai lưu: "Chưa có ai sửa" (K38). Nhóm dịch vụ: web chưa có form sửa nhóm (chỉ "Thêm nhóm dịch vụ"), nên chưa có chỗ hiện (K39).
 
 ## 3. Console admin `/admin/spa/<id>` — đợt 1a
 
