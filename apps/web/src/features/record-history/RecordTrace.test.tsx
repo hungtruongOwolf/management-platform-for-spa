@@ -7,8 +7,9 @@ import { ResponsiveTable } from "../../components/ResponsiveTable";
 import { createQueryClient } from "../../lib/queryClient";
 import { HISTORY, moneyOf } from "../activity/sentence";
 import { visitChip } from "./chip";
+import { canTrace, recordHistoryQuery } from "./query";
 import { RecordTrace } from "./RecordTrace";
-import { metaText } from "./text";
+import { changeLines, metaText } from "./text";
 
 const VISIT = "0193a5b0-0000-7000-8000-0000000000e1";
 const HA = { kind: "user" as const, user_id: "0193a5b0-0000-7000-8000-0000000000d1", name: "Hà" };
@@ -289,6 +290,46 @@ describe("metaText", () => {
   it("a package never says 'đã sửa' (its lifecycle is no edit)", () => {
     expect(metaText({ ...base, record: { type: "customer_package", id: VISIT }, summary: { ...base.summary, edits: 3 } })).toBe("Ghi bởi Hà · 12/11/2026");
   });
+  // Wave 2: a booking, a staff-book cell, a bonus / penalty say the time they were written, and
+  // the date when that was another day than the record's own.
+  it("a booking made days before its day dates the making; a cancelled one says so", () => {
+    const booking = { ...base, record: { type: "appointment" as const, id: VISIT } };
+    expect(metaText(booking, "2026-11-14")).toBe("Ghi bởi Hà · 10:07 12/11 · đã sửa 1 lần");
+    expect(metaText({ ...booking, summary: { ...booking.summary, edits: 0, state: "cancelled" } }, DAY)).toBe("Ghi bởi Hà · 10:07 · đã hủy");
+  });
+  it("a staff-book cell: its writes after the first are edits; nobody ever wrote it → 'Chưa có ai ghi'", () => {
+    const cell = { ...base, record: { type: "attendance" as const } };
+    expect(metaText({ ...cell, summary: { ...cell.summary, edits: 2 } }, "2026-11-11")).toBe("Ghi bởi Hà · 10:07 12/11 · đã sửa 2 lần");
+    const empty = { record: { type: "daily_review" as const }, summary: { edits: 0, state: "active" as const }, items: [], omitted: 0 };
+    expect(metaText(empty, DAY)).toBe("Chưa có ai ghi");
+    // A record that exists but has no creating row stays "Chưa rõ ai ghi".
+    expect(metaText({ ...empty, record: { type: "customer", id: VISIT } })).toBe("Chưa rõ ai ghi");
+  });
+  it("a bonus edited once: 'đã sửa 1 lần'", () => {
+    expect(metaText({ ...base, record: { type: "adjustment", id: VISIT } }, DAY)).toBe("Ghi bởi Hà · 10:07 · đã sửa 1 lần");
+  });
+});
+
+describe("recordHistoryQuery / canTrace (wave 2)", () => {
+  it("a staff-book cell is asked by person, day and book; the others by id", async () => {
+    const fetch = serve(history({ record: { type: "attendance" } }), history({ record: { type: "adjustment", id: VISIT } }));
+    const client = createQueryClient();
+    await client.fetchQuery(recordHistoryQuery({ type: "attendance", staffId: "s1", date: DAY }));
+    await client.fetchQuery(recordHistoryQuery({ type: "adjustment", id: VISIT }));
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([`/api/v1/record-history/staff-day/s1/${DAY}?book=attendance`, `/api/v1/record-history/adjustment/${VISIT}`]);
+    expect(recordHistoryQuery({ type: "daily_review", staffId: "s1", date: DAY }).queryKey).toEqual(["record-history", "daily_review", "s1", DAY]);
+  });
+  it("each record's own screen right, after the history right", () => {
+    const me = (permissions: string[]) => ({ permissions }) as unknown as Parameters<typeof canTrace>[0];
+    const all = ["record.history.read", "appointment.manage", "attendance.record", "evaluation.record"];
+    for (const anchor of ["appointment", "attendance", "daily_review", "adjustment"] as const) {
+      expect(canTrace(me(all), anchor)).toBe(true);
+      expect(canTrace(me(all.slice(1)), anchor)).toBe(false);
+    }
+    expect(canTrace(me(["record.history.read", "attendance.record"]), "daily_review")).toBe(false);
+    expect(canTrace(me(["record.history.read", "evaluation.record"]), "attendance")).toBe(false);
+    expect(canTrace(me(["record.history.read", "evaluation.record"]), "appointment")).toBe(false);
+  });
 });
 
 describe("HISTORY", () => {
@@ -339,6 +380,37 @@ describe("HISTORY", () => {
     expect(say({ action: "sale.create" })).toBe("thu tiền");
     expect(say({ action: "staff.adjustment", detail: "penalty" })).toBe("ghi phạt");
     expect(say({ action: "attendance.record", detail: "cleared" })).toBe("xóa chấm công");
+    // An edit of a bonus / penalty: the void folded into the new entry (K21).
+    expect(say({ action: "staff.adjustment", detail: "bonus", folded: ["staff.adjustment_void"] })).toBe("sửa khoản thưởng");
+    expect(say({ action: "appointment.update" })).toBe("đổi lịch");
+  });
+
+  it("the changes of wave 2 say what changed, never a note's text", () => {
+    const lines = (e: ActivityEntry) => changeLines(e);
+    expect(
+      lines(
+        line({
+          action: "staff.adjustment",
+          changes: [
+            { field: "person", format: "text", old: "KTV Lan", new: "KTV Mai" },
+            { field: "amount", format: "money", old: "200000", new: "300000" },
+            { field: "kind", format: "code", old: "bonus", new: "penalty" },
+          ],
+        }),
+      ),
+    ).toEqual(["Nhân viên: KTV Lan → KTV Mai", "Số tiền: 200.000đ → 300.000đ", "Loại: Thưởng → Phạt"]);
+    expect(
+      lines(
+        line({
+          action: "appointment.update",
+          changes: [
+            { field: "services", format: "text" },
+            { field: "booking_note", format: "text" },
+          ],
+        }),
+      ),
+    ).toEqual(["Dịch vụ (đã đổi)", "Ghi chú lịch hẹn (đã đổi)"]);
+    expect(lines(line({ action: "attendance.record", changes: [{ field: "has_note", format: "flag" }] }))).toEqual(["Ghi chú (đã đổi)"]);
   });
 
   it("a cancel gives money back: 'Trả lại', not 'Đảo'", () => {

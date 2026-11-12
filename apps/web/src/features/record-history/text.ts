@@ -23,26 +23,32 @@ export function whenText(at: string, day: string, recordDay: string): string {
   return day === recordDay ? spaTime(at) : `${spaTime(at)} ${dayText(day, recordDay)}`;
 }
 
+/** Records said with the time they were written (a day of their own), not only the day. */
+const TIMED: ReadonlySet<RecordHistory["record"]["type"]> = new Set(["visit", "appointment", "attendance", "daily_review", "adjustment"]);
+
 /**
  * The meta line, by what the history is about (after re-anchoring):
- * - a visit: "Ghi bởi Hà · 15:10[ 12/11][ · đã sửa 2 lần][ · đã hủy]";
+ * - a visit, a booking, a staff-book cell, a bonus / penalty: "Ghi bởi Hà · 15:10[ 12/11][ · đã
+ *   sửa 2 lần][ · đã hủy]" (the date when it was written on another day than the record's own);
  * - a customer: "Tạo bởi Hà · 03/02/2025[ · đã sửa 1 lần]";
  * - a package: "Ghi bởi Hà · 12/11/2026[ · đã hủy]" (its lifecycle is no edit, D9);
- * - a paper-book entry: "Nhập từ sổ giấy · 03/02/2025"; nobody known: "Chưa rõ ai ghi".
- * `recordDay`: the record's own day (a visit's business day); defaults to the day it was recorded.
+ * - a paper-book entry: "Nhập từ sổ giấy · 03/02/2025"; nobody known: "Chưa rõ ai ghi"; a
+ *   staff-book cell nobody ever wrote: "Chưa có ai ghi" (K23).
+ * `recordDay`: the record's own day (a visit's or a booking's business day, a cell's day, the day
+ * a bonus happened); defaults to the day it was recorded.
  */
 export function metaText(h: RecordHistory, recordDay?: string): string {
   const { created, edits, state } = h.summary;
   const kind = h.record.type;
   let head: string;
   if (created?.source === "paper_book") head = `Nhập từ sổ giấy · ${fullDay(created.day)}`;
-  else if (!created?.actor) head = "Chưa rõ ai ghi";
+  else if (!created?.actor) head = (kind === "attendance" || kind === "daily_review") && h.items.length === 0 && h.omitted === 0 ? "Chưa có ai ghi" : "Chưa rõ ai ghi";
   else {
     const who = actorName({ actor: created.actor });
     const verb = kind === "customer" ? "Tạo bởi" : "Ghi bởi";
     const own = recordDay ?? created.day;
     const when =
-      kind === "visit" && created.at
+      TIMED.has(kind) && created.at
         ? created.day === own
           ? spaTime(created.at)
           : `${spaTime(created.at)} ${dayText(created.day, own)}`

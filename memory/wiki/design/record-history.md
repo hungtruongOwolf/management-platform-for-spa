@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../architecture/record-history.md,
 
 # UI: lịch sử trên từng bản ghi
 
-Spec: [record-history](../product/specs/record-history.md). Backend: [architecture/record-history](../architecture/record-history.md). Theo rulebook + token của [design-system](design-system.md) (chip trạng thái: quy tắc 7, một bộ `.badge`, luôn có chữ). Bản sửa sau review độc lập 2026-11-11 (spec, Review lượt 3). **Đợt 1a (§3–4) và 1b (§1, §2.1–2.6) đã build**; chỗ build chọn khi design chưa nói: spec Review log K12–K20 (focus khi `403`, prefetch chunk, tên nút giờ hàng hủy / hoàn, bố cục một dòng, CSS ở `components.css`).
+Spec: [record-history](../product/specs/record-history.md). Backend: [architecture/record-history](../architecture/record-history.md). Theo rulebook + token của [design-system](design-system.md) (chip trạng thái: quy tắc 7, một bộ `.badge`, luôn có chữ). Bản sửa sau review độc lập 2026-11-11 (spec, Review lượt 3). **Đợt 1a (§3–4) và 1b (§1, §2.1–2.6) đã build**; chỗ build chọn khi design chưa nói: spec Review log K12–K20 (focus khi `403`, prefetch chunk, tên nút giờ hàng hủy / hoàn, bố cục một dòng, CSS ở `components.css`). **Đợt 2 (§2.7–2.9) đã build** (2026-11-12): K21 (một dòng "sửa khoản thưởng"), K23 ("Chưa có ai ghi"), K27 (meta theo §1.2), K30 (ô chỉ xem qua sheet ghi được), K31 (⋯ riêng ở Sổ thưởng, phạt; focus về nút "Đóng" của sheet khi `403`).
 
 ## 1. Thành phần dùng chung
 
@@ -212,10 +212,10 @@ Sheet là một form có các `fieldset`: `RecordTrace` (`type="button"`, không
   Khen 1 · Phàn nàn 0 …
   Ghi bởi Hà · 18:10 ▾
 ```
-Khả năng tìm thấy: ở `DailyBook`, sheet mở qua nút "Giờ & ghi chú" (`BookCard`); ghi vào design-system § Màn nhân viên khi build. Ô lưới tháng: không chip.
+Khả năng tìm thấy: ở `DailyBook`, sheet mở qua nút "Giờ & ghi chú" (`BookCard`); ở Bảng công tháng, bấm một ô (chỉ ô người gọi ghi được, tháng mở; K30). Ô lưới tháng: không chip. Ô chưa ai ghi: "Chưa có ai ghi" (K23); chỉ đổi chữ ghi chú: "Ghi chú (đã đổi)" (K25).
 
 ### 2.9 Sổ thưởng / phạt (`AdjustmentsTab`) — đợt 2
-⋯ "Xem ai ghi, ai sửa" → `RecordTrace` mở sẵn dưới hàng: "Ghi bởi Hà · 03/11 · đã sửa 1 lần" + "Lan sửa: Số tiền 200.000 ₫ → 300.000 ₫" (thay bản) / "Lan xóa khoản thưởng".
+⋯ "Xem ai ghi, ai sửa" → `RecordTrace` mở sẵn dưới hàng: "Ghi bởi Hà · 03/11 · đã sửa 1 lần" + "Lan sửa: Số tiền 200.000 ₫ → 300.000 ₫" (thay bản) / "Lan xóa khoản thưởng". Đã build: dòng sửa đọc "Lan sửa khoản thưởng" + dòng phụ "Số tiền: 200.000đ → 300.000đ" (chuyển người: "Nhân viên: KTV Lan → KTV Mai", K21); meta theo §1.2: "Ghi bởi Hà · 10:05[ 03/11]" (K27); ⋯ là cột riêng, "Sửa" / "Xóa" giữ trên hàng (K31).
 
 ### 2.10 Bảng giá, mẫu gói, nhóm dịch vụ, quy tắc lương, cài đặt lịch hẹn — đợt 3
 Phần tử cuối của form sửa / `RulesSheet` / sheet số khách tối đa (trên footer nút): "Sửa lần cuối bởi Lan · 12/11/2026 ▾" → "Lan sửa dịch vụ · Giá Nữ: 150.000 ₫ → 170.000 ₫". Danh sách không chip.

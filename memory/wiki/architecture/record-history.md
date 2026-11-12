@@ -7,7 +7,7 @@ related: [../product/specs/record-history.md, ../decisions/ADR-0022-inline-recor
 
 # Backend: lịch sử trên từng bản ghi
 
-Spec: [record-history](../product/specs/record-history.md) (D1–D12, review log 4 lượt). Quyết định: [ADR-0022](../decisions/ADR-0022-inline-record-history.md). **Đợt 1a đã build** (0052, `reporting::history`, 5 route đợt 1, công tắc, cờ; quyết định khi build K1–K11 ở spec Review log). **Đợt 1b (web) đã build**: `features/record-history/` (`query.ts` + `chip.ts` + `lazy.tsx` ngoài chunk, chunk lazy `chunk.ts`), `MutationCache.onSuccess`, `[data-row-inert]`; quyết định K12–K20. Bản sửa sau review độc lập 2026-11-11.
+Spec: [record-history](../product/specs/record-history.md) (D1–D12, review log 4 lượt). Quyết định: [ADR-0022](../decisions/ADR-0022-inline-record-history.md). **Đợt 1a đã build** (0052, `reporting::history`, 5 route đợt 1, công tắc, cờ; quyết định khi build K1–K11 ở spec Review log). **Đợt 1b (web) đã build**: `features/record-history/` (`query.ts` + `chip.ts` + `lazy.tsx` ngoài chunk, chunk lazy `chunk.ts`), `MutationCache.onSuccess`, `[data-row-inert]`; quyết định K12–K20. **Đợt 2 đã build** (2026-11-12): route `appointment`, `staff-day`, `adjustment` (8 route), `edited` lịch hẹn, không migration; K21–K34. Bản sửa sau review độc lập 2026-11-11.
 
 ## 1. Tổng quan
 ```
@@ -93,6 +93,8 @@ Mỗi loại một route Axum (không `{record}` tự do) → loại lạ `404` 
 
 Thứ tự (F17): `401` → `403 auth.password_change_required` → `403 feature.disabled` → `require(RecordHistoryRead)` → quyền của route → parse (`422`) → đổi neo (`404`) → quyền của loại neo cuối (`403`) → đọc.
 
+**Đợt 2 (đã build, K21–K34):** ô ngày: `require_staff_book(None)` (một trong hai sổ) → query `book` (`400 query.invalid`) → `require_staff_book(Some(book))` → path (`400`) → `org::profile::profile_in` (`404`) → `RecordScope::lists` + `employed_in(Month::of(date))` (`404`) → đọc; `record.type = attendance | daily_review`, **không** `id`. Thưởng / phạt: `staff_adjustment` của spa (`404`) → chuỗi sửa hai chiều (`edit_link`: từ dòng `staff.adjustment` của khoản đi lùi, từ dòng `staff.adjustment_void` đi tới; cùng `at` + cùng người làm, dòng của khoảnh khắc đó phải **đúng một** hủy và **một** ghi, ≤ 20 mỗi chiều; `audit_log_tenant_at_id_idx` cho "cùng khoảnh khắc") → mọi người trong chuỗi `RecordScope::lists` (`404`, K24) → thành viên. Mỗi cặp (bản bị thay, bản thay) đọc thành **một** dòng "sửa khoản thưởng / phạt" có thay đổi cũ → mới (K21). Lịch hẹn: thành viên `entity_type='appointment' AND entity_id = id`; tạo = `appointment.create`, không có thì cột `created_by` / `created_at`.
+
 ### 4.2 Response
 ```
 RecordHistory {
@@ -171,6 +173,7 @@ Các endpoint danh sách mang `edited` gửi `Cache-Control: no-store` (nội du
 - Có sẵn: `audit_log_entity_idx (tenant_id, entity_type, entity_id, at)` (0001) cho bước 2; `audit_log_tenant_at_id_idx` (0051) cho bước 3.
 - Tạo index trên bảng audit có dữ liệu: `CREATE INDEX` thường trong transaction migration (staging ~7.000 dòng; production chưa có). Khi bảng lớn: `CONCURRENTLY` ở migration riêng (quy ước 0036/0037).
 - Ngân sách: `GET /record-history/*` p95 ≤ 100 ms; `/visits` ngày, ledger 92 ngày, `/appointments?marks=true` 14 ngày: p95 tăng ≤ 10 ms. **Bench `reports_bench.rs` seed audit thật**: ~60.000 dòng / năm × 3 (ước tính: ~14.700 lượt / năm × ~2,5 dòng + chấm công / khen 8 người × 365 × 2 + lịch hẹn + danh mục); số 6.787 dòng / năm của staging (log 2026-11-11) là dữ liệu seed nhỏ (1.990 lượt / năm), không dùng làm ngân sách.
+- **Đo khi build đợt 2 (2026-11-12):** xem [log](../../log.md) 2026-11-12 (ô ngày qua `audit_log_staff_day_idx`, `/appointments?marks=true` 14 ngày; bench seed thêm lịch hẹn thật + ô ngày trên id thật, K33).
 - **Đo khi build đợt 1a (2026-11-11, máy dev, `reports_bench.rs` `record_history_reads_within_budget`, 44.040 lượt + 179.466 dòng audit / 3 năm):** p95 lịch sử lượt (chuỗi 3 bản, khách bận nhất) 40 ms, gói 10 ms, khách 6 ms; `/audit-log?limit=50` sau refactor `rows_by_ids` 19 ms; `edited` (đo xen kẽ có / không quyền, 60 vòng): `/visits` 17 / 17 ms, sổ doanh thu 92 ngày 83 / 87 ms, lịch sử khách 29 / 26 ms → thêm ≤ 3 ms. Dò `edited` đi qua `audit_log_edit_idx` (EXPLAIN trong bench).
 - Web: `staleTime: 0`, key `["record-history", type, id]`, `MutationCache.onSuccess` invalidate tiền tố (design §5).
 

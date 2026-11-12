@@ -9,19 +9,21 @@ import { can, type Me } from "../auth/session";
 /**
  * A record whose history a screen opens, by the route it is asked through. A sale or a refund is
  * re-anchored by the server (a one-off sale's history is its visit's, a package sale's and a
- * refund's is the package's), so the reply's `record` may be another kind.
+ * refund's is the package's), so the reply's `record` may be another kind. A cell of a staff book
+ * is a person and a day.
  */
-export interface RecordRef {
-  type: "visit" | "sale" | "refund" | "customer_package" | "customer";
-  id: string;
-}
+export type RecordRef =
+  | { type: "visit" | "sale" | "refund" | "customer_package" | "customer" | "appointment" | "adjustment"; id: string }
+  | { type: "attendance" | "daily_review"; staffId: string; date: string };
 
-const ROUTE: Record<RecordRef["type"], string> = {
+const ROUTE = {
   visit: "visit",
   sale: "sale",
   refund: "refund",
   customer_package: "customer-package",
   customer: "customer",
+  appointment: "appointment",
+  adjustment: "adjustment",
 };
 
 /**
@@ -29,18 +31,26 @@ const ROUTE: Record<RecordRef["type"], string> = {
  * opened, and every write in this browser invalidates `["record-history"]` (lib/queryClient.ts).
  */
 export function recordHistoryQuery(ref: RecordRef) {
+  const [key, path] =
+    ref.type === "attendance" || ref.type === "daily_review"
+      ? [
+          [ref.staffId, ref.date],
+          `/record-history/staff-day/${encodeURIComponent(ref.staffId)}/${encodeURIComponent(ref.date)}?book=${ref.type}`,
+        ]
+      : [[ref.id], `/record-history/${ROUTE[ref.type]}/${encodeURIComponent(ref.id)}`];
   return queryOptions({
-    queryKey: ["record-history", ref.type, ref.id],
-    queryFn: async () => (await api(`/record-history/${ROUTE[ref.type]}/${encodeURIComponent(ref.id)}`)) as RecordHistory,
+    queryKey: ["record-history", ref.type, ...key],
+    queryFn: async () => (await api(path)) as RecordHistory,
     staleTime: 0,
   });
 }
 
 /**
  * What the record's history ends up being about, for the read right of that kind (spec D7, AC-H4):
- * `visit` = a visit or a one-off sale made in one; `package` = a package, a package sale, a refund.
+ * `visit` = a visit or a one-off sale made in one; `package` = a package, a package sale, a refund;
+ * a booking, a staff-book cell, a bonus / penalty: their screen's own right.
  */
-export type TraceAnchor = "visit" | "package" | "customer";
+export type TraceAnchor = "visit" | "package" | "customer" | "appointment" | "attendance" | "daily_review" | "adjustment";
 
 /**
  * Whether to offer the history at all (UX only: the server checks the same and answers 403). The
@@ -57,5 +67,12 @@ export function canTrace(me: Me | null | undefined, anchor: TraceAnchor, through
     case "package":
     case "customer":
       return can(me, "customer.read");
+    case "appointment":
+      return can(me, "appointment.manage");
+    case "attendance":
+      return can(me, "attendance.record");
+    case "daily_review":
+    case "adjustment":
+      return can(me, "evaluation.record");
   }
 }

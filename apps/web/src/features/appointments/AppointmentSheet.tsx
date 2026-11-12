@@ -16,6 +16,7 @@ import { messageFor } from "../../lib/errors";
 import { spaToday } from "../../lib/format";
 import { useReached } from "../../lib/useReached";
 import { createCustomer, createWalkIn, customerQuery } from "../customers/api";
+import { LazyRecordTrace } from "../record-history/lazy";
 import { activeStaffQuery, formatDate } from "../sales/api";
 import { putAppointment } from "./cache";
 import { range, servicesText } from "./TimeGrid";
@@ -101,6 +102,7 @@ export function AppointmentSheet({
   cal,
   locked,
   canCreateCustomer,
+  traced = false,
   onClose,
   onEdit,
   onComplete,
@@ -110,12 +112,15 @@ export function AppointmentSheet({
   cal: Calendar;
   locked: boolean;
   canCreateCustomer: boolean;
+  /** "Ai ghi, ai sửa" as the body's last element (ADR-0022; `canTrace`, UX only: the server decides). */
+  traced?: boolean;
   onClose: () => void;
   onEdit: () => void;
   onComplete: () => void;
   onOpenOther: (id: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const body = useRef<HTMLDivElement>(null);
   const staff = useQuery(activeStaffQuery);
   // The booked technician, or nobody: never a guess (EM 2026-11-07).
   const [staffId, setStaffId] = useState(a.staff_id ?? "");
@@ -329,7 +334,7 @@ export function AppointmentSheet({
         )
       }
     >
-      <div className="appt-sheet">
+      <div className="appt-sheet" ref={body}>
         <dl className="detail-grid">
           <dt>Khách</dt>
           <dd>
@@ -708,6 +713,16 @@ export function AppointmentSheet({
               </form>
             )}
           </section>
+        )}
+        {traced && (
+          // Always the last element of the details (design record-history §2.7); on 403 focus
+          // goes to the sheet's own close button, which never depends on the right.
+          <LazyRecordTrace
+            record={{ type: "appointment", id: a.id }}
+            noun={`lịch hẹn ${range(start, a.duration_min)} của ${a.customer_name}`}
+            day={a.business_date}
+            focusOnHide={() => body.current?.closest("dialog")?.querySelector<HTMLElement>(".sheet-close")}
+          />
         )}
       </div>
     </BottomSheet>

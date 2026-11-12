@@ -1,10 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Icon } from "../../app/Icon";
 import { BottomSheet } from "../../components/BottomSheet";
 import { DateField } from "../../components/DateField";
 import { ResponsiveTable, type Column } from "../../components/ResponsiveTable";
+import { RowMenu } from "../../components/RowMenu";
 import { fieldMessage, messageFor } from "../../lib/errors";
+import { meQuery } from "../auth/session";
+import { LazyRecordTrace, usePreloadRecordHistory } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
 import { activeStaffQuery } from "../sales/api";
 import {
@@ -18,6 +22,9 @@ import {
   STAFF_FIELDS,
 } from "./api";
 import { dayLabel, vnd } from "./ui";
+
+/** A log row's ⋯ button: where focus goes when the row's history hides. */
+const adjustmentMenuId = (id: string) => `adjustment-menu-${id}`;
 
 /** "Thưởng" / "Phạt" + amount and points, as the chips and the log show an entry. */
 export function adjustmentText(a: Adjustment): string {
@@ -113,8 +120,14 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
   const staff = useQuery(activeStaffQuery);
   // Who the caller may record for (decision C), from the month's review sheet.
   const reviews = useQuery(reviewsQuery(month));
+  const { data: me } = useSuspenseQuery(meQuery);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Adjustment | null>(null);
+  // "Xem ai ghi, ai sửa" in the row's ⋯ (ADR-0022, design §2.9; UX only, the server decides).
+  const traced = canTrace(me, "adjustment");
+  usePreloadRecordHistory(traced);
+  /** The entry whose history is open under its row. */
+  const [tracing, setTracing] = useState<string | null>(null);
 
   if (log.isPending) return <RowsSkeleton rows={4} />;
   if (log.isError) return <ErrorState error={log.error} onRetry={() => void log.refetch()} />;
@@ -167,6 +180,30 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
           />
         ) : null,
     },
+    ...(traced
+      ? [
+          {
+            id: "more",
+            header: <span className="sr-only">Thêm</span>,
+            card: "actions",
+            className: "text-right",
+            cell: (a: Adjustment) => (
+              <RowMenu
+                id={adjustmentMenuId(a.id)}
+                label={`Thao tác ${adjustmentText(a)} của ${names.get(a.staff_id) ?? "nhân viên"}`}
+                items={[
+                  {
+                    label: tracing === a.id ? "Ẩn ai ghi, ai sửa" : "Xem ai ghi, ai sửa",
+                    onSelect: () => {
+                      setTracing((shown) => (shown === a.id ? null : a.id));
+                    },
+                  },
+                ]}
+              />
+            ),
+          } satisfies Column<Adjustment>,
+        ]
+      : []),
   ];
   const recordable = (reviews.data?.staff ?? []).filter((s) => s.can_record).map((s) => ({ id: s.staff_id, full_name: s.full_name }));
 
@@ -197,7 +234,27 @@ export function AdjustmentLogSection({ month, today, canWrite }: { month: string
         </div>
       ) : (
         <div className="card overflow-hidden">
-          <ResponsiveTable caption="Sổ thưởng phạt" rows={log.data.items} rowKey={(a) => a.id} columns={columns} />
+          <ResponsiveTable
+            caption="Sổ thưởng phạt"
+            rows={log.data.items}
+            rowKey={(a) => a.id}
+            columns={columns}
+            expanded={(a) =>
+              tracing === a.id ? (
+                // Under its row, open from the start (asked for from the menu, whose item is gone).
+                <div className="px-3 pb-3">
+                  <LazyRecordTrace
+                    record={{ type: "adjustment", id: a.id }}
+                    noun={`${adjustmentText(a)} của ${names.get(a.staff_id) ?? "nhân viên"}`}
+                    day={a.occurred_on}
+                    defaultOpen
+                    autoFocus
+                    focusOnHide={() => document.getElementById(adjustmentMenuId(a.id))}
+                  />
+                </div>
+              ) : null
+            }
+          />
         </div>
       )}
       {open && (

@@ -1,8 +1,11 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { TimeField } from "../../components/TimeField";
 import { messageFor } from "../../lib/errors";
+import { meQuery } from "../auth/session";
+import { LazyRecordTrace } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { invalidateStaff, saveAttendance, saveReviews, type AttendanceEntryWrite, type DailyReview, type StaffSheet } from "./api";
 import { STATUSES, STATUS_HINT, STATUS_LABEL, type AttendanceStatus } from "./labels";
 import { cellOf } from "./progress";
@@ -30,6 +33,8 @@ export function PersonDaySheet({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: me } = useSuspenseQuery(meQuery);
+  const form = useRef<HTMLFormElement>(null);
   const current = cellOf(staff, date);
   const [status, setStatus] = useState<AttendanceStatus | null>(current?.status ?? "present");
   const [checkIn, setCheckIn] = useState(current?.check_in ?? "");
@@ -74,6 +79,19 @@ export function PersonDaySheet({
     onSettled: () => invalidateStaff(queryClient),
   });
   const formId = "person-day-form";
+  /**
+   * "Ai ghi, ai sửa" of one book's cell, the fieldset's last element (design record-history §2.8);
+   * a `type="button"` disclosure, never a submit. On 403 focus goes to the sheet's close button.
+   */
+  const trace = (book: "attendance" | "daily_review", noun: string) =>
+    canTrace(me, book) && (
+      <LazyRecordTrace
+        record={{ type: book, staffId: staff.staff_id, date }}
+        noun={`${noun} ${dayLabel(date)} của ${staff.full_name}`}
+        day={date}
+        focusOnHide={() => form.current?.closest("dialog")?.querySelector<HTMLElement>(".sheet-close")}
+      />
+    );
 
   return (
     <BottomSheet
@@ -103,6 +121,7 @@ export function PersonDaySheet({
     >
       <form
         id={formId}
+        ref={form}
         className="grid gap-5"
         onSubmit={(e) => {
           e.preventDefault();
@@ -158,6 +177,7 @@ export function PersonDaySheet({
                 }}
               />
             </label>
+            {trace("attendance", "chấm công")}
           </fieldset>
         )}
         {canReview && (
@@ -178,6 +198,7 @@ export function PersonDaySheet({
                 }}
               />
             </label>
+            {trace("daily_review", "khen, phàn nàn")}
           </fieldset>
         )}
         {save.isError && (

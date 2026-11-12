@@ -29,6 +29,8 @@ import { spaToday } from "../../lib/format";
 import type { CartLine } from "../front-desk/api";
 import { cartFromAppointment } from "../front-desk/prefill";
 import { frontDeskSearch } from "../front-desk/search";
+import { usePreloadRecordHistory } from "../record-history/lazy";
+import { canTrace } from "../record-history/query";
 import { formatDate } from "../sales/api";
 import { BookingSheet, type Draft } from "./BookingSheet";
 import { AppointmentSheet, PhaseBadge, dayTitle } from "./AppointmentSheet";
@@ -89,8 +91,11 @@ export function AppointmentsCalendar({
   const [from, to] =
     layout === "tuan" ? [week, daysFrom(week, 7)[6] ?? week] : [day, day];
   const showsToday = from <= today && today <= to;
+  // "Ai ghi, ai sửa" (ADR-0022): the sheet's history, and "Đã sửa" in the list view only.
+  const traced = canTrace(me, "appointment");
+  usePreloadRecordHistory(traced);
   const cal = useQuery({
-    ...calendarQuery(from, to),
+    ...calendarQuery(from, to, traced && layout === "ds"),
     placeholderData: keepPreviousData,
     // "Đang làm" turns into "Xong" with the clock (phases are derived on every read).
     refetchInterval: showsToday ? 60_000 : false,
@@ -369,6 +374,7 @@ export function AppointmentsCalendar({
           cal={cal.data}
           locked={opened.a.business_date < today && !isOwner}
           canCreateCustomer={can(me, "customer.write")}
+          traced={traced}
           onClose={() => {
             setOpenId(null);
           }}
@@ -746,6 +752,13 @@ function DayList({
                     : e.v.customer_gender
                 }
               />
+              {/* Moved or another technician since booked (D9); only those the server tells. */}
+              {e.kind === "appointment" && e.a.edited === true && counts(v.phase) && (
+                <>
+                  {" "}
+                  <span className="badge badge-muted">Đã sửa</span>
+                </>
+              )}
             </strong>
             <span>
               {servicesText(v.services)}
