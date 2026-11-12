@@ -5308,6 +5308,33 @@
           "404": {},
           "422": {}
         }
+      },
+      "delete": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Deletes a group with no service in it (on sale or not); its name stays in the trail.",
+        "operationId": "delete_category",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "catalog.category_in_use: the group still has services (on sale or not)"
+          }
+        }
       }
     },
     "/api/v1/services": {
@@ -7929,6 +7956,7 @@
           "payroll.close",
           "catalog.category_create",
           "catalog.category_update",
+          "catalog.category_delete",
           "catalog.service_create",
           "catalog.service_update",
           "catalog.plan_create",
