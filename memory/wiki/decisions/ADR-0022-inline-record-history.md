@@ -66,7 +66,7 @@ Chọn **E + I + K**.
   - Không bảng mới, không đổi cách ghi audit.
 - Negative / accepted trade-offs:
   - **Sửa ADR-0018 D6 / ADR-0003.** Khi cờ `activity_log` tắt (mặc định), chủ spa **không** xem được trên UI việc đội vận hành làm với spa: khóa / mở tài khoản, đặt lại mật khẩu / MFA, sửa vai trò, cờ, ngưng spa. Dữ liệu vẫn ở `audit_log` (`actor_kind = platform_admin`) và nhật ký nền tảng. Operator bật cờ khi chủ spa cần. Không làm màn riêng cho việc này (LEAD).
-  - **Cửa sổ hồi quy** từ đợt 1 tới đợt 2 / 3: lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt, danh mục, quy tắc lương, cài đặt lịch hẹn chưa có lịch sử tại chỗ. Giảm thiểu như trên ([plan](../plans/record-history.md)). Đóng lại khi đợt 3 lên staging (đợt 3 đã build 2026-11-12), trừ **nhóm dịch vụ**: web chưa có form sửa nhóm nên lịch sử nhóm chỉ có qua API (spec K39).
+  - **Cửa sổ hồi quy** từ đợt 1 tới đợt 2 / 3: lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt, danh mục, quy tắc lương, cài đặt lịch hẹn chưa có lịch sử tại chỗ. Giảm thiểu như trên ([plan](../plans/record-history.md)). Đóng lại khi đợt 3 lên staging (đợt 3 đã build 2026-11-12), trừ **nhóm dịch vụ**: web chưa có form sửa nhóm nên lịch sử nhóm chỉ có qua API (spec K39). Đã làm form "Sửa nhóm" (chỉ đổi tên) ngày 2026-11-12 (spec K48): cửa sổ đóng hẳn khi bản đó lên staging.
   - Thêm khái niệm spa-local vào hai hàm vai trò. Hằng spa-local nằm ở cả Rust và SQL; một test giữ hai nơi khớp nhau.
   - Quản lý được bật thấy tên cũ của khách, không thấy SĐT cũ.
   - Cờ đầu tiên mặc định tắt: một test khóa giá trị mặc định của từng cờ.
