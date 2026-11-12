@@ -8,7 +8,7 @@ use crate::dto::{
     RangeReport,
 };
 use crate::history::RecordRoute;
-use crate::history_dto::RecordHistory;
+use crate::history_dto::{RecordHistory, StaffDayQuery};
 use crate::notes_dto::{NotesPage, NotesQuery};
 use crate::{activity, customer, day, history, notes, overview};
 use axum::extract::rejection::{PathRejection, QueryRejection};
@@ -17,6 +17,7 @@ use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use chrono::NaiveDate;
 use identity::AuthUser;
 use kernel::crypto::FieldCipher;
 use kernel::http::invalid_query;
@@ -54,6 +55,12 @@ where
             "/record-history/customer/{id}",
             get(customer_record_history),
         )
+        .route("/record-history/appointment/{id}", get(appointment_history))
+        .route(
+            "/record-history/staff-day/{staff_id}/{date}",
+            get(staff_day_history),
+        )
+        .route("/record-history/adjustment/{id}", get(adjustment_history))
 }
 
 /// Every `/record-history/*` route: the rights first (a caller without them gets `403` whatever
@@ -145,6 +152,63 @@ pub async fn customer_record_history(
     id: Result<Path<Uuid>, PathRejection>,
 ) -> Result<Response, AppError> {
     record_history(&pool, &user, RecordRoute::Customer, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/appointment/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "The booking's history: made, moved, arrived, done, missed, cancelled"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + appointment.manage; feature.disabled when the spa has appointments off"),
+        (status = 404)))]
+pub async fn appointment_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::Appointment, id).await
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/staff-day/{staff_id}/{date}", tag = "reports",
+    params(("staff_id" = Uuid, Path), ("date" = NaiveDate, Path, description = "YYYY-MM-DD"), StaffDayQuery),
+    responses(
+        (status = 200, body = RecordHistory, description = "One person's cell of one staff book on one day: only that day's rows, never a note's text"),
+        (status = 400, description = "query.invalid (book missing or unknown), or the path is not an id and a date"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + attendance.record (book=attendance) or evaluation.record (book=daily_review)"),
+        (status = 404, description = "not this spa's staff member, the caller's own profile, or a month the person did not work")))]
+pub async fn staff_day_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    path: Result<Path<(Uuid, NaiveDate)>, PathRejection>,
+    query: Result<Query<StaffDayQuery>, QueryRejection>,
+) -> Result<Response, AppError> {
+    // The rights first (either book's, the book being a query parameter), then the query and its
+    // book's right, then the path: a caller without them gets 403 whatever they send.
+    history::require_staff_book(&user.actor, None)?;
+    let Query(query) = query.map_err(invalid_query)?;
+    history::require_staff_book(&user.actor, Some(query.book))?;
+    let (staff, date) = match path {
+        Ok(Path(key)) => key,
+        Err(rejection) => return Ok(rejection.into_response()),
+    };
+    Ok(no_store(
+        history::read_staff_day(&pool, &user.actor, staff, date, query.book).await?,
+    ))
+}
+
+#[utoipa::path(get, path = "/api/v1/record-history/adjustment/{id}", tag = "reports",
+    params(("id" = Uuid, Path)),
+    responses(
+        (status = 200, body = RecordHistory, description = "A bonus / penalty and the entries its edits replaced, as one story"),
+        (status = 400, description = "id is not a UUID"), (status = 401),
+        (status = 403, description = "auth.forbidden: needs record.history.read + evaluation.record"),
+        (status = 404, description = "not this spa's, or a person of its chain is not in the caller's books (their own profile)")))]
+pub async fn adjustment_history(
+    State(pool): State<PgPool>,
+    user: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+) -> Result<Response, AppError> {
+    record_history(&pool, &user, RecordRoute::Adjustment, id).await
 }
 
 fn no_store(body: impl Serialize) -> Response {

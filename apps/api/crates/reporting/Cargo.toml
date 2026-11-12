@@ -13,6 +13,7 @@ axum = { version = "0.8.9", default-features = false, features = ["json", "query
 base64 = "0.23.1"
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
 crm = { version = "0.1.0", path = "../crm" }
+hr = { version = "0.1.0", path = "../hr" }
 identity = { version = "0.1.0", path = "../identity" }
 kernel = { version = "0.1.0", path = "../kernel" }
 org = { version = "0.1.0", path = "../org" }

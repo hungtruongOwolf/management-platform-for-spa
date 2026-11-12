@@ -195,6 +195,20 @@ pub struct CalendarQuery {
     pub from: Option<NaiveDate>,
     /// Last business day (inclusive); default `from`. At most 14 days.
     pub to: Option<NaiveDate>,
+    /// `true`: each appointment says whether it was edited (`edited`, ADR-0022), for callers
+    /// with `record.history.read`; the list view asks, the day and week grids do not.
+    pub marks: Option<bool>,
+}
+
+/// `GET /me/appointments`: the days only (a technician's own calendar has no marks).
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct MyCalendarQuery {
+    /// First business day `YYYY-MM-DD`; default today.
+    pub from: Option<NaiveDate>,
+    /// Last business day (inclusive); default `from`. At most 14 days.
+    pub to: Option<NaiveDate>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
@@ -282,6 +296,11 @@ pub struct AppointmentDto {
     /// Send back as `If-Match` when editing.
     pub version: i64,
     pub created_at: DateTime<Utc>,
+    /// "Đã sửa" (ADR-0022 D9): moved or given another technician since it was booked. Only for
+    /// callers with `record.history.read`, on `GET /appointments?marks=true`, `GET
+    /// /appointments/{id}` and the answers of the appointment actions; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edited: Option<bool>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

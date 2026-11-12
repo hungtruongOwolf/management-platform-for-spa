@@ -104,14 +104,41 @@ fn p(samples: &mut [u128], q: f64) -> u128 {
 /// The audit trail of those three years, shaped like the writers store it (ADR-0022 bench,
 /// architecture/record-history §6): ~60.000 rows a year — every visit's `visit.create` and its
 /// sale's `sale.create` at the same instant, each package sale's two rows, a technician change on
-/// one visit in twenty, eight people's attendance and daily reviews, and 25 bookings a day with
-/// their arrival and completion.
+/// one visit in twenty, eight people's attendance and daily reviews (one save of the book a day:
+/// the eight cells at one instant, on the person, each with its own `date`; one cell in ten written
+/// again), and 25 bookings a day (real `app.appointment` rows, the next 14 days included) with their
+/// arrival and completion, one in ten moved an hour.
 const AUDIT_SEED: &str = r#"
 -- Each one-off sale was made in its visit (the revenue book's `visit_id`, what `edited` looks up).
 -- The link is set once at insert by the writers; the bulk seed sets it after the visits exist.
 SET session_replication_role = replica;
 UPDATE app.sale s SET visit_id = v.visit FROM b_v v WHERE s.id = v.sale;
 SET session_replication_role = DEFAULT;
+-- The bookings, no technician (the overlap exclusion is not what is measured).
+CREATE TEMP TABLE b_a AS
+SELECT gen_random_uuid() AS id, d::date AS day, k, c.id AS customer,
+       d::date + time '08:00' + k * interval '20 minutes' AS at
+FROM generate_series(current_date - $DAYS, current_date + 13, interval '1 day') d
+CROSS JOIN generate_series(1, 25) k
+JOIN b_c c ON c.n = 1 + abs(hashtext(d::text || 'a' || k)) % 3000;
+INSERT INTO app.appointment (id, tenant_id, branch_id, customer_id, business_date, starts_at, ends_at, created_by)
+SELECT a.id, x.tenant, x.branch, a.customer, a.day, a.at, a.at + interval '1 hour', x.usr FROM b_a a, b_ctx x;
+-- Eight people: the bench's technician and seven more (ids only: the trail has no foreign key).
+CREATE TEMP TABLE b_people AS
+SELECT person, CASE WHEN person = 1 THEN x.staff ELSE md5('staff' || person)::uuid END AS staff
+FROM generate_series(1, 8) person, b_ctx x;
+INSERT INTO app.audit_log (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, at, before, after)
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'appointment.update', 'appointment', a.id,
+       a.at - interval '1 day', jsonb_build_object('starts_at', a.at - interval '1 hour', 'staff_id', null),
+       jsonb_build_object('starts_at', a.at, 'staff_id', null)
+FROM b_a a, b_ctx x WHERE a.k % 10 = 0
+UNION ALL
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'attendance.record', 'staff', p.staff,
+       d::date + time '20:00', jsonb_build_object('date', d::date, 'status', 'present', 'has_note', false),
+       jsonb_build_object('date', d::date, 'status', 'present', 'check_in', '09:10', 'has_note', false)
+FROM generate_series(current_date - $DAYS, current_date, interval '1 day') d
+CROSS JOIN b_people p, b_ctx x
+WHERE abs(hashtext(d::text || p.person)) % 10 = 0;
 INSERT INTO app.audit_log (id, tenant_id, actor_user_id, actor_kind, action, entity_type, entity_id, at, after)
 SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'visit.create', 'visit', v.visit, v.at,
        jsonb_build_object('sale_id', v.sale, 'total', 150000, 'discount_amount', 0)
@@ -138,19 +165,18 @@ SELECT gen_random_uuid(), x.tenant, x.usr, 'user', 'visit.update', 'visit', v.vi
          'line_id', gen_random_uuid(), 'from', x.staff, 'to', gen_random_uuid())))
 FROM b_v v, b_ctx x WHERE v.k % 20 = 0
 UNION ALL
-SELECT gen_random_uuid(), x.tenant, x.usr, 'user', book.action, 'staff', gen_random_uuid(),
+SELECT gen_random_uuid(), x.tenant, x.usr, 'user', book.action, 'staff', p.staff,
        d::date + time '18:00', jsonb_build_object('date', d::date, 'status', 'present')
 FROM generate_series(current_date - $DAYS, current_date, interval '1 day') d
-CROSS JOIN generate_series(1, 8) person
+CROSS JOIN b_people p
 CROSS JOIN (VALUES ('attendance.record'), ('evaluation.daily_review')) book(action), b_ctx x
 UNION ALL
 SELECT gen_random_uuid(), x.tenant, x.usr, 'user', step.action, 'appointment', a.id,
        a.at + step.after_minutes * interval '1 minute', '{}'::jsonb
-FROM (SELECT gen_random_uuid() AS id, d::date + time '08:00' + k * interval '20 minutes' AS at
-      FROM generate_series(current_date - $DAYS, current_date, interval '1 day') d
-      CROSS JOIN generate_series(1, 25) k) a
+FROM b_a a
 CROSS JOIN (VALUES ('appointment.create', -1440), ('appointment.arrive', 0),
                    ('appointment.complete', 60)) step(action, after_minutes), b_ctx x;
+ANALYZE app.appointment;
 ANALYZE app.audit_log;
 "#;
 
@@ -364,13 +390,15 @@ async fn three_years_of_books_read_within_budget(pool: PgPool) -> TestResult {
 
 /// Budgets of "ai ghi, ai sửa" (ADR-0022, architecture/record-history §6) with a real-sized audit
 /// trail (~60.000 rows a year × 3): one record's history p95 ≤ 100 ms (a three-version "Sửa lượt"
-/// chain, the busiest package, the busiest customer); the day's visits and a 92-day revenue book
-/// with `edited` within +10 ms of the same lists without it; "Nhật ký thao tác" after the
-/// `rows_by_ids` refactor within the management views' 300 ms.
+/// chain, the busiest package, the busiest customer); a staff-book cell ≤ 50 ms (wave 2, 0052's
+/// day index); the day's visits and a 92-day revenue book with `edited` within +10 ms of the same
+/// lists without it, and 14 days of bookings with `marks=true` within +10 ms of the grids;
+/// "Nhật ký thao tác" after the `rows_by_ids` refactor within the management views' 300 ms.
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 #[ignore = "perf bench: seeds three years of data and audit; run with --ignored"]
 async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
     const HISTORY_BUDGET_MS: u128 = 100;
+    const STAFF_DAY_BUDGET_MS: u128 = 50;
     const EDITED_BUDGET_MS: u128 = 10;
     const EDITED_ROUNDS: usize = 60;
     let (h, owner) = books(pool).await?;
@@ -463,6 +491,72 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
     if p95 >= BUDGET_MS {
         over.push(format!("{audit}: p95 {p95} ms (budget {BUDGET_MS} ms)"));
     }
+    // Wave 2: one staff-book cell written twice (the person's three years of book rows around
+    // it) through 0052's `audit_log_staff_day_idx`, ≤ 50 ms.
+    let cell_day: String = sqlx::query_scalar(
+        "SELECT after ->> 'date' FROM app.audit_log
+         WHERE entity_id = $1::uuid AND action = 'attendance.record' AND before IS NOT NULL
+         ORDER BY at DESC LIMIT 1",
+    )
+    .bind(&staff)
+    .fetch_one(&h.owner)
+    .await?;
+    let cell = format!("/record-history/staff-day/{staff}/{cell_day}?book=attendance");
+    let (p50, p95) = timed(&h, &owner, &cell, &mut n).await;
+    println!("p50 {p50:>4} ms  p95 {p95:>4} ms  {cell}");
+    if p95 > STAFF_DAY_BUDGET_MS {
+        over.push(format!(
+            "{cell}: p95 {p95} ms (budget {STAFF_DAY_BUDGET_MS} ms)"
+        ));
+    }
+    // `/appointments` over 14 days: the list view's `marks=true` within +10 ms of the grids.
+    let (from, to): (String, String) =
+        sqlx::query_as("SELECT current_date::text, (current_date + 13)::text")
+            .fetch_one(&h.owner)
+            .await?;
+    let grid = format!("/appointments?from={from}&to={to}");
+    let (mut with, mut without) = (Vec::new(), Vec::new());
+    for round in 0..(EDITED_ROUNDS * 2) {
+        let marks = round % 2 == 0;
+        let path = if marks {
+            format!("{grid}&marks=true")
+        } else {
+            grid.clone()
+        };
+        n += 1;
+        let ip = format!("10.6.{}.{}", n / 250, n % 250);
+        let t = Instant::now();
+        let reply = call_with_headers(
+            &h.app,
+            "GET",
+            &path,
+            Some(&owner),
+            None,
+            &[("X-Forwarded-For", &ip)],
+        )
+        .await;
+        let ms = t.elapsed().as_millis();
+        assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
+        assert_eq!(
+            reply.body.to_string().contains("\"edited\""),
+            marks,
+            "{path}"
+        );
+        if marks {
+            with.push(ms)
+        } else {
+            without.push(ms)
+        }
+    }
+    let (with_p50, with_p95) = (p(&mut with, 0.5), p(&mut with, 0.95));
+    let (p50, p95) = (p(&mut without, 0.5), p(&mut without, 0.95));
+    println!("marks: p50 {with_p50:>4} / {p50:>4} ms  p95 {with_p95:>4} / {p95:>4} ms  {grid}");
+    // The 14 days' grid itself takes ~450 ms on a debug build (walk-ins, each booking's sale
+    // lineage), so its p95 swings ±25 ms from run to run and hides a ~1 ms probe (EXPLAIN below:
+    // 350 bookings through `audit_log_edit_idx` in ~1 ms). The median is what the marks move.
+    if with_p50 > p50 + EDITED_BUDGET_MS {
+        over.push(format!("{grid}: marks add {} ms at p50", with_p50 - p50));
+    }
 
     // `edited` costs: the same lists with the right (the owner's default) and without it, in
     // alternating rounds so a busy machine slows both sides alike.
@@ -528,6 +622,14 @@ async fn record_history_reads_within_budget(pool: PgPool) -> TestResult {
         (
             "package members (entity index)",
             "EXPLAIN (ANALYZE, BUFFERS) SELECT a.id FROM app.audit_log a WHERE a.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND a.entity_type = 'customer_package' AND a.entity_id = (SELECT customer_package_id FROM app.visit_line WHERE customer_package_id IS NOT NULL GROUP BY 1 ORDER BY count(*) DESC LIMIT 1)",
+        ),
+        (
+            "staff-day cell (audit_log_staff_day_idx)",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT a.id FROM app.audit_log a WHERE a.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND a.entity_id = (SELECT id FROM app.staff LIMIT 1) AND a.action IN ('attendance.record', 'evaluation.daily_review') AND coalesce(a.after ->> 'date', a.before ->> 'date') = (current_date - 3)::text AND a.action = 'attendance.record' AND a.entity_type = 'staff'",
+        ),
+        (
+            "booking edited probe (partial index)",
+            "EXPLAIN (ANALYZE, BUFFERS) SELECT ap.id FROM app.appointment ap WHERE ap.tenant_id = (SELECT id FROM app.tenant WHERE slug = 'vpyd') AND ap.business_date BETWEEN current_date AND current_date + 13 AND EXISTS (SELECT 1 FROM app.audit_log l WHERE l.tenant_id = ap.tenant_id AND l.entity_type = 'appointment' AND l.entity_id = ap.id AND l.action IN ('visit.update', 'appointment.update') AND l.action = 'appointment.update' AND (l.before -> 'starts_at' IS DISTINCT FROM l.after -> 'starts_at' OR l.before -> 'staff_id' IS DISTINCT FROM l.after -> 'staff_id'))",
         ),
     ] {
         let plan: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.to_owned()))

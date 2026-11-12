@@ -6,7 +6,7 @@ use super::dto::{
     AppointmentArrive, AppointmentClose, AppointmentComplete, AppointmentCompleted,
     AppointmentCreate, AppointmentDto, AppointmentGroupCreate, AppointmentGroupDto,
     AppointmentGroupMove, AppointmentGroupMoved, AppointmentSettingsDto, AppointmentSettingsUpdate,
-    AppointmentUpdate, CalendarDto, CalendarQuery, MyCalendar,
+    AppointmentUpdate, CalendarDto, CalendarQuery, MyCalendar, MyCalendarQuery,
 };
 use super::service::{self, Outcome};
 use axum::body::Bytes;
@@ -87,14 +87,14 @@ pub async fn calendar(
 
 /// The signed-in technician's own calendar (read-only). The person is the session's staff link;
 /// there is no parameter to pick anyone else (`?staff_id=` → 400).
-#[utoipa::path(get, path = "/api/v1/me/appointments", tag = "appointments", params(CalendarQuery),
+#[utoipa::path(get, path = "/api/v1/me/appointments", tag = "appointments", params(MyCalendarQuery),
     responses((status = 200, body = MyCalendar), (status = 400), (status = 401), (status = 403),
         (status = 422, description = "to before_from / range_too_long (max 14 days)")))]
 pub async fn my_calendar(
     State(pool): State<PgPool>,
     State(cipher): State<Arc<FieldCipher>>,
     user: AuthUser,
-    query: Result<Query<CalendarQuery>, QueryRejection>,
+    query: Result<Query<MyCalendarQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
     user.actor.require(Permission::StaffReadOwn)?;
     let Query(query) = query.map_err(invalid_query)?;

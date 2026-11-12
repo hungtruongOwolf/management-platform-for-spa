@@ -795,6 +795,27 @@ const ROUTES: &[Route] = &[
         Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
     )
     .id(Target::Customer),
+    // Wave 2: + appointment.manage (and the appointments feature, by route prefix); a staff-book
+    // cell (`{staff_id}` = the fixture's technician, `?book=attendance`) + the book's right and
+    // the caller's books (their own profile 404); a bonus / penalty + evaluation.record.
+    route(
+        "GET",
+        "/api/v1/record-history/appointment/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Appointment),
+    route(
+        "GET",
+        "/api/v1/record-history/staff-day/{staff_id}/{date}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Staff),
+    route(
+        "GET",
+        "/api/v1/record-history/adjustment/{id}",
+        Access::Perm(P::RecordHistoryRead, OWNER_ONLY),
+    )
+    .id(Target::Adjustment),
     route(
         "GET",
         "/api/v1/customers/inactive",
@@ -1624,6 +1645,9 @@ fn concrete(route: &Route, f: &Fixture) -> String {
     route
         .path
         .replace("{id}", f.id_of(route.id))
+        // A staff-book cell: the target person, a day they worked (no end, no start), one book.
+        .replace("{staff_id}", f.id_of(route.id))
+        .replace("{date}", "2026-01-15?book=attendance")
         .replace(
             "{key}",
             if route.path.contains("/roles/") || route.path.contains("/role-templates/") {

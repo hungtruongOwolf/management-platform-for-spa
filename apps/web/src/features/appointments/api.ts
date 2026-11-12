@@ -43,13 +43,17 @@ export const APPOINTMENT_FIELDS: FieldTexts = {
   range_too_long: "Chỉ xem tối đa 14 ngày.",
 };
 
-/** Calendar of `from..to` (spa business days, inclusive; ≤ 14 days). */
-export function calendarQuery(from: string, to: string = from) {
+/**
+ * Calendar of `from..to` (spa business days, inclusive; ≤ 14 days). `marks`: each booking also
+ * says whether it was edited ("Đã sửa", ADR-0022) — the list view of those who may see it asks;
+ * the server sends `edited` only to `record.history.read` holders anyway.
+ */
+export function calendarQuery(from: string, to: string = from, marks = false) {
   return queryOptions({
-    queryKey: ["appointments", from, to],
+    queryKey: marks ? ["appointments", from, to, "marks"] : ["appointments", from, to],
     queryFn: async () =>
       (await api(
-        `/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+        `/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${marks ? "&marks=true" : ""}`,
       )) as Calendar,
     staleTime: 15_000,
   });

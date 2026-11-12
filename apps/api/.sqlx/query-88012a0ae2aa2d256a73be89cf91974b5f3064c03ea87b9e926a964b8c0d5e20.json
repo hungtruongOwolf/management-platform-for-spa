@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_type = 'staff' AND a.entity_id = ANY($2)\n             AND a.action IN ('staff.adjustment', 'staff.adjustment_void')\n             AND coalesce(a.after ->> 'adjustment_id', a.before ->> 'adjustment_id') = ANY($3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "88012a0ae2aa2d256a73be89cf91974b5f3064c03ea87b9e926a964b8c0d5e20"
+}

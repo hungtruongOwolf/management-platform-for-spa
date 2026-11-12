@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id FROM app.audit_log a\n           WHERE a.tenant_id = $1 AND a.entity_id = $2\n             AND a.action IN ('attendance.record', 'evaluation.daily_review')\n             AND coalesce(a.after ->> 'date', a.before ->> 'date') = $3::text\n             AND a.action = $4 AND a.entity_type = 'staff'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.audit_log",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fad477f104fd93e41b53e45adf3a676228a4379f760e312ce323a0156fffe1c7"
+}

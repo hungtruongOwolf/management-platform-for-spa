@@ -1,13 +1,13 @@
 ---
 title: "Plan: lịch sử trên từng bản ghi (đợt 1a + 1b, 2, 3)"
-updated: 2026-11-11
+updated: 2026-11-12
 sources: [raw/2026-11-11-em-decision-inline-record-history.md]
 related: [../product/specs/record-history.md, ../architecture/record-history.md, ../design/record-history.md, ../decisions/ADR-0022-inline-record-history.md]
 ---
 
 # Plan: lịch sử trên từng bản ghi
 
-Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). **Đợt 1a đã build** (2026-11-11, PR #187; quyết định khi build K1–K11 ở [spec](../product/specs/record-history.md) Review log). **Đợt 1b đã build** (2026-11-11, PR #188; K12–K20). **Đã lên staging 2026-11-12** (migrate 0052 + deploy 16e788e cùng phiên). Tiếp theo: đợt 2.
+Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `scripts/merge-when-green.sh`. Bản sửa sau review độc lập 2026-11-11 (LEAD: gộp đợt 2 cũ vào đợt 1; ẩn màn nhật ký ngay đợt 1). **Đợt 1a đã build** (2026-11-11, PR #187; quyết định khi build K1–K11 ở [spec](../product/specs/record-history.md) Review log). **Đợt 1b đã build** (2026-11-11, PR #188; K12–K20). **Đã lên staging 2026-11-12** (migrate 0052 + deploy 16e788e cùng phiên). **Đợt 2 đã build** (2026-11-12, một PR API + web; K21–K36; không migration mới, chưa lên staging). Tiếp theo: deploy đợt 2 (chỉ binary + web), rồi đợt 3.
 
 ## Đợt 1 = 1a + 1b — **lên staging cùng nhau**
 1a merge trước nhưng **không deploy staging** cho tới khi 1b merge (1a ẩn màn nhật ký; 1b mới hiện lịch sử tại chỗ). Deploy: migrate 0052 rồi deploy binary ngay; operator không ghi ở console trong khoảng hở ([architecture §8](../architecture/record-history.md)).
@@ -58,7 +58,8 @@ Mỗi PR qua `build` → `qa` → `pr-review` → `secure` (quyền + PII) → `
 ## Cửa sổ hồi quy (từ khi đợt 1 lên staging tới đợt 2 / 3)
 Màn nhật ký tắt, nên chủ spa **không xem được trên UI** ai làm những việc sau cho tới khi đợt tương ứng xong: đổi / hủy / không đến lịch hẹn, chấm công, khen / phàn nàn, sửa / xóa thưởng phạt (đợt 2); sửa giá, mẫu gói, nhóm dịch vụ, quy tắc lương, cài đặt lịch hẹn (đợt 3); việc của đội vận hành, tài khoản / mật khẩu, vai trò, cờ (không có đợt nào: chỉ nhật ký). Dữ liệu vẫn đủ ở `audit_log`. Giảm thiểu: chủ spa / EM cần thì operator bật cờ `activity_log` cho spa đó (một phút, có lý do + audit). **Lưu ý:** `app reset-demo` xóa `tenant_feature` → cờ operator đã bật cho spa demo mất sau mỗi lần reset, phải bật lại (N8). Ghi vào hướng dẫn nghiệm thu khi deploy.
 
-## Đợt 2 — lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt
+## Đợt 2 — lịch hẹn, chấm công, khen / phàn nàn, thưởng / phạt — ✅ đã build
+**Kết quả:** API: 3 route trong `reporting::history` (`appointment`, `staff-day` với `require_staff_book`, `adjustment` với chuỗi sửa `edit_link`), `RecordKind` + 4 loại, `RecordRef.id` tùy chọn (ô ngày không có id), `edited` ở `AppointmentDto` (`marks=true`, `GET /appointments/{id}`, reply thao tác), dòng sửa thưởng / phạt gộp (`activity::replaced_adjustment`, K21), câu `appointment.update` thêm dịch vụ / ghi chú lịch hẹn / người đi cùng + KTV theo id (K26), "Ghi chú (đã đổi)" của ô sổ (K25); `reporting` phụ thuộc thêm `hr` (`RecordScope`, `employed_in`). Không migration (0052 đã có `audit_log_staff_day_idx`). Web: `AppointmentSheet` (phần tử cuối), chip "Đã sửa" ở `kieu=ds` (`calendarQuery(…, marks)`), `PersonDaySheet` (cuối mỗi `fieldset`), Sổ thưởng, phạt ⋯; `query.ts` `RecordRef` có ô ngày, `canTrace` 4 loại; `sentence.ts` "sửa khoản thưởng / phạt" + nhãn trường mới. Test + số đo: xem log 2026-11-12.
 - Route `appointment`, `staff-day` (`?book=attendance|daily_review`), `adjustment`; `edited` ở `AppointmentDto` khi `marks=true` (+ reply thao tác lịch hẹn); chuỗi thưởng / phạt.
 - Web: `AppointmentSheet` (phần tử cuối), chip ở `kieu=ds`, `PersonDaySheet` (cuối mỗi `fieldset`), `AdjustmentsTab` ⋯.
 - Test: cờ lịch hẹn tắt → `403 feature.disabled`; ô **của chính mình** `404`, ô của quản lý khác / chủ spa `200`, người không làm trong tháng (`employed_in`) `404`; một lần lưu sổ nhiều ô → lịch sử ô chỉ có ngày của nó; không chữ ghi chú chấm công; ô xóa trắng "xóa chấm công"; thưởng / phạt sửa = một chuỗi, "đã sửa 1 lần"; sửa chuyển khoản sang nhân viên khác vẫn một chuỗi, phạm vi kiểm cả hai người (S13); cờ lịch hẹn tắt → `GET /record-history/appointment/{id}` `403 feature.disabled` từ guard route; bench ô ≤ 50 ms với index 0052; `/appointments?marks=true` 14 ngày ≤ +10 ms.

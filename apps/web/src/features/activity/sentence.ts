@@ -200,7 +200,9 @@ export const HISTORY: Record<AuditAction, ((e: ActivityEntry) => string) | null>
   // Nhân sự (wave 2)
   "attendance.record": (e) => (e.detail === "cleared" ? "xóa chấm công" : "chấm công"),
   "evaluation.daily_review": () => "ghi khen / phàn nàn",
-  "staff.adjustment": (e) => (e.detail === "penalty" ? "ghi phạt" : "ghi thưởng"),
+  // An edit is the void and the new entry folded into one line (ADR-0022, K21).
+  "staff.adjustment": (e) =>
+    `${e.folded.includes("staff.adjustment_void") ? "sửa khoản" : "ghi"} ${e.detail === "penalty" ? "phạt" : "thưởng"}`,
   "staff.adjustment_void": () => "xóa khoản thưởng / phạt",
   // Danh mục, quy tắc lương (wave 3)
   "catalog.service_create": () => "thêm dịch vụ",
@@ -342,8 +344,19 @@ const FIELD: Record<string, string> = {
   role: "Vai trò",
   expires_on: "Hạn dùng",
   starts_at: "Giờ hẹn",
+  // appointment.update (ADR-0022 wave 2): what the edit touched; the booking note, never its text.
+  services: "Dịch vụ",
+  booking_note: "Ghi chú lịch hẹn",
   check_in_at: "Giờ vào",
   staff: "KTV",
+  // A bonus / penalty edited (one line: the replaced entry → the new one).
+  person: "Nhân viên",
+  kind: "Loại",
+  amount: "Số tiền",
+  points: "Điểm",
+  occurred_on: "Ngày",
+  corrects_month: "Điều chỉnh tháng",
+  reason: "Lý do",
   // visit.update (ADR-0022 S3): the session note, set or not; never its text.
   session_note: "Ghi chú buổi",
   companions: "Người đi cùng",
@@ -364,6 +377,7 @@ const CODE: Record<string, Record<string, string>> = {
   },
   role: ROLE,
   gender: { female: "Nữ", male: "Nam" },
+  kind: { bonus: "Thưởng", penalty: "Phạt" },
   result: { m1: "Mức 1", m2: "Mức 2", m3: "Mức 3", fail: "Chưa đạt" },
 };
 

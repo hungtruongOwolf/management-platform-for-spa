@@ -8,7 +8,7 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{FixedOffset, NaiveDate, Utc};
+use chrono::{Datelike, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
@@ -1084,5 +1084,644 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
         "Chủ Spa"
     );
     assert_eq!(customer_story["summary"]["edits"], 1);
+    Ok(())
+}
+
+// ------------------------------------------------------------------- wave 2: the books, bookings
+
+const SECOND_MANAGER_PHONE: &str = "0912000444";
+
+/// `+7` business day `days` from today at `hm` (spa time).
+fn at(days: i64, hm: &str) -> String {
+    format!(
+        "{}T{hm}:00+07:00",
+        spa_today() + chrono::Duration::days(days)
+    )
+}
+
+impl Spa {
+    async fn put(&self, who: &str, path: &str, body: Value, idempotent: bool) -> Reply {
+        let k = key();
+        let headers: Vec<(&str, &str)> = if idempotent {
+            vec![("idempotency-key", &k)]
+        } else {
+            Vec::new()
+        };
+        call_with_headers(&self.h.app, "PUT", path, Some(who), Some(body), &headers).await
+    }
+
+    /// A staff profile linked to the login with this phone (a manager's own, the owner's).
+    async fn link(&self, phone: &str, name: &str) -> Setup<String> {
+        let user: Uuid =
+            sqlx::query_scalar("SELECT id FROM app.user_account WHERE phone_e164 = $1")
+                .bind(format!("+84{}", &phone[1..]))
+                .fetch_one(&self.h.owner)
+                .await?;
+        let r = call(
+            &self.h.app,
+            "POST",
+            "/staff",
+            Some(&self.owner),
+            Some(json!({"full_name": name, "position": "Quản lý", "user_id": user})),
+        )
+        .await;
+        assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+        Ok(str_of(&r.body["id"]))
+    }
+
+    async fn staff_day(&self, who: &str, staff: &str, day: &str, book: &str) -> Reply {
+        call(
+            &self.h.app,
+            "GET",
+            &format!("/record-history/staff-day/{staff}/{day}?book={book}"),
+            Some(who),
+            None,
+        )
+        .await
+    }
+
+    async fn calendar(&self, who: &str, day: &str, marks: bool) -> Value {
+        let q = if marks { "&marks=true" } else { "" };
+        let r = call(
+            &self.h.app,
+            "GET",
+            &format!("/appointments?from={day}&to={day}{q}"),
+            Some(who),
+            None,
+        )
+        .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+        r.body
+    }
+
+    /// Switches a feature off for the spa, as an operator's switch leaves it.
+    async fn switch_off(&self, feature: &str) -> Setup<()> {
+        let operator = common::add_operator(&self.h).await?;
+        sqlx::query(
+            "INSERT INTO app.tenant_feature (tenant_id, feature, enabled, updated_by)
+             VALUES ($1, $2, false, $3)
+             ON CONFLICT (tenant_id, feature) DO UPDATE SET enabled = false",
+        )
+        .bind(self.tenant)
+        .bind(feature)
+        .bind(operator)
+        .execute(&self.h.owner)
+        .await?;
+        Ok(())
+    }
+}
+
+/// The lines of a history, each as (action, the fields it changed).
+fn lines(history: &Value) -> Vec<(String, Vec<String>)> {
+    let mut all: Vec<(String, Vec<String>)> = history["items"]
+        .as_array()
+        .map(|i| {
+            i.iter()
+                .map(|e| {
+                    let fields = e["changes"]
+                        .as_array()
+                        .map(|c| c.iter().map(|c| str_of(&c["field"])).collect())
+                        .unwrap_or_default();
+                    (str_of(&e["action"]), fields)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    all.sort();
+    all
+}
+
+/// AC-H1 / AC-H8 for a booking (spec §4.1, D9): who made it, what changed, a move or another
+/// technician counts as an edit (a note, the services, the cancellation do not), and the list
+/// view's `edited` agrees with "đã sửa N lần"; only the list asks (`marks=true`), only the history
+/// right gets it, the answers of the actions carry it; the appointments feature off answers
+/// `403 feature.disabled` from the route guard.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_bookings_history_and_its_list_mark(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let day = (spa_today() + chrono::Duration::days(1)).to_string();
+    let booked = s
+        .post(
+            &s.manager,
+            "/appointments",
+            json!({"customer_id": s.ha, "service_ids": [s.shampoo], "starts_at": at(1, "10:00")}),
+            None,
+        )
+        .await;
+    assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
+    assert!(booked.body.get("edited").is_none(), "no right, no key");
+    let id = str_of(&booked.body["id"]);
+    let story = s.owner_history("appointment", &id).await;
+    assert_eq!(story["record"], json!({"type": "appointment", "id": id}));
+    assert_eq!(actions(&story), ["appointment.create"]);
+    assert_eq!(
+        (
+            &story["summary"]["created"]["actor"]["name"],
+            &story["summary"]["edits"]
+        ),
+        (&json!("Quản lý Ngọc"), &json!(0))
+    );
+    for who in [&s.manager, &s.technician] {
+        let refused = s.history(who, "appointment", &id).await;
+        assert_eq!(
+            code(&refused),
+            (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+        );
+    }
+    // The mark: only the list asks, only the history right gets it.
+    let mark = |cal: &Value| cal["appointments"][0].get("edited").cloned();
+    assert_eq!(
+        mark(&s.calendar(&s.owner, &day, true).await),
+        Some(json!(false))
+    );
+    assert_eq!(mark(&s.calendar(&s.owner, &day, false).await), None);
+    assert_eq!(mark(&s.calendar(&s.manager, &day, true).await), None);
+
+    let patch = |who: &str, version: i64, body: Value| {
+        let etag = format!("\"{version}\"");
+        let (app, path) = (s.h.app.clone(), format!("/appointments/{id}"));
+        let who = who.to_owned();
+        async move {
+            call_with_headers(
+                &app,
+                "PATCH",
+                &path,
+                Some(&who),
+                Some(body),
+                &[("If-Match", &etag)],
+            )
+            .await
+        }
+    };
+    // The note only: said, never its text, no edit.
+    let noted = patch(&s.manager, 1, json!({"note": "Khách hỏi chỗ đỗ xe"})).await;
+    assert_eq!(noted.status, StatusCode::OK, "{}", noted.body);
+    let story = s.owner_history("appointment", &id).await;
+    assert_eq!(
+        lines(&story),
+        [
+            ("appointment.create".to_owned(), vec![]),
+            (
+                "appointment.update".to_owned(),
+                vec!["booking_note".to_owned()]
+            )
+        ]
+    );
+    assert!(!story.to_string().contains("đỗ xe"), "{story}");
+    assert_eq!(story["summary"]["edits"], 0);
+    assert_eq!(
+        mark(&s.calendar(&s.owner, &day, true).await),
+        Some(json!(false))
+    );
+    // Moved: an edit, and the owner's answer says so at once.
+    let moved = patch(&s.owner, 2, json!({"starts_at": at(1, "11:00")})).await;
+    assert_eq!(moved.status, StatusCode::OK, "{}", moved.body);
+    assert_eq!(moved.body["edited"], true);
+    // Another technician: a second one.
+    let staffed = patch(&s.owner, 3, json!({"staff_id": s.lan})).await;
+    assert_eq!(staffed.status, StatusCode::OK, "{}", staffed.body);
+    let story = s.owner_history("appointment", &id).await;
+    assert_eq!(story["summary"]["edits"], 2, "{story}");
+    let staff = story["items"]
+        .as_array()
+        .and_then(|i| {
+            i.iter()
+                .flat_map(|e| e["changes"].as_array().cloned().unwrap_or_default())
+                .find(|c| c["field"] == "staff")
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        (staff.get("old"), &staff["new"]),
+        (None, &json!("KTV Lan")),
+        "{staff}"
+    );
+    assert_eq!(
+        mark(&s.calendar(&s.owner, &day, true).await),
+        Some(json!(true))
+    );
+    let one = call(
+        &s.h.app,
+        "GET",
+        &format!("/appointments/{id}"),
+        Some(&s.owner),
+        None,
+    )
+    .await;
+    assert_eq!(one.body["edited"], true);
+    // Cancelled: its life, no edit; the history says it is cancelled, with the reason.
+    let cancelled = s
+        .post(
+            &s.manager,
+            &format!("/appointments/{id}/cancel"),
+            json!({"reason": "Khách bận đột xuất"}),
+            None,
+        )
+        .await;
+    assert_eq!(cancelled.status, StatusCode::OK, "{}", cancelled.body);
+    let story = s.owner_history("appointment", &id).await;
+    assert_eq!(
+        (&story["summary"]["edits"], &story["summary"]["state"]),
+        (&json!(2), &json!("cancelled"))
+    );
+    assert_eq!(
+        item(&story, "appointment.cancel")["reason"],
+        "Khách bận đột xuất"
+    );
+    // With the rights: malformed → 400, unknown → 404.
+    assert_eq!(
+        s.history(&s.owner, "appointment", "not-a-uuid")
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        s.history(&s.owner, "appointment", &Uuid::now_v7().to_string())
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // The appointments feature off: the route guard answers, before any handler.
+    s.switch_off("appointments").await?;
+    let off = s.history(&s.owner, "appointment", &id).await;
+    assert_eq!(
+        code(&off),
+        (StatusCode::FORBIDDEN, Some("feature.disabled"))
+    );
+    Ok(())
+}
+
+/// Spec edge case 13, threat model N4 (IDOR on a cell): a staff-book cell is a person and a day.
+/// One save of the book wrote several cells at one instant, yet each cell's history holds only
+/// its own day; every write after the first is an edit; a note's text never shows ("có sửa"); a
+/// cleared cell reads "xóa chấm công". The caller's books decide: their own cell `404`, another
+/// manager's and the owner's `200`, a month the person did not work `404`.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_staff_day_cell_keeps_its_own_day_and_the_callers_books(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let ngoc = s.link(MANAGER_PHONE, "Quản lý Ngọc").await?;
+    add_member(
+        &s.h.owner,
+        "vpyd",
+        SECOND_MANAGER_PHONE,
+        "Quản lý Thu",
+        SystemRole::Manager,
+    )
+    .await?;
+    let thu = s.link(SECOND_MANAGER_PHONE, "Quản lý Thu").await?;
+    let boss = s.link(OWNER_PHONE, "Chủ Spa").await?;
+    let d1 = spa_today() - chrono::Duration::days(1);
+    let d2 = spa_today() - chrono::Duration::days(2);
+    let (d1s, d2s) = (d1.to_string(), d2.to_string());
+    let present = |staff: &str, day: &str, check_in: &str, note: Option<&str>| {
+        json!({"staff_id": staff, "date": day, "status": "present", "check_in": check_in,
+               "note": note})
+    };
+    // One save of the book: five cells, two days.
+    let saved = s
+        .put(
+            &s.owner,
+            "/attendance",
+            json!({"entries": [
+                present(&s.lan, &d1s, "09:05", Some("Đi muộn vì kẹt xe")),
+                present(&s.lan, &d2s, "09:00", None),
+                present(&thu, &d1s, "08:55", None),
+                present(&boss, &d1s, "08:50", None),
+                present(&ngoc, &d1s, "08:58", None),
+            ]}),
+            false,
+        )
+        .await;
+    assert_eq!(saved.status, StatusCode::OK, "{}", saved.body);
+    // Lan's first day again: a later check-in, then only the note's text; her second day cleared.
+    for entry in [
+        present(&s.lan, &d1s, "09:20", Some("Đi muộn vì kẹt xe")),
+        present(&s.lan, &d1s, "09:20", Some("Kẹt xe ở cầu Rồng")),
+        json!({"staff_id": s.lan, "date": d2s, "status": null}),
+    ] {
+        let r = s
+            .put(
+                &s.manager,
+                "/attendance",
+                json!({"entries": [entry]}),
+                false,
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    }
+    let praised = s
+        .put(
+            &s.owner,
+            "/daily-reviews",
+            json!({"entries": [{"staff_id": s.lan, "date": d1s, "compliments": 1, "complaints": 0,
+                                "note": "Khách khen tay nghề"}]}),
+            false,
+        )
+        .await;
+    assert_eq!(praised.status, StatusCode::OK, "{}", praised.body);
+
+    let cell = s.staff_day(&s.owner, &s.lan, &d1s, "attendance").await;
+    assert_eq!(cell.status, StatusCode::OK, "{}", cell.body);
+    assert_eq!(
+        cell.headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
+        Some("no-store")
+    );
+    let h = &cell.body;
+    assert_eq!(h["record"], json!({"type": "attendance"}));
+    let items = h["items"].as_array().cloned().unwrap_or_default();
+    assert_eq!(items.len(), 3, "{h}");
+    assert!(
+        items
+            .iter()
+            .all(|e| e["action"] == "attendance.record" && e["subject"]["on"] == json!(d1s)),
+        "only this day: {h}"
+    );
+    // The first write says what it set (the note as "Có", never its text); the later ones what
+    // they changed: the check-in, then only the note's text ("Ghi chú (đã đổi)", K25).
+    let strings = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    assert_eq!(
+        lines(h),
+        [
+            ("attendance.record".to_owned(), strings(&["check_in"])),
+            ("attendance.record".to_owned(), strings(&["has_note"])),
+            (
+                "attendance.record".to_owned(),
+                strings(&["status", "check_in", "has_note"])
+            ),
+        ]
+    );
+    let note_edit = items
+        .iter()
+        .filter_map(|e| e["changes"].as_array().cloned())
+        .find(|c| c.len() == 1 && c[0]["field"] == "has_note")
+        .and_then(|c| c.first().cloned())
+        .unwrap_or_default();
+    assert_eq!(note_edit["field"], "has_note", "{h}");
+    assert!(
+        note_edit.get("old").is_none() && note_edit.get("new").is_none(),
+        "{note_edit}"
+    );
+    for text in ["kẹt xe", "Kẹt xe", "cầu Rồng", "tay nghề"] {
+        assert!(!h.to_string().contains(text), "{text}: {h}");
+    }
+    assert_eq!(
+        (
+            &h["summary"]["created"]["actor"]["name"],
+            &h["summary"]["edits"]
+        ),
+        (&json!("Chủ Spa"), &json!(2))
+    );
+    assert_eq!(h["summary"]["last"]["actor"]["name"], "Quản lý Ngọc");
+    // The second day: its own two rows, the clear says so.
+    let other = s.staff_day(&s.owner, &s.lan, &d2s, "attendance").await;
+    let items = other.body["items"].as_array().cloned().unwrap_or_default();
+    assert_eq!(items.len(), 2, "{}", other.body);
+    assert!(items.iter().all(|e| e["subject"]["on"] == json!(d2s)));
+    assert!(items.iter().any(|e| e["detail"] == "cleared"));
+    assert_eq!(other.body["summary"]["edits"], 1);
+    // The other book of the same day: its own row only.
+    let review = s.staff_day(&s.owner, &s.lan, &d1s, "daily_review").await;
+    assert_eq!(review.status, StatusCode::OK, "{}", review.body);
+    assert_eq!(review.body["record"], json!({"type": "daily_review"}));
+    assert_eq!(actions(&review.body), ["evaluation.daily_review"]);
+    assert_eq!(review.body["summary"]["edits"], 0);
+    assert!(!review.body.to_string().contains("tay nghề"));
+    // A day nobody wrote: empty, nobody named.
+    let empty = s
+        .staff_day(&s.owner, &s.mai, &spa_today().to_string(), "attendance")
+        .await;
+    assert_eq!(empty.status, StatusCode::OK, "{}", empty.body);
+    assert_eq!(empty.body["items"], json!([]));
+    assert!(empty.body["summary"].get("created").is_none());
+
+    // Who may read it: the switch first, then the book's right, then the caller's books.
+    for who in [&s.manager, &s.technician] {
+        let refused = s.staff_day(who, &s.lan, &d1s, "attendance").await;
+        assert_eq!(
+            code(&refused),
+            (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+        );
+        // No oracle: junk is refused the same way.
+        let junk = s.staff_day(who, "x", "y", "z").await;
+        assert_eq!(junk.status, StatusCode::FORBIDDEN);
+    }
+    s.grant_manager("record.history.read", true).await?;
+    assert_eq!(
+        s.staff_day(&s.manager, &ngoc, &d1s, "attendance")
+            .await
+            .status,
+        StatusCode::NOT_FOUND,
+        "their own cell is not in their books"
+    );
+    for (who, staff) in [
+        ("another manager", &thu),
+        ("the owner", &boss),
+        ("a technician", &s.lan),
+    ] {
+        let r = s.staff_day(&s.manager, staff, &d1s, "attendance").await;
+        assert_eq!(r.status, StatusCode::OK, "{who}: {}", r.body);
+    }
+    // Without the book's right: 403 for that book only.
+    s.grant_manager("evaluation.record", false).await?;
+    assert_eq!(
+        code(&s.staff_day(&s.manager, &s.lan, &d1s, "daily_review").await),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden"))
+    );
+    assert_eq!(
+        s.staff_day(&s.manager, &s.lan, &d1s, "attendance")
+            .await
+            .status,
+        StatusCode::OK
+    );
+    // A month the person did not work: not in the books.
+    let first = spa_today().with_day(1).unwrap_or_else(spa_today);
+    let newcomer = call(
+        &s.h.app,
+        "POST",
+        "/staff",
+        Some(&s.owner),
+        Some(json!({"full_name": "KTV Hằng", "position": "Kỹ thuật viên", "joined_on": first})),
+    )
+    .await;
+    assert_eq!(newcomer.status, StatusCode::CREATED, "{}", newcomer.body);
+    let hang = str_of(&newcomer.body["id"]);
+    let before = (first - chrono::Duration::days(1)).to_string();
+    assert_eq!(
+        s.staff_day(&s.owner, &hang, &before, "attendance")
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        s.staff_day(&s.owner, &hang, &first.to_string(), "attendance")
+            .await
+            .status,
+        StatusCode::OK
+    );
+    // With the rights: a bad book, a bad date, a bad id → 400; someone else's → 404.
+    for (staff, day, book) in [
+        (s.lan.as_str(), d1s.as_str(), "payroll"),
+        (s.lan.as_str(), "2026-13-40", "attendance"),
+        ("x", d1s.as_str(), "attendance"),
+    ] {
+        let r = s.staff_day(&s.owner, staff, day, book).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{staff} {day} {book}");
+    }
+    let no_book = call(
+        &s.h.app,
+        "GET",
+        &format!("/record-history/staff-day/{}/{d1s}", s.lan),
+        Some(&s.owner),
+        None,
+    )
+    .await;
+    assert_eq!(no_book.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        s.staff_day(&s.owner, &Uuid::now_v7().to_string(), &d1s, "attendance")
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    Ok(())
+}
+
+/// Spec D11 / §4.1 (S13): a bonus / penalty edited is one chain, read the same from any of its
+/// entries, "đã sửa 1 lần" per edit (the void and the new entry are one line of what changed);
+/// moved to another person it is still one chain, and every person of it must be in the caller's
+/// books; a removal is no edit.
+#[sqlx::test(migrator = "kernel::MIGRATOR")]
+async fn a_bonus_and_its_edits_read_as_one_chain(pool: PgPool) -> TestResult {
+    let s = spa(pool).await?;
+    let ngoc = s.link(MANAGER_PHONE, "Quản lý Ngọc").await?;
+    let day = spa_today().to_string();
+    let bonus = |staff: &str, amount: i64| {
+        json!({"staff_id": staff, "kind": "bonus", "amount": amount,
+               "reason": "Khách khen đích danh", "occurred_on": day})
+    };
+    let record = |who: &str, body: Value| {
+        let (s, who) = (&s, who.to_owned());
+        async move {
+            let r = s.post(&who, "/adjustments", body, None).await;
+            assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+            str_of(&r.body["id"])
+        }
+    };
+    let edit = |who: &str, id: &str, body: Value| {
+        let (s, who, path) = (&s, who.to_owned(), format!("/adjustments/{id}"));
+        async move {
+            let r = s.put(&who, &path, body, true).await;
+            assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+            str_of(&r.body["id"])
+        }
+    };
+    let first = record(&s.owner, bonus(&s.lan, 200_000)).await;
+    let second = edit(&s.manager, &first, bonus(&s.lan, 300_000)).await;
+    let story = s.owner_history("adjustment", &second).await;
+    assert_eq!(story["record"], json!({"type": "adjustment", "id": second}));
+    assert_eq!(story["items"].as_array().map(Vec::len), Some(2), "{story}");
+    assert_eq!(
+        (
+            &story["summary"]["edits"],
+            &story["summary"]["state"],
+            &story["summary"]["created"]["actor"]["name"]
+        ),
+        (&json!(1), &json!("active"), &json!("Chủ Spa"))
+    );
+    let edited = story["items"]
+        .as_array()
+        .and_then(|i| {
+            i.iter()
+                .find(|e| e["folded"] == json!(["staff.adjustment_void"]))
+        })
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(edited["action"], "staff.adjustment");
+    assert_eq!(edited["actor"]["name"], "Quản lý Ngọc");
+    assert_eq!(
+        edited["changes"],
+        json!([{"field": "amount", "format": "money", "old": "200000", "new": "300000"}])
+    );
+    assert!(edited.get("amount").is_none(), "{edited}");
+    // From the replaced entry: the same story.
+    let from_first = s.owner_history("adjustment", &first).await;
+    assert_eq!(from_first["items"], story["items"]);
+    assert_eq!(from_first["summary"]["state"], "replaced");
+    // Moved to Mai: still one chain, two edits; the person changes by name.
+    let third = edit(&s.owner, &second, bonus(&s.mai, 300_000)).await;
+    let story = s.owner_history("adjustment", &third).await;
+    assert_eq!(story["items"].as_array().map(Vec::len), Some(3), "{story}");
+    assert_eq!(story["summary"]["edits"], 2);
+    assert!(
+        story["items"].as_array().is_some_and(|i| {
+            i.iter().any(|e| e["changes"]
+            == json!([{"field": "person", "format": "text", "old": "KTV Lan", "new": "KTV Mai"}]))
+        }),
+        "{story}"
+    );
+    // The scope covers every person of the chain (S13): through the manager's own profile → 404.
+    let own = record(&s.owner, bonus(&ngoc, 100_000)).await;
+    let moved = edit(&s.owner, &own, bonus(&s.lan, 100_000)).await;
+    assert_eq!(
+        code(&s.history(&s.manager, "adjustment", &moved).await),
+        (StatusCode::FORBIDDEN, Some("auth.forbidden")),
+        "the switch first"
+    );
+    s.grant_manager("record.history.read", true).await?;
+    for id in [&moved, &own] {
+        assert_eq!(
+            s.history(&s.manager, "adjustment", id).await.status,
+            StatusCode::NOT_FOUND,
+            "{id}"
+        );
+    }
+    let r = s.history(&s.manager, "adjustment", &third).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(r.body["summary"]["edits"], 2);
+    let owners = s.owner_history("adjustment", &moved).await;
+    assert_eq!(owners["summary"]["edits"], 1);
+    // A removal is no edit; the entry reads as removed.
+    let fine = record(
+        &s.owner,
+        json!({"staff_id": s.lan, "kind": "penalty", "amount": 50_000, "reason": "Đi muộn",
+               "occurred_on": day}),
+    )
+    .await;
+    let removed = call(
+        &s.h.app,
+        "DELETE",
+        &format!("/adjustments/{fine}"),
+        Some(&s.owner),
+        None,
+    )
+    .await;
+    assert!(removed.status.is_success(), "{}", removed.body);
+    let story = s.owner_history("adjustment", &fine).await;
+    assert_eq!(
+        actions(&story),
+        ["staff.adjustment", "staff.adjustment_void"]
+    );
+    assert_eq!(
+        (&story["summary"]["edits"], &story["summary"]["state"]),
+        (&json!(0), &json!("voided"))
+    );
+    assert_eq!(item(&story, "staff.adjustment")["detail"], "penalty");
+    // Rights and ids: the technician 403 whatever the id; the owner 400 / 404.
+    for junk in ["not-a-uuid", third.as_str()] {
+        assert_eq!(
+            s.history(&s.technician, "adjustment", junk).await.status,
+            StatusCode::FORBIDDEN
+        );
+    }
+    assert_eq!(
+        s.history(&s.owner, "adjustment", "not-a-uuid").await.status,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        s.history(&s.owner, "adjustment", &Uuid::now_v7().to_string())
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
     Ok(())
 }
