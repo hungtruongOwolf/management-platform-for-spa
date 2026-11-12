@@ -120,13 +120,14 @@ Số "hôm nay" phụ thuộc giờ chạy (chạy trước 9:00 thì không có
 - Từ máy dev: `npx vercel deploy --prod --yes` ở gốc repo. Vercel build cả hai service: Rust release build trong Docker, nên lần đầu lâu.
 - Có migration mới thì chạy **trước** khi deploy:
   `set -a; . ./.env.staging; set +a; SQLX_OFFLINE=true DATABASE_URL="$STAGING_OWNER_URL" pnpm db:migrate`
+  - `pnpm db:migrate` là `cargo run … migrate`: compile lại `app` trước. Máy thiếu RAM thì dùng binary đã build (`apps/api/target/debug/app.exe migrate`, cùng `DATABASE_URL`) **nếu** nó embed đúng từng byte các file migration của `main` (sqlx lưu checksum: lệch là lần migrate sau báo "previously applied but modified"). Bị dừng giữa chừng thì dừng cả cây `pnpm` / `cargo` / `rustc`: kill script cha không dừng chúng, compile xong chúng tự migrate mà không deploy theo (2026-11-12).
 - Sau này: kết nối Git integration (`vercel git connect`, EM duyệt GitHub app) để push lên `main` là tự deploy.
 - **0052 (lịch sử trên từng bản ghi, đợt 1a — [architecture §8](../architecture/record-history.md)):** chỉ deploy khi đợt 1b đã merge (1a ẩn màn Nhật ký thao tác, 1b mới hiện lịch sử tại chỗ). Migrate rồi deploy binary mới **ngay trong cùng phiên**. Trong khoảng hở binary cũ chạy được (đăng nhập, mọi màn spa), trừ hai thao tác console: sửa vai trò spa (`422 unknown_permission`) và bật / tắt cờ ở spa chưa có dòng (`500`) → **operator không ghi gì ở console** cho tới khi binary mới lên. Rollback binary về trước 0052: như khoảng hở; không rollback schema. Sau deploy: chủ spa staging thấy "Nhật ký thao tác" biến mất (cờ `activity_log` mặc định tắt); cần thì operator bật cho spa đó ở `/admin` (có lý do). `app reset-demo` xóa `tenant_feature` → bật lại sau mỗi lần reset (N8).
 - Kiểm tra sau deploy 0052: `GET /api/v1/record-history/visit/<uuid>` không cookie → 401 (bản cũ → 404); chủ spa `GET /api/v1/audit-log` → `403 feature.disabled`.
 
 ## Kiểm tra sau deploy
 Thay `<staging>` bằng origin trong `APP_PUBLIC_ORIGIN`:
-- `npx vercel ls` phải có deployment **mới** (cột Age vài phút) và output deploy có `Aliased`. Lệnh deploy từng thoát 0 mà không tạo deployment (2026-11-09), khi đó các URL dưới vẫn 200 vì đang chạy bản cũ; gọi thêm một route chỉ bản mới có (không cookie → 401, bản cũ → 404).
+- `npx vercel ls` phải có deployment **mới** (cột Age vài phút) và output deploy có `Aliased`. Lệnh deploy từng thoát 0 mà không tạo deployment (2026-11-09; 2026-11-12 in `{"status":"error","message":"Not authorized"}` rồi thoát 0, chạy lại thì được), khi đó các URL dưới vẫn 200 vì đang chạy bản cũ; gọi thêm một route chỉ bản mới có (không cookie → 401, bản cũ → 404).
 - `curl -s <staging>/api/v1/health` → 200.
 - `curl -s -o /dev/null -w '%{http_code}' <staging>/api/v1/me` → 401; `<staging>/api/v1/admin/me` → 401; `<staging>/admin` → 200.
 - Mở `/dang-nhap`, đăng nhập chủ spa (mật khẩu ở `.env.staging`), cài MFA lần đầu.
