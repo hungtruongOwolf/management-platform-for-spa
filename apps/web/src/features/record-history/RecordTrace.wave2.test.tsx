@@ -325,13 +325,16 @@ describe("Sổ hằng ngày, Bảng công tháng → chỉ xem (K30, K49)", () =
     for (const [permissions, options, opens, hint] of [
       [[...BOOKS, HISTORY], { closed: true }, true, "Bấm một ô để xem."],
       [BOOKS, { closed: true }, true, "Bấm một ô để xem."],
-      [[...BOOKS, HISTORY], { lanLocked: true }, true, "Bấm một ô để sửa."],
-      [BOOKS, { lanLocked: true }, false, "Bấm một ô để sửa."],
+      [[...BOOKS, HISTORY], { lanLocked: true }, true, "Bấm một ô để xem."],
+      // Nothing opens: no hint to click.
+      [BOOKS, { lanLocked: true }, false, null],
     ] as const) {
       const spy = serve([...permissions], options);
       const user = userEvent.setup();
       const view = at("/nhan-vien?tab=month");
-      expect(await screen.findByText(hint)).toBeInTheDocument();
+      expect(await screen.findByRole("region", { name: /^Bảng công/ })).toBeInTheDocument();
+      if (hint) expect(screen.getByText(hint)).toBeInTheDocument();
+      else expect(screen.queryByText(/^Bấm một ô/)).toBeNull();
       const cell = screen.queryByRole("button", { name: lanToday });
       expect(cell !== null).toBe(opens);
       if (cell) {

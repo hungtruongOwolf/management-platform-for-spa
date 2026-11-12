@@ -46,6 +46,15 @@ export function MonthSheet({
   const traced = tracesBooks(me, true, canReview);
   /** Whether a person's cells open at all: to write, else read-only (the grid's own rule for the days: none to come, none outside their work). */
   const opens = (s: StaffSheet) => writable(s) || sheet.closed || traced;
+  const opening = people.filter(opens);
+  const hint =
+    opening.length === 0
+      ? ""
+      : opening.every(writable)
+        ? "Bấm một ô để sửa."
+        : opening.some(writable)
+          ? "Bấm một ô để sửa hoặc xem."
+          : "Bấm một ô để xem.";
 
   return (
     <div className="grid content-start gap-6">
@@ -68,7 +77,7 @@ export function MonthSheet({
           people={people}
           reviewsOf={canReview ? reviewsOf : undefined}
           opens={opens}
-          hint={sheet.closed ? "Bấm một ô để xem." : "Bấm một ô để sửa."}
+          hint={hint}
           onCell={(staff, date) => {
             if (opens(staff)) setEditing({ staff, date, view: !writable(staff) });
           }}
@@ -119,6 +128,7 @@ export function MonthGrid({
   reviewsOf: ((id: string) => StaffReviews | undefined) | undefined;
   /** Whether this person's days are buttons (to write or to view); otherwise shown, not opened. */
   opens: (s: StaffSheet) => boolean;
+  /** "Bấm một ô để sửa." / "… để xem." / "… để sửa hoặc xem."; "" when no cell opens. */
   hint: string;
   onCell: (s: StaffSheet, date: string) => void;
 }) {
@@ -217,7 +227,7 @@ export function MonthGrid({
         </table>
       </div>
       <AttendanceLegend late="underline" />
-      <p className="text-sm text-text-muted">{hint}</p>
+      {hint && <p className="text-sm text-text-muted">{hint}</p>}
     </div>
   );
 }
