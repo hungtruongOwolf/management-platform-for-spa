@@ -381,7 +381,7 @@ export function FrontDeskPage() {
         searchInput.current?.focus();
       } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        // The checkout's "Lưu"; before its chunk lands no customer is picked: nothing to save.
+        // The checkout's "Lưu" (it mounts after the first paint; nothing is in the cart before).
         saves.current?.save();
       } else if (e.key === "Escape" && !typing) {
         dropRef.current();

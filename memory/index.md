@@ -27,7 +27,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 
 ## Architecture
 - [system](wiki/architecture/system.md) — kiến trúc gốc R1: thứ tự thuộc tính chất lượng, C4, trust boundary, data flow, failure mode, chi phí (phần hosting lỗi thời có banner, bản hiện hành: docs/system-design)
-- [frontend](wiki/architecture/frontend.md) — kiến trúc SPA: route map (`router.tsx` + `mayOpen`), query key + invalidation, trạng thái trên URL (`useSearchState`), form, perf budget, auth UI, CSP, PWA, cấu trúc thư mục, `TimeGrid` dùng chung
+- [frontend](wiki/architecture/frontend.md) — kiến trúc SPA: route map (`router.tsx` + `mayOpen`), query key + invalidation, trạng thái trên URL (`useSearchState`), form, perf budget (startup 113,67 / 125 KiB, đường `/quay` 123,86, quy tắc giữ startup gọn, route-preload), auth UI, CSP, PWA, cấu trúc thư mục, `TimeGrid` dùng chung
 - [backend](wiki/architecture/backend.md) — hợp đồng API (endpoint, lỗi, idempotency, ETag), báo cáo R1-2 (shape, quy tắc tiền, p95), use case + chiến lược toàn vẹn, layering, job nền
 - [data](wiki/architecture/data.md) — schema Postgres theo migration: bảng, FK kèm tenant, RLS, ràng buộc, index, read model (`package_status`, `revenue_book`), quy ước migration + seed
 - [record-history (backend)](wiki/architecture/record-history.md) — `record.history.read` spa-local + hàm `platform_set_record_history`, cờ mặc định tắt (`default_enabled`), 13 route `GET /record-history/*` (đã build cả 13; đổi neo rồi kiểm quyền loại neo, thành viên theo id dòng audit, gộp chỉ lượt / gói + dòng sửa thưởng / phạt, ô ngày theo `date`, lọc quyền), "tính là sửa" một định nghĩa, `edited`, index 0052, thứ tự dòng = thứ tự thay đổi (ADR-0023, 0053), bench audit thật, thứ tự deploy
@@ -62,6 +62,7 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 
 - [ADR-0022 inline record history](wiki/decisions/ADR-0022-inline-record-history.md) — **accepted (EM 2026-11-11 chiều + LEAD sau review độc lập; đợt 1a + 1b + 2 + 3 đã build, 0052)**: `record.history.read` spa-local (chủ spa mặc định hiện, quản lý ẩn, KTV không bao giờ), chỉ operator đổi ở `/admin`; cờ `activity_log` mặc định tắt từ đợt 1 (sửa ADR-0018 D6 / ADR-0003: chủ spa không thấy việc của operator khi cờ tắt); `/record-history/*` + `edited`; SĐT cũ chỉ cho `audit.read`
 - [ADR-0023 audit instant = write time](wiki/decisions/ADR-0023-audit-instant-is-write-time.md) — **accepted (LEAD 2026-11-12, sửa ADR-0021 D8)**: mọi dòng audit của một transaction một giờ = `clock_timestamp()` lúc transaction ghi (hoãn tới `commit` / `write_audit`, sau mọi khóa dòng), request chờ khóa xếp sau request nó chờ; `now` của `*_as_of` không đóng dấu, chỉ `Actor::at_clock` của seed; default `clock_timestamp()` cho writer SQL (0053)
+- [ADR-0024 first screens as parallel chunks](wiki/decisions/ADR-0024-first-screens-as-parallel-chunks.md) — **accepted (agent perf 2026-11-12, EM ủy quyền)**: `/quay` và trang chủ là chunk riêng, script route-preload (file build sinh) tải chúng song song với startup; gate 125 KiB đo startup chung **và** từng đường; phần giỏ quầy lazy (`CheckoutPanel`), `LoginPage` ở lại startup
 
 ## Security
 - [authz-matrix](wiki/security/authz-matrix.md) — ai gọi được gì: permission × role (seed mẫu 0040), bảng endpoint → permission khớp `authz_matrix.rs`, quy tắc server từng vòng, cờ tính năng, console operator, test bắt buộc
@@ -86,5 +87,5 @@ Catalog of every page in `wiki/`. One line per page: link — what it answers. K
 - [hosting-storage](wiki/research/hosting-storage.md) — nơi lưu DB, file, video dài hạn; Supabase credits; chi phí; luật dữ liệu ra nước ngoài (tư liệu, hiện trạng ở ADR-0005/0012)
 
 ## Conventions
-- [coding-standards](wiki/conventions/coding-standards.md) — chuẩn code một nguồn: universal, Rust (layering, sqlx, test RLS, không unsafe), TypeScript, Git (merge-when-green)
+- [coding-standards](wiki/conventions/coding-standards.md) — chuẩn code một nguồn: universal, Rust (layering, sqlx, test RLS, không unsafe), TypeScript (gồm quy tắc giữ startup JS gọn), Git (merge-when-green)
 - [testing](wiki/conventions/testing.md) — các lớp test và cách chạy, thêm route vào authz matrix, viết E2E/axe, ngân sách perf, đồ thị job CI

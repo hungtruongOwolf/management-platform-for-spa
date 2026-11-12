@@ -173,7 +173,8 @@ Không có cron ngoài. `app::jobs::spawn_maintenance` ([`jobs.rs`](../apps/api/
 
 | Ngân sách | Giá trị | Kiểm bằng |
 |---|---|---|
-| JS khởi động (entry + modulepreload, gzip -9) | ≤ 125 KiB (hiện 124,89 KiB, 2026-11-12) | Gate CI `pnpm --filter web budget` sau `vite build`, ghi trong [frontend § Perf budget](../memory/wiki/architecture/frontend.md) |
+| JS khởi động (entry + modulepreload, gzip -9) | ≤ 125 KiB (hiện 113,67 KiB, 2026-11-12) | Gate CI `pnpm --filter web budget` sau `vite build`, ghi trong [frontend § Perf budget](../memory/wiki/architecture/frontend.md) |
+| JS đường riêng của màn đầu có chunk riêng (startup + chunk tải song song) | ≤ 125 KiB mỗi đường (hiện `/quay` 123,86, `/` 122,16 KiB) | Cùng gate (`ROUTE_PRELOAD` trong `apps/web/vite.config.ts`) |
 | LCP mobile (Slow 4G, CPU 4×) `/dang-nhap`, `/quay` | ≤ 2,5 s (trung vị 5 lần) | Lighthouse CI chặn merge ([`lighthouserc.json`](../apps/web/lighthouserc.json)) |
 | CLS / accessibility | ≤ 0,1 / ≥ 0,95 | Lighthouse CI |
 | API p95 tìm khách + catalog | < 300 ms | `apps/web/e2e/perf/api-latency.spec.ts` |
