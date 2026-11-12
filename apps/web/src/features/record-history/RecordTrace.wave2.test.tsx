@@ -307,7 +307,7 @@ describe("Sổ hằng ngày, Bảng công tháng → chỉ xem (K30, K49)", () =
     const spy = serve(BOOKS, { lanLocked: true });
     at("/nhan-vien");
     expect(await screen.findByText("Chỉ chủ spa chấm công, ghi khen/phàn nàn và thưởng/phạt cho quản lý.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Giờ & ghi chú$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /giờ & ghi chú$/i })).toBeNull();
     expect(traces(spy)).toEqual([]);
   });
 
