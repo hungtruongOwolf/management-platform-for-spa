@@ -444,7 +444,7 @@ pub async fn record_as_of(
     actor.require(Permission::VisitRecord)?;
     let order = parse(actor, input)?;
 
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1027,7 +1027,8 @@ enum Selection {
     Day(NaiveDate, Option<u32>),
 }
 
-/// Visits with their lines, payments and package sales in a fixed number of queries (no N+1).
+/// Visits as a request is answered: with "Đã sửa" for callers who may see it, which counts this
+/// transaction's own edit, so only once the use case's writes are done (`repo::visits`).
 /// `with_note` decrypts the note for callers holding `customer.health_notes.read`; otherwise the
 /// key is omitted.
 async fn load(
@@ -1037,11 +1038,38 @@ async fn load(
     selection: Selection,
     with_note: bool,
 ) -> Result<Vec<VisitDto>, AppError> {
+    let with_edited = actor.can(Permission::RecordHistoryRead);
+    read_visits(tx, cipher, actor, selection, with_note, with_edited).await
+}
+
+/// One visit read inside the caller's transaction midway, before its last write (the visit a
+/// correction replaces, as it was): no note and no "Đã sửa", which would write the transaction's
+/// audit entries before its last row lock (ADR-0023).
+async fn peek_one(
+    tx: &mut TenantTx,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<VisitDto, AppError> {
+    read_visits(tx, cipher, actor, Selection::One(id), false, false)
+        .await?
+        .pop()
+        .ok_or_else(|| AppError::Internal("visit vanished".into()))
+}
+
+/// Visits with their lines, payments and package sales in a fixed number of queries (no N+1).
+async fn read_visits(
+    tx: &mut TenantTx,
+    cipher: &FieldCipher,
+    actor: &Actor,
+    selection: Selection,
+    with_note: bool,
+    with_edited: bool,
+) -> Result<Vec<VisitDto>, AppError> {
     let (id, day, limit) = match selection {
         Selection::One(id) => (Some(id), None, None),
         Selection::Day(day, limit) => (None, Some(day), limit.map(i64::from)),
     };
-    let with_edited = actor.can(Permission::RecordHistoryRead);
     let rows: Vec<VisitRow> = repo::visits(tx, id, day, limit, with_edited).await?;
     let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
     let mut lines: HashMap<Uuid, Vec<VisitLineDto>> = HashMap::new();
@@ -1436,7 +1464,7 @@ pub async fn void_as_of(
         Err(invalid) => return Err(authorized_then_as_of(pool, actor, id, invalid, now).await),
     };
 
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1604,7 +1632,7 @@ pub async fn correct_as_of(
         Err(refused) => return Err(authorized_then_as_of(pool, actor, id, refused, now).await),
     };
 
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {
@@ -1677,7 +1705,7 @@ pub(crate) async fn finish_correction(
 ) -> Result<VisitCorrected, AppError> {
     let StartedCorrection { id, old, old_note } = started;
     // Like `POST /visits`, the stored response never carries a note.
-    let before = load_one(tx, cipher, actor, id, false).await?;
+    let before = peek_one(tx, cipher, actor, id).await?;
     // The desk changes only what was wrong: time, note and companions default to the old visit's.
     // The note is copied here (re-encrypted for the new visit), so it never travels through the
     // browser.
@@ -1904,7 +1932,7 @@ pub async fn convert(
         Utc::now(),
     )
     .await?;
-    let old = load_one(&mut tx, cipher, actor, id, false).await?;
+    let old = peek_one(&mut tx, cipher, actor, id).await?;
     // What the customer already paid for the visit keeps its method (cash stays cash); the request's
     // payments are only the top-up ("Khách đưa thêm").
     let carried = sales::service::reversed_by_method(&old.payments);

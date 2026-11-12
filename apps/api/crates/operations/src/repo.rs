@@ -125,7 +125,8 @@ pub struct VisitRow {
 /// only the newest N (never more than 500). `with_edited`: also whether each was edited — replaced
 /// or made by "Sửa lượt", or its time / a technician changed (`visit.update`); the same rule as
 /// `reporting::history::edited_visits`, whose action list repeats the partial index's
-/// (`audit_log_edit_idx`, 0052).
+/// (`audit_log_edit_idx`, 0052). It counts this transaction's own edit too, so it writes the
+/// transaction's audit entries first: ask for it only once the use case's writes are done.
 pub async fn visits(
     tx: &mut TenantTx,
     id: Option<Uuid>,
@@ -133,6 +134,9 @@ pub async fn visits(
     limit: Option<i64>,
     with_edited: bool,
 ) -> Result<Vec<VisitRow>, AppError> {
+    if with_edited {
+        tx.write_audit().await?;
+    }
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         VisitRow,

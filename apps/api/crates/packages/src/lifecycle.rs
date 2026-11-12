@@ -292,7 +292,7 @@ pub async fn cancel_as_of(
     actor.require(Permission::PackageCancelRefund)?;
     let order = parse_cancel(input)?;
 
-    let mut tx = TenantTx::for_actor_at(pool, actor, now).await?;
+    let mut tx = TenantTx::for_actor(pool, actor).await?;
     if let Claim::Replay { status, body } =
         idempotency::claim(&mut tx, actor, key, request_hash).await?
     {

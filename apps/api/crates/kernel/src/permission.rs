@@ -140,8 +140,9 @@ impl Actor {
         }
     }
 
-    /// Tooling only: this actor's audit entries are stamped `at` instead of the database clock
-    /// (see [`Actor::clock`]). Use cases that take a clock (`*_as_of`) stamp their own `now`.
+    /// Tooling only (back-fill, `app seed-demo`): this actor's audit entries are stamped `at`
+    /// instead of the database clock at write time (ADR-0023). Nothing else stamps them: the `now`
+    /// of a `*_as_of` use case is its business clock only.
     #[must_use]
     pub const fn at_clock(mut self, at: DateTime<Utc>) -> Self {
         self.clock = Some(at);

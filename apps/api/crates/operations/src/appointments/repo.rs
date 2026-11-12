@@ -406,7 +406,9 @@ pub struct AppointmentRow {
 /// One appointment (`id`) or those of `from..=to`, earliest first. `with_edited`: also whether
 /// each was edited — an `appointment.update` that moved it or changed its technician; the same
 /// rule as `reporting::history::counts_as_edit` for a booking. The action list repeats the partial
-/// index's (`audit_log_edit_idx`, 0052) so its predicate holds for a prepared statement.
+/// index's (`audit_log_edit_idx`, 0052) so its predicate holds for a prepared statement. It counts
+/// this transaction's own edit too, so it writes the transaction's audit entries first: ask for it
+/// only once the use case's writes are done.
 pub async fn appointments(
     tx: &mut TenantTx,
     id: Option<Uuid>,
@@ -414,6 +416,9 @@ pub async fn appointments(
     to: Option<NaiveDate>,
     with_edited: bool,
 ) -> Result<Vec<AppointmentRow>, AppError> {
+    if with_edited {
+        tx.write_audit().await?;
+    }
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         AppointmentRow,

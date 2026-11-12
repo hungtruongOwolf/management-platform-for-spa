@@ -278,10 +278,11 @@ async fn day_booking(
         ctx.now
     };
     let (key, hash) = idempotency();
+    let manager = ctx.manager.clone().at_clock(booked_at);
     let booked = retry(|| {
         operations::appointments::service::book_as_of(
             ctx.app,
-            &ctx.manager,
+            &manager,
             key,
             hash,
             &input,
@@ -329,10 +330,11 @@ async fn day_booking(
                 )
             };
             let reason = *rng.pick(reasons).context("reasons")?;
+            let manager = ctx.manager.clone().at_clock(at);
             retry(|| {
                 operations::appointments::service::close_as_of(
                     ctx.app,
-                    &ctx.manager,
+                    &manager,
                     id,
                     outcome,
                     Some(reason),
@@ -405,11 +407,12 @@ async fn complete(
         companions: Vec::new(),
     };
     let (key, hash) = idempotency();
+    let manager = ctx.manager.clone().at_clock(at);
     retry(|| {
         operations::appointments::service::complete_as_of(
             ctx.app,
             ctx.cipher,
-            &ctx.manager,
+            &manager,
             key,
             hash,
             id,
