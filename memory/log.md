@@ -986,3 +986,7 @@ GitHub Actions hết phút miễn phí của tháng (repo private, gói Free); m
 - Hướng dẫn nghiệm thu bước 13 (Version 8): tạo "Nhóm thử" rồi Xóa nhóm; nút chỉ có ở nhóm chưa có dịch vụ.
 - Dọn: 2 worktree agent + nhánh đã xóa; local chỉ còn `main`. `E:\cargo-target-rh3` không còn agent nào dùng → EM tự xóa (harness chặn đường dẫn ngoài repo).
 - Còn mở: lề Lighthouse CI của `/quay` còn ~240 ms dưới gate 2500 (CI HTTP/1.1; HTTP/2 local trong nhiễu); `/quay` còn ~1,1 KiB trong ngân sách theo đường → mã mới của màn đầu quầy phải vào chunk lazy (ADR-0024).
+
+## [2026-11-12] decision | EM hoãn sổ quỹ
+- Lead đề xuất sổ quỹ (thu tự động, chi tay, tồn tiền mặt / tài khoản, chốt quỹ ngày) là việc tiếp theo; EM đồng ý rồi dừng lại hỏi sổ quỹ là gì, nghe giải thích xong: "cái feature này chưa cần làm bây giờ" ([raw](raw/2026-11-12-em-defer-cash-book.md)). Chưa viết spec / code / migration nào.
+- Hệ quả giữ nguyên: "ngày đã chốt" vẫn là mọi ngày trước hôm nay theo giờ spa (front-desk AC6.3, `kernel::corrections`), không gắn với chốt quỹ. Thước đo R1 #2 (chốt quỹ khớp) và phần thu chi của #1 chờ tới khi làm. Cập nhật: [overview](wiki/overview.md), [vision](wiki/product/vision.md).
