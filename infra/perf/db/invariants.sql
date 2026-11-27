@@ -82,3 +82,20 @@ LIMIT 20;
 SELECT a.tenant_id, a.id, a.customer_id, v.customer_id AS visit_customer
 FROM app.appointment a JOIN app.visit v ON v.tenant_id = a.tenant_id AND v.id = a.visit_id
 WHERE a.customer_id IS DISTINCT FROM v.customer_id LIMIT 20;
+
+\echo '== 12. a lucky draw prize keeps at most `quantity` results that are not forfeited (0055)'
+SELECT q.tenant_id, q.draw_id, q.id, q.quantity, k.kept
+FROM app.lucky_draw_prize q
+JOIN LATERAL (
+  SELECT count(*) AS kept FROM app.lucky_draw_result r
+  WHERE r.tenant_id = q.tenant_id AND r.draw_id = q.draw_id AND r.prize_id = q.id
+    AND r.forfeited_at IS NULL) k ON true
+WHERE q.quantity < k.kept LIMIT 20;
+
+\echo '== 13. every lucky draw winner matches the gender of the prize (0055)'
+SELECT r.tenant_id, r.draw_id, r.id, q.eligible, p.gender
+FROM app.lucky_draw_result r
+JOIN app.lucky_draw_prize q ON q.tenant_id = r.tenant_id AND q.draw_id = r.draw_id AND q.id = r.prize_id
+JOIN app.lucky_draw_participant p
+  ON p.tenant_id = r.tenant_id AND p.draw_id = r.draw_id AND p.id = r.participant_id
+WHERE q.eligible <> 'all' AND q.eligible <> p.gender LIMIT 20;

@@ -53,6 +53,7 @@ pub fn router(state: AppState, policy: &HttpPolicy) -> Router {
         .merge(operations::http::routes())
         .merge(operations::appointments::http::routes())
         .merge(reporting::http::routes())
+        .merge(lucky_draw::http::routes())
         .merge(middleware::with_admin_auth_rate_limit(admin_auth))
         .merge(admin)
         .with_state(state);
