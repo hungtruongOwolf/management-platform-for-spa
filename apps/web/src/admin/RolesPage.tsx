@@ -21,6 +21,7 @@ const GROUPS: Record<string, string> = {
   payroll: "Bảng lương",
   opening_balance: "Sổ cũ",
   audit: "Nhật ký",
+  lucky_draw: "Vòng quay may mắn",
   support_grant: "Hỗ trợ",
   platform: "Nền tảng",
 };
