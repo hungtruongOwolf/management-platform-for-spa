@@ -44,7 +44,7 @@ Chọn **B + E**.
    - `changes` (trường, định dạng, cũ, mới) theo **allowlist từng action** (`reporting::activity::fields`), tiền, giảm giá, `detail`, `reason`.
    - Không bao giờ có `before` / `after` thô, ghi chú buổi, lưu ý sức khỏe, ghi chú chấm công, SĐT nhân viên.
 3. **Danh sách action có kiểu.** `kernel::audit::Action` là enum (64 key), `AuditEntry.action: Action`. Nhóm lọc là `match` vét cạn (`reporting::activity::kind_of`): thêm action mà chưa xếp nhóm thì **không compile**. Contract có schema `AuditAction` (enum mọi key), web giữ `Record<AuditAction, …>`: thêm action mà chưa có câu thì **typecheck đỏ** (sau `pnpm api:gen`, CI so file). Key cũ không còn trong code → nhóm `other`, câu chung "làm một thao tác khác", không crash.
-4. **8 nhóm lọc:** Quầy, Gói liệu trình, Lịch hẹn, Khách hàng, Nhân sự, Lương, Danh mục & cài đặt, Tài khoản & bảo mật (cộng "Khác" cho key cũ). Bảng action → nhóm ở [spec §11](../product/specs/management-views.md).
+4. **8 nhóm lọc:** Quầy, Gói liệu trình, Lịch hẹn, Khách hàng, Nhân sự, Lương, Danh mục & cài đặt, Tài khoản & bảo mật (cộng "Khác" cho key cũ). Bảng action → nhóm ở [spec §11](../product/specs/management-views.md). *(Cập nhật 2026-11-27: nhóm thứ 9 "Vòng quay may mắn" cho 11 action `lucky_draw.*`, [ADR-0025](ADR-0025-lucky-draw-server-side-draw.md).)*
 5. **Phân trang + giới hạn.** Keyset `(at, id)` giảm dần, cursor mờ; khoảng ngày mặc định 7 ngày, tối đa 366; trang 1–100 (web dùng 50). Lọc người: `actor` = user id \| `platform` \| `system` (chỉ id / mã trên URL, không tên, không SĐT).
 6. **Index (0051).**
    - `audit_log (tenant_id, at DESC, id DESC)` thay `audit_log_tenant_at_idx` của 0038 (console dùng cùng thứ tự);
