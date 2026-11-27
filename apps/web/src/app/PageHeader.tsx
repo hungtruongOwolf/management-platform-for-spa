@@ -1,7 +1,7 @@
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, type MouseEvent, type ReactNode } from "react";
 import { Icon } from "./Icon";
-import { screenLabel } from "./nav";
+import { screenLabel } from "./screenLabel";
 import { lastHrefFor, previousEntry, setTitle } from "./trail";
 
 /** One level above the current page, e.g. `{ label: "Khách hàng", to: "/khach-hang" }`. */

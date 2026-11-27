@@ -39,7 +39,8 @@ export type IconName =
   | "sparkle"
   | "leaf"
   | "phone"
-  | "dots";
+  | "dots"
+  | "gift";
 
 /** Decorative line icon from the sprite; the control it sits in carries the accessible name. */
 export function Icon({ name, className = "size-5" }: { name: IconName; className?: string }) {
