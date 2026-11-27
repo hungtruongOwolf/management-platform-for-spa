@@ -1,6 +1,6 @@
 ---
 title: Runbook — staging trên Vercel + Supabase
-updated: 2026-11-11
+updated: 2026-11-27
 sources: [vercel.json, apps/api/crates/app/src/config.rs, apps/api/crates/app/src/main.rs, apps/api/crates/app/src/demo/reset.rs, decisions/ADR-0005-compute-hosting.md, raw/2026-11-09-em-request-staging-full-scenario-data.md]
 ---
 
@@ -133,6 +133,16 @@ Thay `<staging>` bằng origin trong `APP_PUBLIC_ORIGIN`:
 - `curl -s -o /dev/null -w '%{http_code}' <staging>/api/v1/me` → 401; `<staging>/api/v1/admin/me` → 401; `<staging>/admin` → 200.
 - Mở `/dang-nhap`, đăng nhập chủ spa (mật khẩu ở `.env.staging`), cài MFA lần đầu.
 - `curl -sI <staging>/` phải có CSP và HSTS (từ `vercel.json`).
+
+## Supabase bị tạm dừng (gói Free)
+Gói Free tự **tạm dừng** project sau ~7 ngày không có hoạt động (lần đầu: dùng lần cuối 2026-11-12, phát hiện 2026-11-27). Khi đó:
+- **Dấu hiệu:** `/api/v1/health` → `500 FUNCTION_INVOCATION_FAILED` (API không khởi động được vì không nối được DB; khi DB sống thì health không đụng DB); `psql` qua session pooler → `FATAL: (ENOTFOUND) tenant/user postgres.<ref> not found`; tên miền `db.<ref>.supabase.co` và `<ref>.supabase.co` không phân giải. Web tĩnh vẫn 200.
+- **Bật lại:** dashboard của project (EM đăng nhập bằng GitHub) → **Resume project** → **Resume**. Dữ liệu về đúng lúc tạm dừng; dashboard ghi hạn được resume (lần này tới 31/12/2027). 2026-11-27 mất ~3,5 phút; không cần deploy lại Vercel, không đổi biến môi trường. Khi resume, Supabase có thể nâng **minor** Postgres (lần này lên 17.11); role tự tạo có thể hỏng mật khẩu nếu còn md5 → luôn thử đăng nhập `app_rw`.
+- **Kiểm tra sau khi bật lại** (owner URL qua env, như phần backup):
+  - owner: `current_setting('server_version')`; `public._sqlx_migrations` max = migration mới nhất của `main`, 0 dòng `success = false`; RLS bật trên mọi bảng `app` trừ 3 bảng toàn cục (`user_account`, `session`, `mfa_recovery_code`); `has_schema_privilege('anon' / 'authenticated', 'app', 'USAGE')` = false; đếm chính xác số dòng từng bảng `app`.
+  - `app_rw` (user `app_rw.<ref>`, mật khẩu `STAGING_APP_RW_PASSWORD` qua `PGPASSWORD` env): đăng nhập được; `SELECT count(*) FROM app.customer` chưa đặt tenant = 0; `SELECT * FROM app.invariant_violations()` mọi dòng 0.
+  - API: health 200; route cần đăng nhập không cookie → 401; gửi cookie `__Host-session` ngẫu nhiên → `401 auth.unauthenticated` (đường này đọc DB; DB hỏng sẽ là 5xx); `pg_stat_activity` có kết nối `app_rw`; web 200.
+- **Chống tạm dừng:** lên Pro (mục dưới) là cách đúng; Free thì sẽ tạm dừng lại sau mỗi ~7 ngày không ai dùng.
 
 ## Trước khi spa dùng thật
 - Lên Supabase **Pro** để có backup hằng ngày, hoặc dựng job backup riêng.
