@@ -6,7 +6,7 @@ import { PageHeader } from "../../app/PageHeader";
 import { ResponsiveTable } from "../../components/ResponsiveTable";
 import { spaToday } from "../../lib/format";
 import { EmptyState, ErrorState, RowsSkeleton } from "../reports/ui";
-import { LIST_KEY, createDraw, drawKey, drawsQuery } from "./api";
+import { createDraw, drawsQuery, putDraw } from "./api";
 import { STATUS_BADGE, STATUS_LABEL } from "./draw";
 import "./messages";
 import { NameSheet } from "./sheets";
@@ -33,8 +33,7 @@ export function LuckyDrawListPage() {
   const create = useMutation({
     mutationFn: createDraw,
     onSuccess: (draw) => {
-      queryClient.setQueryData(drawKey(draw.id), draw);
-      void queryClient.invalidateQueries({ queryKey: LIST_KEY, exact: true });
+      putDraw(queryClient, draw);
       void navigate({ to: "/vong-quay/$drawId", params: { drawId: draw.id } });
     },
   });

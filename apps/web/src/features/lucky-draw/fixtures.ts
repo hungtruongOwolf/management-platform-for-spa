@@ -1,6 +1,10 @@
 import type { DrawResult, LuckyDrawDetail, Participant, Prize } from "./types";
 
-/** Test data shaped exactly like the contract (architecture/lucky-draw.md §3). */
+// Test data shaped exactly like the contract (architecture/lucky-draw.md §3).
+
+/** The program most tests open (ids are UUIDs: the screen refuses anything else in its URL). */
+export const D1 = "0193a5b0-0000-7000-8000-0000000000d1";
+
 export function person(id: string, name: string, gender: Participant["gender"], position: number, result_id: string | null = null): Participant {
   return { id, name, gender, position, version: 1, result_id };
 }
@@ -34,7 +38,7 @@ export function result(id: string, seq: number, prize_id: string, participant_id
 
 export function detail(over: Partial<LuckyDrawDetail> = {}): LuckyDrawDetail {
   return {
-    id: "d1",
+    id: D1,
     name: "Tri ân 20/11",
     created_at: "2026-11-19T03:00:00Z",
     version: 1,

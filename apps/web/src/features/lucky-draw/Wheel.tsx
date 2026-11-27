@@ -6,7 +6,9 @@ import { LAND_MS, RETURN_MS, angleOf, restAngle, stopAngle } from "./angles";
 export type WheelPhase = "ready" | "spinning" | "landing" | "returning";
 
 // A quick wind-up, then constant turns until the server answers (architecture/lucky-draw.md §4);
-// the wind-up ends at the loop's speed, and the slow-down starts close to it.
+// the wind-up ends at the loop's speed, and the slow-down starts close to it. The loop turns the
+// image inside the disk with constant keyframes (0 → 360°), so the browser can run it off the main
+// thread; the disk itself holds the resting angle and the slow-down.
 const SPIN = "ld-wheel-turn 0.5s cubic-bezier(0.55, 0, 0.75, 0.5), ld-wheel-turn 0.25s linear 0.5s infinite";
 const LAND = `transform ${String(LAND_MS)}ms cubic-bezier(0.14, 0.72, 0.12, 1)`;
 const RETURN = `transform ${String(RETURN_MS)}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
@@ -35,49 +37,45 @@ export function Wheel({
   /** The slow-down (or the way back) ended. */
   onSettled: () => void;
 }) {
-  const disk = useRef<HTMLImageElement>(null);
+  const disk = useRef<HTMLDivElement>(null);
+  const loop = useRef<HTMLImageElement>(null);
   const settled = useEffectEvent(onSettled);
 
   useLayoutEffect(() => {
-    const el = disk.current;
-    if (!el) return;
-    const style = el.style;
-    if (still || phase === "ready") {
-      style.animation = "";
-      style.transition = "none";
-      style.transform = turn(angleRef.current);
+    const outer = disk.current;
+    const inner = loop.current;
+    if (!outer || !inner) return;
+    if (still || phase === "ready" || phase === "spinning") {
+      outer.style.transition = "none";
+      outer.style.transform = turn(angleRef.current);
+      inner.style.animation = phase === "spinning" && !still ? SPIN : "";
       return;
     }
-    if (phase === "spinning") {
-      style.transition = "none";
-      style.transform = turn(angleRef.current);
-      style.setProperty("--ld-from", `${String(angleRef.current)}deg`);
-      style.animation = SPIN;
-      return;
-    }
-    // Read where the turning disk is before the animation lets go of it.
-    const now = angleOf(getComputedStyle(el).transform) ?? angleRef.current;
-    style.animation = "";
-    style.transition = "none";
-    style.transform = turn(now);
+    // Where the turning image is, read before the loop lets go of it.
+    const now = angleRef.current + (angleOf(getComputedStyle(inner).transform) ?? 0);
+    inner.style.animation = "";
+    outer.style.transition = "none";
+    outer.style.transform = turn(now);
     // Commit the start angle, so the transition runs from it.
-    void el.getBoundingClientRect();
+    void outer.getBoundingClientRect();
     const end = phase === "landing" ? stopAngle(now, sector) : restAngle(now, angleRef.current);
     if (phase === "landing") angleRef.current = end % 360;
-    style.transition = phase === "landing" ? LAND : RETURN;
-    style.transform = turn(end);
+    outer.style.transition = phase === "landing" ? LAND : RETURN;
+    outer.style.transform = turn(end);
     const done = (e: TransitionEvent) => {
-      if (e.target === el && e.propertyName === "transform") settled();
+      if (e.target === outer && e.propertyName === "transform") settled();
     };
-    el.addEventListener("transitionend", done);
+    outer.addEventListener("transitionend", done);
     return () => {
-      el.removeEventListener("transitionend", done);
+      outer.removeEventListener("transitionend", done);
     };
   }, [phase, sector, still, angleRef]);
 
   return (
     <div className="ld-wheel" role="img" aria-label="Vòng quay tám cánh sen">
-      <img ref={disk} className="ld-wheel-disk" src={diskUrl} alt="" width={376} height={376} draggable={false} decoding="async" />
+      <div ref={disk} className="ld-wheel-disk">
+        <img ref={loop} src={diskUrl} alt="" width={376} height={376} draggable={false} decoding="async" />
+      </div>
       <img className="ld-wheel-frame" src={frameUrl} alt="" width={466} height={481} draggable={false} decoding="async" />
     </div>
   );

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDeferredValue, useId, useMemo, useState } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
-import { LIST_KEY, addParticipants, drawKey } from "./api";
+import { LIST_KEY, addParticipants, putDraw } from "./api";
 import { BATCH_MAX, PEOPLE_MAX, batches, parseRoster } from "./roster";
 import { FormError } from "./sheets";
 import type { LuckyDrawDetail } from "./types";
@@ -36,7 +36,7 @@ export function PasteSheet({ draw, onClose }: { draw: LuckyDrawDetail; onClose: 
       try {
         for (const batch of batches(parsed.people)) {
           const next = await addParticipants(draw.id, batch);
-          queryClient.setQueryData(drawKey(draw.id), next);
+          putDraw(queryClient, next);
           done += batch.length;
           setSent(done);
         }
@@ -85,7 +85,9 @@ export function PasteSheet({ draw, onClose }: { draw: LuckyDrawDetail; onClose: 
         className="grid gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          if (blocked || save.isPending || typed !== text) return;
+          // The preview may lag a keystroke behind (deferred): decide on the text as it is.
+          const now = parseRoster(text, existing);
+          if (now.errors.length > 0 || now.people.length === 0 || now.people.length > room || save.isPending) return;
           setSent(0);
           save.mutate();
         }}

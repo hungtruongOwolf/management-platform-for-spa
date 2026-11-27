@@ -44,7 +44,8 @@ export function downloadCsv(draw: LuckyDrawDetail): void {
   const link = document.createElement("a");
   link.href = url;
   link.download = csvFileName(draw.name);
-  document.body.append(link);
+  // Inside the open dialog when there is one: outside it, the page is inert under the modal.
+  (document.activeElement?.closest("dialog") ?? document.body).append(link);
   link.click();
   link.remove();
   setTimeout(() => {

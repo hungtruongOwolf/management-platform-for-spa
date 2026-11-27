@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaQuery } from "../../components/useMediaQuery";
-import { LIST_KEY, drawKey, spin } from "./api";
+import { drawKey, putDraw, spin } from "./api";
 import { spinUnanswered } from "./messages";
 import type { SpinOutcome } from "./types";
 import type { WheelPhase } from "./Wheel";
@@ -54,12 +54,11 @@ export function useSpin(drawId: string, onFinished: () => void): Spin {
     if (!outcome) return;
     held.current = null;
     clearTimeout(timer.current);
-    queryClient.setQueryData(drawKey(drawId), outcome.draw);
-    void queryClient.invalidateQueries({ queryKey: LIST_KEY, exact: true });
+    putDraw(queryClient, outcome.draw);
     setShownId(outcome.result.id);
     setPhase("ready");
     if (outcome.draw.finished) finished.current();
-  }, [drawId, queryClient]);
+  }, [queryClient]);
 
   const mutation = useMutation({
     mutationFn: (v: { prizeId: string; key: string }) => spin(drawId, v.prizeId, v.key),
@@ -75,11 +74,11 @@ export function useSpin(drawId: string, onFinished: () => void): Spin {
       timer.current = setTimeout(reveal, LAND_MS + GRACE_MS);
     },
     onError: (error) => {
-      if (!spinUnanswered(error)) {
-        retry.current = null;
-        // The prize ran out or nobody fits any more (another tab spun): show the program as it is.
-        void queryClient.invalidateQueries({ queryKey: drawKey(drawId), exact: true });
-      }
+      // A clear refusal (the prize ran out, nobody fits any more: another tab spun) ends this spin;
+      // without an answer, the next press resends it. Either way, show the program as it is now
+      // (a spin saved before the connection dropped appears in the lists).
+      if (!spinUnanswered(error)) retry.current = null;
+      void queryClient.invalidateQueries({ queryKey: drawKey(drawId), exact: true });
       if (still) {
         setPhase("ready");
         return;

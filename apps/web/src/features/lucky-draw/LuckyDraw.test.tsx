@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
 import { navFor } from "../../app/nav";
-import { detail, person, prize, result } from "./fixtures";
+import { D1, detail, person, prize, result } from "./fixtures";
 import { OWNER, fakeApi } from "./testServer";
 
 const at = (path: string) => render(<App history={createMemoryHistory({ initialEntries: [path] })} />);
@@ -62,7 +62,7 @@ describe("list (US1)", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Tri ân 20/11" })).toBeInTheDocument();
     expect(api.calls.find((c) => c.method === "POST")?.body).toEqual({ name: "Tri ân 20/11" });
     // The new program needs no second request: its creation answered with it.
-    expect(api.calls.filter((c) => c.method === "GET" && /lucky-draws\/d\d+$/.test(c.path))).toHaveLength(0);
+    expect(api.calls.filter((c) => c.method === "GET" && /lucky-draws\/[0-9a-f-]{36}$/.test(c.path))).toHaveLength(0);
     expect(screen.getByText(/Thêm người tham gia và giải thưởng để bắt đầu quay/)).toBeInTheDocument();
   });
 
@@ -86,7 +86,7 @@ describe("spin (US4)", () => {
         participants: DRAW.participants.map((p) => (p.id === "p4" ? { ...p, result_id: "r0" } : p)),
       }),
     ]);
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const list = await screen.findByRole("list", { name: "Chọn giải để quay" });
     const gone = within(list).getByRole("button", { name: /^Hết rồi/ });
     expect(gone).toHaveAttribute("aria-disabled", "true");
@@ -97,7 +97,7 @@ describe("spin (US4)", () => {
 
   it("turns at once, and shows the winner only once the wheel has stopped (AC4.2–4.3)", async () => {
     const api = fakeApi(OWNER, [DRAW]);
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
@@ -124,7 +124,7 @@ describe("spin (US4)", () => {
 
   it("ignores a second press while the wheel turns (AC4.4)", async () => {
     const api = fakeApi(OWNER, [DRAW]);
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     vi.useFakeTimers();
     const button = within(stage).getByRole("button", { name: "Quay" });
@@ -136,7 +136,7 @@ describe("spin (US4)", () => {
 
   it("after a network error says so, goes back, and retries with the same key (AC4.6)", async () => {
     const api = fakeApi(OWNER, [DRAW]);
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     api.intercept((c) => (c.path.endsWith("/spins") ? Promise.reject(new TypeError("Failed to fetch")) : undefined));
     vi.useFakeTimers();
@@ -160,7 +160,7 @@ describe("spin (US4)", () => {
     }));
     fakeApi(OWNER, [DRAW]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     await user.click(within(stage).getByRole("button", { name: "Quay" }));
     expect(await within(stage).findByText("Nguyễn Thị Lan")).toBeInTheDocument();
@@ -175,7 +175,7 @@ describe("spin (US4)", () => {
       status: "in_progress",
     });
     fakeApi(OWNER, [last]);
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay tiếp" }));
@@ -199,7 +199,7 @@ describe("forfeit (US5)", () => {
     });
     const api = fakeApi(OWNER, [won]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const winners = await screen.findByRole("table", { name: "Danh sách trúng thưởng" });
     await user.click(within(winners).getByRole("button", { name: "Thao tác với lượt 1, Nguyễn Thị Lan" }));
     await user.click(screen.getByRole("menuitem", { name: "Vắng mặt, trả giải" }));
@@ -210,7 +210,7 @@ describe("forfeit (US5)", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    expect(api.calls.find((c) => c.path.endsWith("/forfeit"))?.path).toBe("/api/v1/lucky-draws/d1/results/r1/forfeit");
+    expect(api.calls.find((c) => c.path.endsWith("/forfeit"))?.path).toBe(`/api/v1/lucky-draws/${D1}/results/r1/forfeit`);
     const row = rowOf(within(screen.getByRole("table", { name: "Danh sách trúng thưởng" })).getByText("Nguyễn Thị Lan"));
     expect(row).toHaveClass("ld-row-absent");
     expect(within(row).getByText("Vắng mặt")).toBeInTheDocument();
@@ -223,7 +223,7 @@ describe("participants (US2)", () => {
   it("paste: lists every bad line and sends nothing until they are fixed (AC2.2)", async () => {
     const api = fakeApi(OWNER, [detail()]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     await user.click(await screen.findByRole("button", { name: "Dán danh sách" }));
     const sheet = await screen.findByRole("dialog", { name: "Dán danh sách người tham gia" });
     const box = within(sheet).getByLabelText("Danh sách");
@@ -257,7 +257,7 @@ describe("participants (US2)", () => {
   it("paste: a long list goes in batches of 500, one after another", async () => {
     const api = fakeApi(OWNER, [detail()]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     await user.click(await screen.findByRole("button", { name: "Dán danh sách" }));
     const sheet = await screen.findByRole("dialog", { name: "Dán danh sách người tham gia" });
     await user.click(within(sheet).getByLabelText("Danh sách"));
@@ -280,7 +280,7 @@ describe("participants (US2)", () => {
     });
     fakeApi(OWNER, [won]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const table = await screen.findByRole("table", { name: "Danh sách người tham gia" });
     expect(within(table).queryByRole("button", { name: "Thao tác với Trần Văn Minh" })).not.toBeInTheDocument();
     expect(within(table).getByRole("button", { name: "Thao tác với Nguyễn Thị Lan" })).toBeInTheDocument();
@@ -299,7 +299,7 @@ describe("participants (US2)", () => {
   it("add one: Nữ / Nam must be chosen; the sheet stays open for the next name", async () => {
     const api = fakeApi(OWNER, [detail()]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     await user.click(await screen.findByRole("button", { name: "Thêm người" }));
     const sheet = await screen.findByRole("dialog", { name: "Thêm người tham gia" });
     await user.type(within(sheet).getByLabelText("Họ tên"), "Ngô Mai");
@@ -318,7 +318,7 @@ describe("prizes (US3)", () => {
   it("adds a prize for women only, then keeps its audience once drawn", async () => {
     const api = fakeApi(OWNER, [detail()]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     await user.click(await screen.findByRole("button", { name: "Thêm giải thưởng" }));
     const sheet = await screen.findByRole("dialog", { name: "Thêm giải thưởng" });
     await user.type(within(sheet).getByLabelText("Tên giải"), "Chăm sóc da");
@@ -342,7 +342,7 @@ describe("prizes (US3)", () => {
     });
     fakeApi(OWNER, [won]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     await user.click(await screen.findByRole("button", { name: "Thao tác với giải Cổ vai gáy" }));
     expect(screen.queryByRole("menuitem", { name: "Xóa giải" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Sửa giải" }));
@@ -356,21 +356,21 @@ describe("program (US1, US7)", () => {
   it("delete asks first, then goes back to the list", async () => {
     const api = fakeApi(OWNER, [DRAW]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     await user.click(await screen.findByRole("button", { name: "Thao tác với chương trình" }));
     await user.click(screen.getByRole("menuitem", { name: "Xóa chương trình" }));
     const sheet = await screen.findByRole("dialog", { name: "Xóa chương trình “Tri ân 20/11”?" });
     expect(sheet).toHaveTextContent("Danh sách người tham gia, giải và kết quả sẽ bị xóa, không khôi phục được.");
     await user.click(within(sheet).getByRole("button", { name: "Xóa chương trình" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Vòng quay may mắn" })).toBeInTheDocument();
-    expect(api.calls.some((c) => c.method === "DELETE" && c.path === "/api/v1/lucky-draws/d1")).toBe(true);
+    expect(api.calls.some((c) => c.method === "DELETE" && c.path === `/api/v1/lucky-draws/${D1}`)).toBe(true);
     expect(await screen.findByText("Chưa có chương trình nào")).toBeInTheDocument();
   });
 
   it("rename sends the version it read (If-Match)", async () => {
     const api = fakeApi(OWNER, [DRAW]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     await user.click(await screen.findByRole("button", { name: "Thao tác với chương trình" }));
     await user.click(screen.getByRole("menuitem", { name: "Đổi tên" }));
     const sheet = await screen.findByRole("dialog", { name: "Đổi tên chương trình" });
@@ -385,7 +385,7 @@ describe("program (US1, US7)", () => {
   it("presentation covers the screen and gives focus back to its button", async () => {
     fakeApi(OWNER, [DRAW]);
     const user = userEvent.setup();
-    at("/vong-quay/d1");
+    at(`/vong-quay/${D1}`);
     const open = await screen.findByRole("button", { name: "Trình chiếu" });
     await user.click(open);
     const show = await screen.findByRole("dialog", { name: "Tri ân 20/11" });
@@ -400,8 +400,15 @@ describe("program (US1, US7)", () => {
 
   it("an unknown program says so, with the way back", async () => {
     fakeApi(OWNER, []);
-    at("/vong-quay/nope");
+    at(`/vong-quay/${D1}`);
     expect(await screen.findByText(/Không tìm thấy chương trình này/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Về danh sách chương trình" })).toHaveAttribute("href", "/vong-quay");
+  });
+
+  it("an id that is not an id never reaches the API, and reads the same", async () => {
+    const api = fakeApi(OWNER, []);
+    at("/vong-quay/nope");
+    expect(await screen.findByText(/Không tìm thấy chương trình này/)).toBeInTheDocument();
+    expect(api.calls.some((c) => c.path.startsWith("/api/v1/lucky-draws/"))).toBe(false);
   });
 });

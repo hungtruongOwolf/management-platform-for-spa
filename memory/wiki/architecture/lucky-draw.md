@@ -72,3 +72,5 @@ SpinOutcome = { result: { id, seq, prize_id, participant_id, drawn_at }, draw: L
 
 ## 5. Khi build
 *(agent ghi lệch thiết kế, số đo, quyết định K-nhỏ ở đây)*
+
+- **Web (2026-11-28):** lệch + số đo ở [design/lucky-draw §8](../design/lucky-draw.md): hai cột theo bề rộng nội dung ≥ 880px; không `screens.ts` / `ROUTE_PRELOAD` (gate sẽ cộng chunk màn vào đường `/vong-quay`); hai route một chunk; cache qua `putDraw` không lùi `version` (câu trả lời quay được giữ tới khi vòng dừng); vòng lặp quay xoay ảnh bên trong với keyframe hằng, giảm tốc là transition của đĩa; token mới `--texture-wheel-fade` che mép quầng chữ nhật của ảnh khung.

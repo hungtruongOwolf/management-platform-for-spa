@@ -25,31 +25,41 @@ import "./lucky-draw.css";
 export { LuckyDrawListPage } from "./LuckyDrawListPage";
 
 const CRUMBS = [{ label: "Vòng quay may mắn", to: "/vong-quay" }];
+/** Program ids are UUIDs; anything else in the URL (a hand-edited link) is not asked for. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** /vong-quay/$drawId — one program (US2–US7). */
 export function LuckyDrawPage() {
   const { drawId } = useParams({ from: "/authed/vong-quay/$drawId" });
-  const draw = useQuery(drawQuery(drawId));
+  const valid = UUID.test(drawId);
+  const draw = useQuery({ ...drawQuery(drawId), enabled: valid });
+  if (!valid) return <Missing />;
   if (draw.isPending) return <ProgramSkeleton />;
   if (draw.isError) {
-    const gone = draw.error instanceof ApiError && draw.error.status === 404;
+    // 404: deleted, or another spa's.
+    if (draw.error instanceof ApiError && draw.error.status === 404) return <Missing />;
     return (
       <div className="grid content-start gap-5">
         <PageHeader title="Chương trình" breadcrumbs={CRUMBS} />
-        {gone ? (
-          <p role="alert" className="note">
-            Không tìm thấy chương trình này (có thể đã bị xóa).{" "}
-            <Link to="/vong-quay" className="link underline">
-              Về danh sách chương trình
-            </Link>
-          </p>
-        ) : (
-          <ErrorState error={draw.error} onRetry={() => void draw.refetch()} />
-        )}
+        <ErrorState error={draw.error} onRetry={() => void draw.refetch()} />
       </div>
     );
   }
   return <Program draw={draw.data} />;
+}
+
+function Missing() {
+  return (
+    <div className="grid content-start gap-5">
+      <PageHeader title="Chương trình" breadcrumbs={CRUMBS} />
+      <p role="alert" className="note">
+        Không tìm thấy chương trình này (có thể đã bị xóa).{" "}
+        <Link to="/vong-quay" className="link underline">
+          Về danh sách chương trình
+        </Link>
+      </p>
+    </div>
+  );
 }
 
 type Open = "rename" | "delete" | "summary" | { forfeit: string } | null;
@@ -87,10 +97,11 @@ function Program({ draw }: { draw: LuckyDrawDetail }) {
         if (!(error instanceof ApiError && error.status === 404)) throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Leave first: dropping the program while this screen still watches it would refetch a 404.
+      await navigate({ to: "/vong-quay" });
       queryClient.removeQueries({ queryKey: drawKey(draw.id), exact: true });
       void queryClient.invalidateQueries({ queryKey: LIST_KEY, exact: true });
-      void navigate({ to: "/vong-quay" });
     },
   });
   const askForfeit = (resultId: string) => {

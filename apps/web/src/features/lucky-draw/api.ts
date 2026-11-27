@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api, ifMatch } from "../../lib/api";
 import type {
   LuckyDrawDetail,
@@ -30,6 +30,16 @@ export function drawQuery(id: string) {
     queryKey: drawKey(id),
     queryFn: async () => (await api(path(id))) as LuckyDrawDetail,
   });
+}
+
+/**
+ * Puts a program the server just answered with into the cache, unless the cache already holds a
+ * later version (answers can land out of order: a spin's answer is held until its wheel stops while
+ * a person added meanwhile already came back). The list's counts are marked stale.
+ */
+export function putDraw(queryClient: QueryClient, draw: LuckyDrawDetail): void {
+  queryClient.setQueryData<LuckyDrawDetail>(drawKey(draw.id), (old) => (old && old.version > draw.version ? old : draw));
+  void queryClient.invalidateQueries({ queryKey: LIST_KEY, exact: true });
 }
 
 const send = async (route: string, method: string, body?: unknown, headers?: Record<string, string>) =>

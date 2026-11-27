@@ -99,7 +99,8 @@ export function fakeApi(me: unknown = OWNER, initial: LuckyDrawDetail[] = []): F
       })),
     });
   let next = 100;
-  const id = (p: string) => `${p}${String((next += 1))}`;
+  // UUIDs like the API's; the prefix only tells the kinds apart when reading a failing test.
+  const id = (p: string) => `${p === "d" ? "0193a5b0" : "00000000"}-0000-7000-8000-${String((next += 1)).padStart(12, "0")}`;
   const replays = new Map<string, Response>();
   let interceptor: ((call: Call) => Response | Promise<Response> | undefined) | undefined;
 
