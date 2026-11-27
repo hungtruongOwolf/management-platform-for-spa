@@ -1,0 +1,93 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.lucky_draw_result\n             (id, tenant_id, draw_id, prize_id, participant_id, seq, drawn_at, drawn_by)\n           SELECT $1, $2, $3, $4, $5, coalesce(max(seq), 0) + 1, clock_timestamp(), $6\n           FROM app.lucky_draw_result WHERE tenant_id = $2 AND draw_id = $3\n           RETURNING id, seq, prize_id, participant_id, drawn_at, forfeited_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_result",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "seq",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_result",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "prize_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_result",
+            "name": "prize_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "participant_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_result",
+            "name": "participant_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "drawn_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_result",
+            "name": "drawn_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "forfeited_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_result",
+            "name": "forfeited_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "fe26d66faadccf360d0f63b26ceaefa22a6f61bbcb6f01a8e7a7cb8620180ba0"
+}

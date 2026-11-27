@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.lucky_draw_participant\n           SET name = $4, gender = $5, version = version + 1, updated_at = now()\n           WHERE tenant_id = $1 AND draw_id = $2 AND id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ce5c39a799b8741067521013155fb4d42c1ae48d96d567ac88e055067e9b52a7"
+}
