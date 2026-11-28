@@ -47,7 +47,9 @@ export function Stage({
     : prize
       ? null
       : draw.finished
-        ? "Đã trao hết các suất có thể trao. Bấm “Xem tổng kết” để xem lại ai trúng gì."
+        ? pick
+          ? "Đã trao hết các suất có thể trao."
+          : "Đã trao hết các suất có thể trao. Bấm “Xem tổng kết” để xem lại ai trúng gì."
         : "Không còn giải nào quay được: thêm suất hoặc thêm người phù hợp.";
   const label = draw.results.length > 0 ? "Quay tiếp" : "Quay";
   const shown = spin.shownId === null ? undefined : wins(draw).find((w) => w.result.id === spin.shownId);

@@ -450,7 +450,9 @@
     overflow-wrap: anywhere;
   }
   .ld-present .ld-stage {
-    align-content: center;
+    /* "safe": a stage taller than the screen (the summary at the end) overflows downwards, where
+     * the presentation scrolls, never above its top. */
+    align-content: safe center;
     padding-top: 0;
     border-radius: 0;
     background: none;
@@ -482,7 +484,7 @@
         "wheel actions"
         "wheel extra";
       justify-content: center;
-      align-items: center;
+      align-items: safe center;
       column-gap: 48px;
     }
     .ld-present .ld-wheel {
