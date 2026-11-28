@@ -8,6 +8,7 @@
 use crate::profile::{self, Profile, ProfileView};
 use crate::repo;
 use identity::account::{self as login, LoginRole, TemporaryPassword};
+use jiff::Timestamp;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, Permission, TenantTx, UserId};
 use serde_json::json;
@@ -187,8 +188,8 @@ pub struct ResetRequest {
     pub full_name: String,
     /// The profile linked to the login, when there is one (its sheet holds "Đặt lại").
     pub staff_id: Option<Uuid>,
-    pub requested_at: chrono::DateTime<chrono::Utc>,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub requested_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 /// `GET /staff/password-reset-requests` (`staff.manage`): open, unexpired requests, oldest first.

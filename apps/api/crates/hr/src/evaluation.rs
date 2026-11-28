@@ -14,7 +14,8 @@ use crate::period;
 use crate::repo::{self, EvaluationRow, EvaluationWrite};
 use crate::review;
 use crate::scope::RecordScope;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use org::profile::Profile;
@@ -208,7 +209,7 @@ pub struct Evaluation {
     pub coaching_plan: Option<String>,
     pub comment: Option<String>,
     pub by_name: String,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
     pub version: i64,
 }
 
@@ -368,7 +369,7 @@ pub struct EvaluationHistory {
 fn months_back(m: Month, n: usize) -> Month {
     let mut out = m;
     for _ in 0..n {
-        out = Month::of(out.first_day() - chrono::Duration::days(1));
+        out = Month::of(out.first_day() - jiff::ToSpan::day(1));
     }
     out
 }
@@ -406,7 +407,7 @@ pub(crate) async fn history_months(
     person: &Profile,
     from: Month,
     to: Month,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Vec<HistoryMonth>, AppError> {
     let staff_id = person.id;
     let reviews = repo::reviews_between(tx, from.first_day(), to.last_day(), Some(staff_id))

@@ -10,8 +10,9 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
 use axum::{Json, Router};
-use chrono::{DateTime, NaiveDate, Utc};
 use identity::AuthUser;
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::http::{IdempotencyKey, IfMatch, etag};
 use kernel::idempotency::hash_route;
 use kernel::{AppError, Permission, PhoneE164};
@@ -93,7 +94,7 @@ pub struct CustomerDto {
     pub phone_e164: Option<String>,
     pub gender: Option<GenderDto>,
     pub birth_year: Option<i16>,
-    pub birth_date: Option<NaiveDate>,
+    pub birth_date: Option<Date>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
@@ -103,7 +104,8 @@ pub struct CustomerDto {
     pub health_note: Option<Option<String>>,
     /// Send back as `If-Match` when updating.
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
 }
 
 impl From<CustomerView> for CustomerDto {
@@ -117,7 +119,7 @@ impl From<CustomerView> for CustomerDto {
             named: r.full_name.is_some(),
             full_name: service::label(r.full_name.as_deref()).to_owned(),
             birth_year: r.birth_year,
-            birth_date: r.birth_date,
+            birth_date: r.birth_date.map(jiff_sqlx::Date::to_jiff),
             address: r.address,
             source: r.source,
             note: r.note,
@@ -144,7 +146,7 @@ pub struct CustomerCreate {
     /// Not after today, at most 120 years back; sets `birth_year` when that is omitted, and must
     /// agree with it otherwise (`birth_year conflicts_with_birth_date`).
     #[serde(default)]
-    pub birth_date: Option<NaiveDate>,
+    pub birth_date: Option<Date>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
@@ -168,7 +170,7 @@ pub struct CustomerUpdate {
     /// Not after today, at most 120 years back; sets `birth_year` when that is omitted, and must
     /// agree with it otherwise (`birth_year conflicts_with_birth_date`).
     #[serde(default)]
-    pub birth_date: Option<NaiveDate>,
+    pub birth_date: Option<Date>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
@@ -306,7 +308,7 @@ impl From<Outcome> for FollowUpOutcomeDto {
 #[serde(deny_unknown_fields)]
 pub struct FollowUpCreate {
     /// Day of the contact; default today (spa time zone). Not in the future, at most 30 days back.
-    pub contacted_on: Option<NaiveDate>,
+    pub contacted_on: Option<Date>,
     pub channel: FollowUpChannelDto,
     pub outcome: FollowUpOutcomeDto,
     /// ≤ 500 characters. A contact note, not a health note.
@@ -314,8 +316,8 @@ pub struct FollowUpCreate {
     /// When to try again (≥ `contacted_on`, ≤ 365 days after it); `null` = no next try. Omitted:
     /// `no_answer` → contact day + 3, `will_come` → + 7, `not_interested` / `other` → none.
     #[serde(default, deserialize_with = "present")]
-    #[schema(value_type = Option<NaiveDate>)]
-    pub next_follow_up_on: Option<Option<NaiveDate>>,
+    #[schema(value_type = Option<Date>)]
+    pub next_follow_up_on: Option<Option<Date>>,
 }
 
 /// Absent = `None` (the server's default), `null` = `Some(None)` (explicitly nothing).
@@ -331,15 +333,16 @@ where
 pub struct FollowUpDto {
     pub id: Uuid,
     pub customer_id: Uuid,
-    pub contacted_on: NaiveDate,
+    pub contacted_on: Date,
     pub channel: FollowUpChannelDto,
     pub outcome: FollowUpOutcomeDto,
     pub note: Option<String>,
-    pub next_follow_up_on: Option<NaiveDate>,
+    pub next_follow_up_on: Option<Date>,
     /// The user who recorded it.
     pub by_user_id: Uuid,
     pub by_name: String,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
 }
 
 impl From<FollowUp> for FollowUpDto {
@@ -364,12 +367,12 @@ impl From<FollowUp> for FollowUpDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SuggestedNextOn {
     /// Today + 7: check in if they still have not come.
-    pub will_come: Option<NaiveDate>,
+    pub will_come: Option<Date>,
     /// None: they leave the "due" list for `not_interested_pause_days`, then come back once.
-    pub not_interested: Option<NaiveDate>,
+    pub not_interested: Option<Date>,
     /// Today + 3.
-    pub no_answer: Option<NaiveDate>,
-    pub other: Option<NaiveDate>,
+    pub no_answer: Option<Date>,
+    pub other: Option<Date>,
 }
 
 /// `GET /customers/{id}/follow-ups`: newest contact first.
@@ -380,7 +383,7 @@ pub struct FollowUpList {
     /// More than 100 exist (only the newest are listed).
     pub has_more: bool,
     /// The spa's business day the suggestions are computed from.
-    pub today: NaiveDate,
+    pub today: Date,
     pub suggested_next_on_by_outcome: SuggestedNextOn,
     /// Days a `not_interested` customer stays out of `GET /customers/inactive?follow_up=due`.
     pub not_interested_pause_days: u64,
