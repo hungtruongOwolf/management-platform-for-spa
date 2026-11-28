@@ -111,7 +111,7 @@
    * so the stage does not jump when it changes. */
   .ld-stage-status {
     display: grid;
-    min-height: 44px;
+    min-height: var(--size-control);
     max-width: 30rem;
     align-content: start;
     justify-items: center;
