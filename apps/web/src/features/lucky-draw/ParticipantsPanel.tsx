@@ -12,6 +12,7 @@ import { PEOPLE_FILTERS, drawSearch } from "./search";
 import { ConfirmSheet } from "./sheets";
 import type { LuckyDrawDetail, Participant } from "./types";
 import { useDrawWrite } from "./useDrawWrite";
+import { useGrowing } from "./useGrowing";
 
 const FILTER_LABEL: Record<PeopleFilter, string> = { all: "Tất cả", female: "Nữ", male: "Nam", won: "Đã trúng" };
 
@@ -27,8 +28,8 @@ function Status({ person, results }: { person: Participant; results: ReadonlyMap
 /**
  * The "Người tham gia" tab (US2): the actions, filter chips with their counts and an accent-
  * insensitive search (both in the URL) stay on top; the people, in entry order, scroll inside a
- * fixed panel (EM 2026-11-28: "1 component kích thước cứng … scroll ở trong đó"), every one of
- * them, however many. Only someone without a result can be edited or deleted (AC2.4).
+ * fixed panel (EM 2026-11-28: "1 component kích thước cứng … scroll ở trong đó"), drawn in steps
+ * as it scrolls (`useGrowing`). Only someone without a result can be edited or deleted (AC2.4).
  */
 export function ParticipantsPanel({ draw }: { draw: LuckyDrawDetail }) {
   const [s, patch] = useSearchState(drawSearch);
@@ -39,6 +40,7 @@ export function ParticipantsPanel({ draw }: { draw: LuckyDrawDetail }) {
   const results = useMemo(() => new Map(wins(draw).map((w) => [w.result.id, w])), [draw]);
   const counts = filterCounts(draw.participants, results);
   const rows = filterPeople(draw.participants, results, s.loc, s.q);
+  const { shown, more, sentinel } = useGrowing(rows, `${s.loc}|${s.q}`);
   const order = useMemo(() => new Map(draw.participants.map((p, i) => [p.id, i + 1])), [draw.participants]);
   const remove = useDrawWrite(draw.id, (personId: string) => deleteParticipant(draw.id, personId), close);
   const full = draw.participants.length >= PEOPLE_MAX;
@@ -108,7 +110,7 @@ export function ParticipantsPanel({ draw }: { draw: LuckyDrawDetail }) {
           <p className="empty-note">Không có ai khớp. Đổi bộ lọc hoặc xóa ô tìm (tìm không cần gõ dấu).</p>
         ) : (
           <ul className="ld-people" aria-label="Danh sách người tham gia">
-            {rows.map((p) => (
+            {shown.map((p) => (
               <li key={p.id} className="ld-person">
                 <span className="ld-person-n tabular">{order.get(p.id)}</span>
                 <span className="ld-person-main">
@@ -146,6 +148,7 @@ export function ParticipantsPanel({ draw }: { draw: LuckyDrawDetail }) {
                 )}
               </li>
             ))}
+            {more && <li key={`more-${String(shown.length)}`} ref={sentinel} className="ld-more" aria-hidden="true" />}
           </ul>
         )}
       </div>

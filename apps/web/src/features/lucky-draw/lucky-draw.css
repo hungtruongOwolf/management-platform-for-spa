@@ -450,6 +450,10 @@
   .ld-person:last-child {
     border-bottom: 0;
   }
+  /* The end marker of a list drawn in steps (useGrowing): seen near the bottom, the next step. */
+  .ld-more {
+    height: 1px;
+  }
   .ld-person-n {
     color: var(--text-muted);
     font-size: var(--fs-sm);
