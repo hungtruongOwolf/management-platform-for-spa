@@ -33,6 +33,17 @@ interface Running {
 }
 
 /**
+ * `value`, except while `hold` is on: then the value it had when `hold` came on. The program on
+ * screen during a spin (LuckyDrawPage): the server saved the result at the press, so any refetch
+ * before the stop would give the winner away.
+ */
+export function useHeldWhile<T>(hold: boolean, value: T): T {
+  const [held, setHeld] = useState(value);
+  if (!hold && held !== value) setHeld(value);
+  return hold ? held : value;
+}
+
+/**
  * One program's spins (US4). Pressing "Quay" starts the wheel's turn at once (5 turns in 6 s to a
  * sector drawn at the press, `SPIN` in angles.ts; reduced motion: 3 gentler turns) and asks the
  * server, which picks the winner and saves the result. The spin lands only when **both** the wheel

@@ -16,7 +16,7 @@ import { SidePanels } from "./SidePanels";
 import { SummarySheet } from "./Summary";
 import type { LuckyDrawDetail, SpinOutcome } from "./types";
 import { useDrawWrite } from "./useDrawWrite";
-import { useSpin } from "./useSpin";
+import { useHeldWhile, useSpin } from "./useSpin";
 import { WinnerDialog } from "./WinnerDialog";
 import "./lucky-draw.css";
 
@@ -63,7 +63,7 @@ function Missing() {
 
 type Open = "rename" | "delete" | "summary" | { forfeit: string } | null;
 
-function Program({ draw }: { draw: LuckyDrawDetail }) {
+function Program({ draw: live }: { draw: LuckyDrawDetail }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState<Open>(null);
@@ -79,7 +79,11 @@ function Program({ draw }: { draw: LuckyDrawDetail }) {
   const onRevealed = useCallback((outcome: SpinOutcome) => {
     setWinner(outcome.result.id);
   }, []);
-  const spin = useSpin(draw.id, onRevealed);
+  const spin = useSpin(live.id, onRevealed);
+  // The screen shows the program as it was at the press until the spin lands: a refetch mid-spin
+  // (the window regaining focus, another tab) would show the new winner, the count and the next
+  // prize before the wheel stops, and move the stage under it.
+  const draw = useHeldWhile(spin.busy, live);
   const prize = currentPrize(draw.prizes, picked);
   const backToSpin = () => {
     requestAnimationFrame(() => spinButton.current?.focus());
@@ -89,7 +93,7 @@ function Program({ draw }: { draw: LuckyDrawDetail }) {
     backToSpin();
   };
 
-  const rename = useDrawWrite(draw.id, (name: string) => renameDraw(draw, name), close);
+  const rename = useDrawWrite(draw.id, (name: string) => renameDraw(live, name), close);
   const forfeit = useDrawWrite(draw.id, (resultId: string) => forfeitResult(draw.id, resultId), close);
   const remove = useMutation({
     mutationFn: async () => {
