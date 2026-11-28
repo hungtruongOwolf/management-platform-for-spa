@@ -45,9 +45,10 @@ test.describe("danh sách mở của select", () => {
 
     await since.click();
     await expect.poll(async () => (await list(since)).open).toBe(true);
+    // 44px rows (rulebook A), once the pop-in (scale .98 → 1) has settled.
+    await expect.poll(async () => (await list(since)).lowestRow).toBeGreaterThanOrEqual(44);
     const open = await list(since);
-    // 44px rows (rulebook A), at least as wide as the select and RowMenu's 200px (rows + 2 × 7px).
-    expect(open.lowestRow).toBeGreaterThanOrEqual(44);
+    // At least as wide as the select and RowMenu's 200px (rows + 2 × 7px).
     expect(open.right - open.left + 14).toBeGreaterThanOrEqual(Math.max(open.select, 200) - 1);
     // The current value is the palette's chosen row.
     expect(open.checkedFill).toBe(open.primarySoft);
@@ -72,8 +73,8 @@ test.describe("danh sách mở của select", () => {
     const scope = sheet.getByLabel("Phạm vi");
     await scope.click();
     await expect.poll(async () => (await list(scope)).open).toBe(true);
+    await expect.poll(async () => (await list(scope)).lowestRow).toBeGreaterThanOrEqual(44);
     const open = await list(scope);
-    expect(open.lowestRow).toBeGreaterThanOrEqual(44);
     expect(open.left).toBeGreaterThanOrEqual(0);
     expect(open.right).toBeLessThanOrEqual(390);
 
