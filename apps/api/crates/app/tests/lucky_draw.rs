@@ -246,7 +246,7 @@ async fn a_draw_is_created_renamed_and_listed_newest_first_with_its_state(
     let (second_id, detail) = draw_with(
         &s,
         &SIX[..2],
-        &[("Quà A", "all", 1), ("Quà B", "female", 2)],
+        &[("Quà A", "male", 1), ("Quà B", "female", 2)],
     )
     .await?;
     let spun = s.spin(&second_id, &prize_id(&detail, "Quà A")).await;
