@@ -1,4 +1,5 @@
 import { useEffectEvent, useLayoutEffect, useRef, type RefObject } from "react";
+import blurUrl from "./assets/wheel-disk-blur.webp";
 import diskUrl from "./assets/wheel-disk.webp";
 import frameUrl from "./assets/wheel-frame.webp";
 
@@ -9,6 +10,8 @@ export interface WheelTurn {
   end: number;
   ms: number;
   ease: string;
+  /** Fade the motion blur out over the turn (not with reduced motion). */
+  blur: boolean;
   /** `performance.now()` at the press: a wheel mounted later shows the stop, it does not replay. */
   at: number;
 }
@@ -24,6 +27,11 @@ const LATE_MS = 200;
  * always turns, reduced motion included (EM: the spin is the content of a draw; useSpin picks the
  * gentler timing then): the transition is set `!important` inline, above the app-wide rule that
  * strips transform transitions for `prefers-reduced-motion`.
+ *
+ * While it is fast, a rotational motion blur of the disk art (scripts/wheel-blur.py) lies on the
+ * disk, turning with it, and fades out as the wheel slows (`ld-wheel-blur`, opacity only, so it
+ * runs on the compositor like the turn). Both run off the main thread: nothing here touches the DOM
+ * between the press and the stop.
  */
 export function Wheel({
   spin,
@@ -37,6 +45,7 @@ export function Wheel({
   onStopped: (id: number) => void;
 }) {
   const disk = useRef<HTMLDivElement>(null);
+  const blur = useRef<HTMLImageElement>(null);
   const started = useRef(0);
   const stopped = useEffectEvent(onStopped);
 
@@ -51,14 +60,17 @@ export function Wheel({
     if (started.current !== spin.id) {
       started.current = spin.id;
       el.style.setProperty("transition", "none", "important");
+      const smear = blur.current;
+      smear?.style.removeProperty("animation");
       if (performance.now() - spin.at > LATE_MS) {
         el.style.transform = turn(spin.end);
       } else {
         el.style.transform = turn(spin.from);
-        // Commit the start angle, so the transition runs from it.
+        // Commit the start angle (and the blur's reset), so both run from the press.
         void el.getBoundingClientRect();
         el.style.setProperty("transition", `transform ${String(spin.ms)}ms ${spin.ease}`, "important");
         el.style.transform = turn(spin.end);
+        if (spin.blur) smear?.style.setProperty("animation", `ld-wheel-blur ${String(spin.ms)}ms linear both`);
       }
     }
     const id = spin.id;
@@ -75,6 +87,7 @@ export function Wheel({
     <div className="ld-wheel" role="img" aria-label="Vòng quay tám cánh sen">
       <div ref={disk} className="ld-wheel-disk">
         <img src={diskUrl} alt="" width={376} height={376} draggable={false} decoding="async" />
+        <img ref={blur} className="ld-wheel-blur" src={blurUrl} alt="" width={376} height={376} draggable={false} decoding="async" />
       </div>
       <img className="ld-wheel-frame" src={frameUrl} alt="" width={466} height={481} draggable={false} decoding="async" />
     </div>

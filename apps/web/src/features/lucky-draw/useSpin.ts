@@ -33,7 +33,7 @@ interface Running {
 }
 
 /**
- * One program's spins (US4). Pressing "Quay" starts the wheel's turn at once (9 turns in 6 s to a
+ * One program's spins (US4). Pressing "Quay" starts the wheel's turn at once (5 turns in 6 s to a
  * sector drawn at the press, `SPIN` in angles.ts; reduced motion: 3 gentler turns) and asks the
  * server, which picks the winner and saves the result. The spin lands only when **both** the wheel
  * has stopped and the answer is in: then the program in the cache changes, so the winner, the counts
@@ -130,7 +130,7 @@ export function useSpin(drawId: string, onRevealed: (outcome: SpinOutcome) => vo
     const end = stopAngle(from, randomSector(), timing.turns);
     angleRef.current = end;
     running.current = { id, stopped: false, answer: null };
-    setTurn({ id, from, end, ms: timing.ms, ease: timing.ease, at: performance.now() });
+    setTurn({ id, from, end, ms: timing.ms, ease: timing.ease, blur: timing.blur, at: performance.now() });
     setBusy(true);
     setShownId(null);
     setError(null);
