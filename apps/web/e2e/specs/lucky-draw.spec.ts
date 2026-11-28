@@ -172,13 +172,16 @@ test.describe("vòng quay may mắn", () => {
       expect(fit.pageScroll, `page scroll on "${tab}"`).toBeLessThanOrEqual(0);
       expect(fit.wheelOfHeight).toBeGreaterThanOrEqual(0.6);
     }
-    await page.setViewportSize({ width: 1280, height: 900 });
     await page.emulateMedia({ colorScheme: "dark" });
     await expectAccessible(page, "lucky-draw-ready-dark");
     await page.emulateMedia({ colorScheme: "light" });
 
     // US4: every press turns the wheel (EM: the spin is the content); the winner pops up once it stops.
+    // At the EM's window (1920 × 912), where the wheel is as tall as the stage and its turned square
+    // disk reached past the page's end: nothing may move but the wheel (EM "giật giật").
+    await page.setViewportSize({ width: 1920, height: 912 });
     const first = await spinOnce(page, stage(page).getByRole("button", { name: "Quay" }), 1, 1000, true);
+    await page.setViewportSize({ width: 1280, height: 900 });
     expect(WOMEN).toContain(first);
     await expect(winner(page).getByRole("button", { name: "Quay tiếp" })).toBeFocused();
     // Not under the wheel: only the popup shows the winner.
