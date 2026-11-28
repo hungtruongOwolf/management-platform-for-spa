@@ -8,6 +8,7 @@ use crate::password::{self, PasswordError};
 use crate::repo::{self, ResetRequestRow};
 use crate::roles::SystemRole;
 use crate::token::RandomUnavailable;
+use jiff::Timestamp;
 use kernel::{AppError, FieldError, PhoneE164, TenantTx, UserId};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -172,8 +173,8 @@ pub async fn set_role(tx: &mut TenantTx, user: UserId, role: LoginRole) -> Resul
 pub struct ResetRequest {
     pub id: Uuid,
     pub user_id: UserId,
-    pub requested_at: chrono::DateTime<chrono::Utc>,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub requested_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 impl From<ResetRequestRow> for ResetRequest {

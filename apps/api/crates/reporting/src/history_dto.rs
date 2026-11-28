@@ -1,7 +1,8 @@
 //! Contract of "ai ghi, ai sửa" on each record (`GET /record-history/...`, ADR-0022).
 
 use crate::activity_dto::{ActivityActor, ActivityEntry};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -80,9 +81,10 @@ pub struct RecordCreated {
     pub actor: Option<ActivityActor>,
     /// Absent for a paper-book entry (its day is the book's, it has no time).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub at: Option<Timestamp>,
     /// The spa's day of `at`, or the paper book's day.
-    pub day: NaiveDate,
+    pub day: Date,
     pub source: RecordSource,
 }
 
@@ -90,8 +92,9 @@ pub struct RecordCreated {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct RecordLast {
     pub actor: ActivityActor,
-    pub at: DateTime<Utc>,
-    pub day: NaiveDate,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub at: Timestamp,
+    pub day: Date,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]

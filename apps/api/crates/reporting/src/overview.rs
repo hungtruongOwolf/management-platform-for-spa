@@ -8,10 +8,12 @@ use crate::dto::{
     InactiveQuery, InactiveScope, InactiveSort, LastFollowUp, PackageOverviewCounts,
     PackageOverviewPage, PackageOverviewRow, PackageStatusFilter, PackagesQuery,
 };
-use chrono::{DateTime, NaiveDate, Utc};
 use crm::follow_up::{Channel, Outcome};
 use crm::http::gender_dto;
 use crm::text::{like_escape, search_key};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff_sqlx::ToSqlx;
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use packages::http::PackageStatusDto;
 use sqlx::PgPool;
@@ -83,15 +85,15 @@ struct Row {
     status: String,
     sessions_total: i64,
     sessions_remaining: i64,
-    starts_on: NaiveDate,
-    expires_on: Option<NaiveDate>,
-    cancelled_at: Option<DateTime<Utc>>,
-    created_at: DateTime<Utc>,
-    last_used_on: Option<NaiveDate>,
+    starts_on: Date,
+    expires_on: Option<jiff_sqlx::Date>,
+    cancelled_at: Option<jiff_sqlx::Timestamp>,
+    created_at: Timestamp,
+    last_used_on: Option<jiff_sqlx::Date>,
 }
 
 impl Row {
-    fn into_dto(self, today: NaiveDate) -> PackageOverviewRow {
+    fn into_dto(self, today: Date) -> PackageOverviewRow {
         PackageOverviewRow {
             id: self.id,
             customer_id: self.customer_id,
@@ -103,10 +105,12 @@ impl Row {
             sessions_total: self.sessions_total,
             sessions_remaining: self.sessions_remaining,
             starts_on: self.starts_on,
-            expires_on: self.expires_on,
-            days_to_expiry: self.expires_on.map(|e| (e - today).num_days()),
-            last_used_on: self.last_used_on,
-            cancelled_at: self.cancelled_at,
+            expires_on: self.expires_on.map(jiff_sqlx::Date::to_jiff),
+            days_to_expiry: self
+                .expires_on
+                .map(|e| i64::from((e.to_jiff() - today).get_days())),
+            last_used_on: self.last_used_on.map(jiff_sqlx::Date::to_jiff),
+            cancelled_at: self.cancelled_at.map(jiff_sqlx::Timestamp::to_jiff),
         }
     }
 }
@@ -141,7 +145,7 @@ pub async fn packages(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let tenant = tx.tenant().as_uuid();
 
     let mut rows: Vec<Row> = if expiring {
@@ -173,11 +177,11 @@ pub async fn packages(
                ORDER BY ps.expires_on, ps.id
                LIMIT $8"#,
             tenant,
-            today,
+            today.to_sqlx(),
             name_like,
             phone_like,
             window_i32,
-            a_date,
+            a_date.map(ToSqlx::to_sqlx),
             a_id,
             limit + 1
         )
@@ -212,11 +216,11 @@ pub async fn packages(
                ORDER BY ps.created_at DESC, ps.id DESC
                LIMIT $8"#,
             tenant,
-            today,
+            today.to_sqlx(),
             name_like,
             phone_like,
             status_filter,
-            a_at,
+            a_at.map(ToSqlx::to_sqlx),
             a_id,
             limit + 1
         )
@@ -241,7 +245,7 @@ pub async fn packages(
              AND ($4::text IS NULL OR c.phone_e164 LIKE $4)
            GROUP BY 1"#,
         tenant,
-        today,
+        today.to_sqlx(),
         name_like,
         phone_like,
         window_i32
@@ -267,7 +271,7 @@ pub async fn packages(
     let next_cursor = more.then(|| rows.last()).flatten().and_then(|r| {
         if expiring {
             r.expires_on
-                .map(|e| cursor::encode(&[e.to_string(), r.id.to_string()]))
+                .map(|e| cursor::encode(&[e.to_jiff().to_string(), r.id.to_string()]))
         } else {
             Some(cursor::encode(&[
                 cursor::instant_part(r.created_at),
@@ -337,7 +341,7 @@ pub async fn inactive(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let tenant = tx.tenant().as_uuid();
     let mut rows = sqlx::query!(
         r#"WITH last_visit AS (
@@ -423,10 +427,10 @@ pub async fn inactive(
            ORDER BY due_key, last_seen, id
            LIMIT $7"#,
         tenant,
-        today,
+        today.to_sqlx(),
         threshold_i32,
         with_sessions,
-        a_date,
+        a_date.map(ToSqlx::to_sqlx),
         a_id,
         limit + 1,
         name_like,
@@ -434,7 +438,7 @@ pub async fn inactive(
         kind,
         follow_up,
         by_due,
-        a_key,
+        a_key.map(ToSqlx::to_sqlx),
         pause_days
     )
     .fetch_all(tx.conn())
@@ -445,8 +449,8 @@ pub async fn inactive(
     rows.truncate(page);
     let next_cursor = more.then(|| rows.last()).flatten().map(|r| {
         cursor::encode(&[
-            r.due_key.to_string(),
-            r.last_seen.to_string(),
+            r.due_key.to_jiff().to_string(),
+            r.last_seen.to_jiff().to_string(),
             r.id.to_string(),
         ])
     });
@@ -454,7 +458,7 @@ pub async fn inactive(
     for r in rows {
         let last_follow_up = match (r.f_on, r.f_channel, r.f_outcome, r.f_by) {
             (Some(on), Some(channel), Some(outcome), Some(by)) => Some(LastFollowUp {
-                on,
+                on: on.to_jiff(),
                 channel: Channel::parse(&channel)
                     .ok_or_else(|| AppError::Internal(format!("follow-up channel {channel}")))?
                     .into(),
@@ -475,13 +479,17 @@ pub async fn inactive(
             } else {
                 CustomerKind::OneOff
             },
-            last_visit_on: r.last_on,
-            last_seen_on: r.last_seen,
-            days_absent: (today - r.last_seen).num_days(),
+            last_visit_on: r.last_on.map(jiff_sqlx::Date::to_jiff),
+            last_seen_on: r.last_seen.to_jiff(),
+            days_absent: i64::from((today - r.last_seen.to_jiff()).get_days()),
             active_packages: r.active,
             sessions_remaining: r.remaining,
-            next_follow_up_on: last_follow_up.as_ref().and(r.f_next),
-            due_on: last_follow_up.as_ref().and(r.due_on),
+            next_follow_up_on: last_follow_up
+                .as_ref()
+                .and(r.f_next.map(jiff_sqlx::Date::to_jiff)),
+            due_on: last_follow_up
+                .as_ref()
+                .and(r.due_on.map(jiff_sqlx::Date::to_jiff)),
             last_follow_up,
         });
     }

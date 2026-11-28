@@ -8,6 +8,9 @@ use axum::http::{Request, StatusCode, header};
 use common::{Harness, PASSWORD, TestResult, add_member, call, harness, login};
 use identity::SystemRole;
 use identity::provisioning::{NewUser, add_user, create_tenant};
+use jiff::SignedDuration;
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use serde_json::json;
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -366,12 +369,11 @@ async fn switch_tenant_keeps_absolute_expiry_and_reauth_time(owner: PgPool) -> T
     )
     .execute(&h.owner)
     .await?;
-    let (old_absolute, old_reauth): (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) =
-        sqlx::query_as(
-            "SELECT absolute_expires_at, recent_auth_at FROM app.session WHERE revoked_at IS NULL",
-        )
-        .fetch_one(&h.owner)
-        .await?;
+    let (old_absolute, old_reauth): (jiff_sqlx::Timestamp, jiff_sqlx::Timestamp) = sqlx::query_as(
+        "SELECT absolute_expires_at, recent_auth_at FROM app.session WHERE revoked_at IS NULL",
+    )
+    .fetch_one(&h.owner)
+    .await?;
     let tenant: String = sqlx::query_scalar("SELECT id::text FROM app.tenant WHERE slug = 'vpyd'")
         .fetch_one(&h.owner)
         .await?;
@@ -387,9 +389,9 @@ async fn switch_tenant_keeps_absolute_expiry_and_reauth_time(owner: PgPool) -> T
     assert_eq!(switched.status, StatusCode::OK, "{}", switched.body);
 
     let (absolute, idle, reauth): (
-        chrono::DateTime<chrono::Utc>,
-        chrono::DateTime<chrono::Utc>,
-        chrono::DateTime<chrono::Utc>,
+        jiff_sqlx::Timestamp,
+        jiff_sqlx::Timestamp,
+        jiff_sqlx::Timestamp,
     ) = sqlx::query_as(
         "SELECT absolute_expires_at, idle_expires_at, recent_auth_at
          FROM app.session WHERE revoked_at IS NULL",
@@ -431,7 +433,7 @@ async fn a_rotated_session_needs_a_real_reauth(owner: PgPool) -> TestResult {
     assert_eq!(switched.status, StatusCode::OK, "{}", switched.body);
     let rotated = switched.session().unwrap_or_default();
 
-    let now = chrono::Utc::now();
+    let now = Timestamp::now();
     let session = identity::service::resolve(&pool, &rotated).await?;
     assert!(
         !session.recently_authenticated(now),
@@ -448,23 +450,25 @@ async fn a_rotated_session_needs_a_real_reauth(owner: PgPool) -> TestResult {
     .await;
     assert_eq!(reauth.status, StatusCode::NO_CONTENT);
     let session = identity::service::resolve(&pool, &rotated).await?;
-    assert!(session.recently_authenticated(chrono::Utc::now()));
+    assert!(session.recently_authenticated(Timestamp::now()));
     Ok(())
 }
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn login_marks_the_session_as_just_authenticated(owner: PgPool) -> TestResult {
     let h = staff_harness(owner).await?;
-    let before = chrono::Utc::now() - chrono::Duration::seconds(5);
+    let before = Timestamp::now() - SignedDuration::from_secs(5);
     assert_eq!(login(&h.app, PHONE, PASSWORD).await.status, StatusCode::OK);
-    let (reauth, absolute): (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) =
-        sqlx::query_as(
-            "SELECT recent_auth_at, absolute_expires_at FROM app.session WHERE revoked_at IS NULL",
-        )
-        .fetch_one(&h.owner)
-        .await?;
-    assert!(reauth >= before, "login is a fresh authentication");
-    assert!(absolute > chrono::Utc::now() + chrono::Duration::days(29));
+    let (reauth, absolute): (jiff_sqlx::Timestamp, jiff_sqlx::Timestamp) = sqlx::query_as(
+        "SELECT recent_auth_at, absolute_expires_at FROM app.session WHERE revoked_at IS NULL",
+    )
+    .fetch_one(&h.owner)
+    .await?;
+    assert!(
+        reauth >= before.to_sqlx(),
+        "login is a fresh authentication"
+    );
+    assert!(absolute > (Timestamp::now() + jiff::SignedDuration::from_hours(24 * 29)).to_sqlx());
     Ok(())
 }
 

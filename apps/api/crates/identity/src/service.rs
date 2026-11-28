@@ -5,7 +5,7 @@ use crate::mfa::{self, SecondFactor, TotpSecret};
 use crate::repo::{self, AccountRow, NewSession, SessionRow, TenantRef};
 use crate::token::{self, SessionToken};
 use crate::{lockout, password};
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use kernel::crypto::FieldCipher;
 use kernel::{
     Actor, AppError, Feature, FieldError, Permission, PhoneE164, TenantId, TenantTx, UserId,
@@ -24,6 +24,12 @@ pub const MFA_PENDING_MINUTES: i64 = 10;
 /// Avoid a write on every request: refresh `last_seen_at` at most once a minute.
 const TOUCH_INTERVAL_SECONDS: i64 = 60;
 
+/// The hard end of a login: [`ABSOLUTE_TIMEOUT_DAYS`] × 24 h of elapsed time (the cookie's
+/// `Max-Age` is the same number of seconds), not calendar days in a zone.
+const fn absolute_timeout() -> SignedDuration {
+    SignedDuration::from_hours(ABSOLUTE_TIMEOUT_DAYS * 24)
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ClientMeta {
     pub ip: Option<IpAddr>,
@@ -36,14 +42,14 @@ pub struct Session {
     pub id: Uuid,
     pub user_id: UserId,
     pub active_tenant: Option<TenantId>,
-    pub recent_auth_at: DateTime<Utc>,
+    pub recent_auth_at: Timestamp,
     /// Hard end of the login this session belongs to; token rotation never moves it.
-    pub absolute_expires_at: DateTime<Utc>,
+    pub absolute_expires_at: Timestamp,
 }
 
 impl Session {
-    pub fn recently_authenticated(&self, now: DateTime<Utc>) -> bool {
-        now - self.recent_auth_at <= Duration::minutes(REAUTH_WINDOW_MINUTES)
+    pub fn recently_authenticated(&self, now: Timestamp) -> bool {
+        now.duration_since(self.recent_auth_at) <= SignedDuration::from_mins(REAUTH_WINDOW_MINUTES)
     }
 }
 
@@ -141,25 +147,22 @@ enum Issue {
     /// Same login, new token (switch-tenant): keeps the re-auth time and the absolute expiry,
     /// so rotation can neither stand in for a password nor extend a session.
     Rotated {
-        recent_auth_at: DateTime<Utc>,
-        absolute_expires_at: DateTime<Utc>,
+        recent_auth_at: Timestamp,
+        absolute_expires_at: Timestamp,
     },
 }
 
 /// `(idle_expires_at, absolute_expires_at, recent_auth_at)` for a session issued at `now`.
-fn session_times(
-    issue: Issue,
-    now: DateTime<Utc>,
-) -> (DateTime<Utc>, DateTime<Utc>, DateTime<Utc>) {
+fn session_times(issue: Issue, now: Timestamp) -> (Timestamp, Timestamp, Timestamp) {
     let idle_from =
-        |absolute: DateTime<Utc>| (now + Duration::hours(IDLE_TIMEOUT_HOURS)).min(absolute);
+        |absolute: Timestamp| (now + SignedDuration::from_hours(IDLE_TIMEOUT_HOURS)).min(absolute);
     match issue {
         Issue::MfaPending => {
-            let deadline = now + Duration::minutes(MFA_PENDING_MINUTES);
+            let deadline = now + SignedDuration::from_mins(MFA_PENDING_MINUTES);
             (deadline, deadline, now)
         }
         Issue::Authenticated => {
-            let absolute = now + Duration::days(ABSOLUTE_TIMEOUT_DAYS);
+            let absolute = now + absolute_timeout();
             (idle_from(absolute), absolute, now)
         }
         Issue::Rotated {
@@ -181,7 +184,7 @@ async fn issue_session(
     issue: Issue,
 ) -> Result<SessionToken, AppError> {
     let token = token::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-    let (idle, absolute, recent_auth_at) = session_times(issue, Utc::now());
+    let (idle, absolute, recent_auth_at) = session_times(issue, Timestamp::now());
     repo::insert_session(
         pool,
         NewSession {
@@ -213,13 +216,13 @@ async fn open_full_session(
         _ => None,
     };
     let token = issue_session(pool, user, active, meta, Issue::Authenticated).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let session = Session {
         id: Uuid::nil(),
         user_id: user,
         active_tenant: active,
         recent_auth_at: now,
-        absolute_expires_at: now + Duration::days(ABSOLUTE_TIMEOUT_DAYS),
+        absolute_expires_at: now + absolute_timeout(),
     };
     let me = build_me(pool, &session, Some(tenants), None).await?;
     Ok((token, me))
@@ -228,7 +231,7 @@ async fn open_full_session(
 /// Counts a failed attempt (password or second factor) and locks the account progressively.
 async fn record_failure(pool: &PgPool, user: UserId) -> Result<(), AppError> {
     let failures = repo::increment_failed_logins(pool, user).await?;
-    if let Some(until) = lockout::lock_until(failures, Utc::now()) {
+    if let Some(until) = lockout::lock_until(failures, Timestamp::now()) {
         repo::lock_account_until(pool, user, until).await?;
     }
     Ok(())
@@ -259,7 +262,7 @@ pub async fn login(
         return Err(AppError::InvalidCredentials);
     };
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     let locked = account.locked_until.is_some_and(|until| until > now);
     let candidate = password_input.to_owned();
     let stored = account.password_hash.clone();
@@ -328,9 +331,10 @@ async fn live(pool: &PgPool, secret: &str) -> Result<repo::LiveSession, AppError
         .await?
         .ok_or(AppError::Unauthenticated)?;
     let row = &live.row;
-    let now = Utc::now();
-    if now - row.last_seen_at > Duration::seconds(TOUCH_INTERVAL_SECONDS) {
-        let idle = (now + Duration::hours(IDLE_TIMEOUT_HOURS)).min(row.absolute_expires_at);
+    let now = Timestamp::now();
+    if now.duration_since(row.last_seen_at) > SignedDuration::from_secs(TOUCH_INTERVAL_SECONDS) {
+        let idle =
+            (now + SignedDuration::from_hours(IDLE_TIMEOUT_HOURS)).min(row.absolute_expires_at);
         repo::touch_session(pool, row.id, idle).await?;
     }
     Ok(live)
@@ -461,7 +465,10 @@ pub async fn reauth(
     let account = repo::account_by_id(pool, session.user_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
-    if account.locked_until.is_some_and(|until| until > Utc::now()) {
+    if account
+        .locked_until
+        .is_some_and(|until| until > Timestamp::now())
+    {
         return Err(AppError::InvalidCredentials);
     }
     let candidate = password_input.to_owned();
@@ -490,7 +497,7 @@ pub async fn reauth(
 }
 
 fn unix_now() -> Result<u64, AppError> {
-    u64::try_from(Utc::now().timestamp()).map_err(|e| AppError::Internal(e.to_string()))
+    u64::try_from(Timestamp::now().as_second()).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 fn stored_secret(cipher: &FieldCipher, account: &AccountRow) -> Result<TotpSecret, AppError> {
@@ -538,7 +545,10 @@ async fn pending_account(pool: &PgPool, pending: &PendingMfa) -> Result<AccountR
     let account = repo::account_by_id(pool, pending.user_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
-    if account.locked_until.is_some_and(|until| until > Utc::now()) {
+    if account
+        .locked_until
+        .is_some_and(|until| until > Timestamp::now())
+    {
         // Locked mid-flow (e.g. by too many wrong codes): no attempt is evaluated, none counted.
         return Err(AppError::InvalidMfaCode);
     }
@@ -788,7 +798,10 @@ pub async fn change_password(
     let account = repo::account_by_id(pool, session.user_id)
         .await?
         .ok_or(AppError::Unauthenticated)?;
-    if account.locked_until.is_some_and(|until| until > Utc::now()) {
+    if account
+        .locked_until
+        .is_some_and(|until| until > Timestamp::now())
+    {
         return Err(AppError::InvalidCredentials);
     }
     let candidate = current_input.to_owned();

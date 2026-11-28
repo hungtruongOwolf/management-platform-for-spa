@@ -13,7 +13,7 @@ use crate::payroll;
 use crate::period;
 use crate::review::{self, DailyReview};
 use crate::rules;
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use kernel::{Actor, AppError, Feature, Permission, TenantTx};
 use org::profile::Profile;
 use serde::Serialize;
@@ -40,7 +40,7 @@ pub struct MyStaff {
     /// Present only for a former staff member (ADR-0014): the last day they worked. Months they
     /// did not work in are `403 staff.not_employed_in_month`; the default month is this day's.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_on: Option<NaiveDate>,
+    pub left_on: Option<Date>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<MyMonth>,
 }
@@ -64,7 +64,7 @@ pub(crate) fn own_scope(actor: &Actor) -> Result<OwnScope, AppError> {
 }
 
 /// The last day a former staff member worked.
-pub(crate) fn last_day(profile: &Profile) -> Result<NaiveDate, AppError> {
+pub(crate) fn last_day(profile: &Profile) -> Result<Date, AppError> {
     profile
         .employment
         .latest()
@@ -187,7 +187,7 @@ pub struct MyEvaluationHistory {
     /// Present only for a former staff member (ADR-0014): the last day they worked; the window
     /// then ends at that month by default.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_on: Option<NaiveDate>,
+    pub left_on: Option<Date>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<MyHistoryData>,
 }

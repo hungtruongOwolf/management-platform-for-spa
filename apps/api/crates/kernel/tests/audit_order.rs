@@ -2,7 +2,7 @@
 //! record's history is the order its changes were made, also when two requests race on it.
 //! Real Postgres as `app_rw` with RLS, like `tenant_isolation.rs`.
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::testing::{app_pool, seed_tenant};
 use kernel::{Actor, Permission, TenantId, TenantTx, UserId};
@@ -49,13 +49,21 @@ async fn rename(tx: &mut TenantTx, id: Uuid, name: &str) -> Result<(), sqlx::Err
 }
 
 /// The history of `id` as every reader orders it: `(at, id)`.
-async fn history(owner: &PgPool, id: Uuid) -> Result<Vec<(String, DateTime<Utc>)>, sqlx::Error> {
-    sqlx::query_as(
+async fn history(owner: &PgPool, id: Uuid) -> Result<Vec<(String, Timestamp)>, sqlx::Error> {
+    let rows: Vec<(String, jiff_sqlx::Timestamp)> = sqlx::query_as(
         "SELECT after ->> 'name', at FROM app.audit_log WHERE entity_id = $1 ORDER BY at, id",
     )
     .bind(id)
     .fetch_all(owner)
-    .await
+    .await?;
+    Ok(rows.into_iter().map(|(n, at)| (n, at.to_jiff())).collect())
+}
+
+async fn db_now(tx: &mut TenantTx) -> Result<Timestamp, sqlx::Error> {
+    let now: jiff_sqlx::Timestamp = sqlx::query_scalar("SELECT now()")
+        .fetch_one(tx.conn())
+        .await?;
+    Ok(now.to_jiff())
 }
 
 /// The race of the bug: request 1 begins first, then waits on the row lock that request 2 holds
@@ -72,9 +80,7 @@ async fn a_request_that_waited_on_a_lock_sorts_after_the_one_it_waited_for(
     let category = new_category(&pool, tenant).await?;
 
     let mut first = TenantTx::for_actor(&pool, &who).await?;
-    let first_began: DateTime<Utc> = sqlx::query_scalar("SELECT now()")
-        .fetch_one(first.conn())
-        .await?;
+    let first_began = db_now(&mut first).await?;
 
     let mut second = TenantTx::for_actor(&pool, &who).await?;
     rename(&mut second, category, "B").await?;
@@ -133,9 +139,7 @@ async fn one_transaction_writes_one_instant_in_recorded_order(owner: PgPool) -> 
     let category = new_category(&pool, tenant).await?;
 
     let mut tx = TenantTx::for_actor(&pool, &who).await?;
-    let began: DateTime<Utc> = sqlx::query_scalar("SELECT now()")
-        .fetch_one(tx.conn())
-        .await?;
+    let began = db_now(&mut tx).await?;
     for name in ["B", "C"] {
         audit::record(&mut tx, &who, renamed(category, name)).await?;
     }
@@ -172,10 +176,7 @@ async fn one_transaction_writes_one_instant_in_recorded_order(owner: PgPool) -> 
 async fn a_back_filling_actor_stamps_its_own_instant(owner: PgPool) -> TestResult {
     let tenant = seed_tenant(&owner, "spa-a").await?;
     let pool = app_pool(&owner).await?;
-    let at = Utc
-        .with_ymd_and_hms(2026, 3, 2, 3, 30, 0)
-        .single()
-        .ok_or("date")?;
+    let at: Timestamp = "2026-03-02T03:30:00Z".parse()?;
     let who = actor(tenant).at_clock(at);
     let category = new_category(&pool, tenant).await?;
 

@@ -6,12 +6,13 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{Datelike, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
+use jiff::civil::Date;
+use jiff::{SignedDuration, Span, Timestamp};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -53,9 +54,8 @@ fn key() -> String {
     Uuid::now_v7().to_string()
 }
 
-fn spa_today() -> NaiveDate {
-    let vn = FixedOffset::east_opt(7 * 3600).unwrap_or_else(|| panic!("offset"));
-    Utc::now().with_timezone(&vn).date_naive()
+fn spa_today() -> Date {
+    common::vn_today()
 }
 
 async fn service(h: &Harness, name: &str) -> Setup<String> {
@@ -269,8 +269,8 @@ async fn a_direct_edit_changes_technician_time_and_note_in_place(pool: PgPool) -
     assert_eq!(edited.body["lines"][0]["staff_name"], "KTV Mai");
     assert_eq!(edited.body["lines"][1]["staff_name"], "KTV Lan");
     assert_eq!(edited.body["note"], "Khách thích lực nhẹ");
-    let moved = chrono::DateTime::parse_from_rfc3339(&str_of(&edited.body["check_in_at"]))?;
-    assert_eq!(moved, chrono::DateTime::parse_from_rfc3339(&midnight)?);
+    let moved = parse_instant(&str_of(&edited.body["check_in_at"]))?;
+    assert_eq!(moved, parse_instant(&midnight)?);
     assert_eq!(edited.body["total"], 49_000, "money untouched");
     assert_eq!(s.remaining().await?, 11, "sessions untouched");
     assert_eq!(
@@ -285,7 +285,7 @@ async fn a_direct_edit_changes_technician_time_and_note_in_place(pool: PgPool) -
     );
 
     // AC6b.2: the time stays on the visit's day and not ahead of now.
-    let yesterday = format!("{}T23:00:00+07:00", spa_today() - chrono::Duration::days(1));
+    let yesterday = format!("{}T23:00:00+07:00", spa_today() - Span::new().days(1));
     let other_day = s
         .patch(&s.manager, &id, 2, json!({"check_in_at": yesterday}))
         .await;
@@ -295,7 +295,7 @@ async fn a_direct_edit_changes_technician_time_and_note_in_place(pool: PgPool) -
     );
     assert_eq!(other_day.body["errors"][0]["field"], "check_in_at");
     assert_eq!(other_day.body["errors"][0]["code"], "not_visit_day");
-    let later = (Utc::now() + chrono::Duration::hours(1)).to_rfc3339();
+    let later = (Timestamp::now() + SignedDuration::from_hours(1)).to_string();
     let future = s
         .patch(&s.manager, &id, 2, json!({"check_in_at": later}))
         .await;
@@ -757,7 +757,7 @@ async fn closed_days_technicians_and_bad_requests(pool: PgPool) -> TestResult {
     );
     let owner = s.correct(&s.owner, &id, 1, body.clone()).await;
     assert_eq!(owner.status, StatusCode::CREATED, "{}", owner.body);
-    let yesterday = (spa_today() - chrono::Duration::days(1)).to_string();
+    let yesterday = (spa_today() - Span::new().days(1)).to_string();
     assert_eq!(
         owner.body["visit"]["business_date"],
         json!(yesterday),
@@ -779,7 +779,7 @@ async fn closed_days_technicians_and_bad_requests(pool: PgPool) -> TestResult {
             &str_of(&owner.body["visit"]["id"]),
             1,
             json!({"reason": "sai ngày", "customer_id": s.ha, "lines": [s.one_off(&s.dearer)],
-                   "check_in_at": Utc::now().to_rfc3339(),
+                   "check_in_at": Timestamp::now().to_string(),
                    "payments": [{"method": "cash", "amount": 79_000}]}),
         )
         .await;
@@ -858,7 +858,7 @@ async fn the_appointment_moves_to_the_corrected_visit(pool: PgPool) -> TestResul
         "/appointments",
         Some(&s.manager),
         Some(json!({"customer_id": s.ha, "service_ids": [s.shampoo],
-                    "starts_at": format!("{}T00:00:00+07:00", spa_today() + chrono::Duration::days(1))})),
+                    "starts_at": format!("{}T00:00:00+07:00", spa_today() + Span::new().days(1))})),
         &[("idempotency-key", &key())],
     )
     .await;
@@ -1025,7 +1025,7 @@ async fn the_appointment_keeps_the_package_sold_at_its_checkout(pool: PgPool) ->
         "/appointments",
         Some(&s.manager),
         Some(json!({"customer_id": s.ha, "service_ids": [s.shampoo],
-                    "starts_at": format!("{}T00:00:00+07:00", spa_today() + chrono::Duration::days(1))})),
+                    "starts_at": format!("{}T00:00:00+07:00", spa_today() + Span::new().days(1))})),
         &[("idempotency-key", &key())],
     )
     .await;
@@ -1082,9 +1082,9 @@ async fn the_appointment_keeps_the_package_sold_at_its_checkout(pool: PgPool) ->
 /// Moves `visit` (and its sales) into last month and closes that month's payroll.
 async fn into_closed_month(s: &Spa, visit: &str) -> TestResult {
     let today = spa_today();
-    let first_of_month = today.with_day(1).unwrap_or(today);
-    let last_month = first_of_month - chrono::Duration::days(1);
-    let back = (today - last_month).num_days();
+    let first_of_month = today.first_of_month();
+    let last_month = first_of_month - Span::new().days(1);
+    let back = i64::from((today - last_month).get_days());
     s.exec(&format!(
         "UPDATE app.visit SET business_date = business_date - {back}, check_in_at = check_in_at - interval '{back} days' WHERE id = '{visit}'"
     ))
@@ -1100,7 +1100,7 @@ async fn into_closed_month(s: &Spa, visit: &str) -> TestResult {
     s.exec(&format!(
         "INSERT INTO app.payroll_period (tenant_id, period, status, closed_at, closed_by)
          SELECT id, '{}', 'closed', now(), '{owner_id}' FROM app.tenant WHERE slug = 'vpyd'",
-        last_month.with_day(1).unwrap_or(last_month)
+        last_month.first_of_month()
     ))
     .await?;
     Ok(())
@@ -1258,4 +1258,9 @@ async fn the_discount_reason_lists_every_bill(pool: PgPool) -> TestResult {
     assert_eq!(read.body["discount_amount"], 7_000);
     assert_eq!(read.body["discount_reason"], "Khách quen; Sinh nhật");
     Ok(())
+}
+
+/// An RFC 3339 instant from a reply.
+fn parse_instant(s: &str) -> Result<Timestamp, jiff::Error> {
+    s.parse()
 }

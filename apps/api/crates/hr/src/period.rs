@@ -7,7 +7,8 @@
 
 use crate::month::Month;
 use crate::repo;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::{AppError, TenantTx};
 use org::profile::Profile;
 
@@ -21,7 +22,7 @@ pub const fn closed() -> AppError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeriodInfo {
     pub closed: bool,
-    pub closed_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<Timestamp>,
     pub closed_by_name: Option<String>,
 }
 
@@ -34,7 +35,7 @@ pub async fn info(tx: &mut TenantTx, month: Month) -> Result<PeriodInfo, AppErro
         },
         Some(p) => PeriodInfo {
             closed: p.status == "closed",
-            closed_at: p.closed_at,
+            closed_at: p.closed_at.map(jiff_sqlx::Timestamp::to_jiff),
             closed_by_name: p.closed_by_name,
         },
     })
@@ -55,7 +56,7 @@ pub async fn infos_between(
                 Month::of(p.period),
                 PeriodInfo {
                     closed: p.status == "closed",
-                    closed_at: p.closed_at,
+                    closed_at: p.closed_at.map(jiff_sqlx::Timestamp::to_jiff),
                     closed_by_name: p.closed_by_name,
                 },
             )
@@ -78,6 +79,6 @@ pub fn employed_in(p: &Profile, month: Month) -> bool {
 }
 
 /// Today in the spa's time zone.
-pub async fn today(tx: &mut TenantTx) -> Result<NaiveDate, AppError> {
-    Ok(kernel::tenant::profile(tx).await?.business_date.as_naive())
+pub async fn today(tx: &mut TenantTx) -> Result<Date, AppError> {
+    Ok(kernel::tenant::profile(tx).await?.business_date.as_date())
 }

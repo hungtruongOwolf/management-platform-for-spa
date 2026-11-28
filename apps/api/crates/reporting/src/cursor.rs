@@ -4,7 +4,8 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::{AppError, FieldError};
 use uuid::Uuid;
 
@@ -49,14 +50,12 @@ pub fn uuid(part: &str) -> Result<Uuid, AppError> {
     Uuid::parse_str(part).map_err(|_| invalid())
 }
 
-pub fn date(part: &str) -> Result<NaiveDate, AppError> {
+pub fn date(part: &str) -> Result<Date, AppError> {
     part.parse().map_err(|_| invalid())
 }
 
-pub fn instant(part: &str) -> Result<DateTime<Utc>, AppError> {
-    DateTime::parse_from_rfc3339(part)
-        .map(|t| t.with_timezone(&Utc))
-        .map_err(|_| invalid())
+pub fn instant(part: &str) -> Result<Timestamp, AppError> {
+    part.parse().map_err(|_| invalid())
 }
 
 pub fn integer(part: &str) -> Result<i32, AppError> {
@@ -64,8 +63,8 @@ pub fn integer(part: &str) -> Result<i32, AppError> {
 }
 
 /// Instants round-trip at full precision (Postgres keeps microseconds).
-pub fn instant_part(t: DateTime<Utc>) -> String {
-    t.to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
+pub fn instant_part(t: Timestamp) -> String {
+    format!("{t:.6}")
 }
 
 #[cfg(test)]
@@ -76,7 +75,7 @@ mod tests {
     fn round_trips_and_rejects_tampering() -> Result<(), AppError> {
         let id = Uuid::now_v7();
         // Postgres keeps microseconds; the clock may have finer ticks.
-        let at = DateTime::from_timestamp_micros(Utc::now().timestamp_micros()).unwrap_or_default();
+        let at = kernel::time::to_micros(Timestamp::now());
         let raw = encode(&[instant_part(at), id.to_string()]);
         let parts = decode(&raw, 2)?;
         assert_eq!(instant(&parts[0])?, at);

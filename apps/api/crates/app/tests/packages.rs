@@ -5,6 +5,7 @@ mod common;
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
 use common::{OWNER_PHONE, TestResult, harness, post_customer, session_for};
+use jiff::civil::Date;
 use kernel::testing::app_pool;
 use kernel::{Actor, AppError, Money, Permission, TenantId, TenantTx, UserId};
 use packages::{Consume, NewItem, NewPackage, Origin};
@@ -63,8 +64,8 @@ async fn fixture(pool: PgPool) -> Result<Fixture, Box<dyn std::error::Error>> {
     })
 }
 
-fn today() -> chrono::NaiveDate {
-    chrono::Utc::now().date_naive()
+fn today() -> Date {
+    common::vn_today()
 }
 
 impl Fixture {

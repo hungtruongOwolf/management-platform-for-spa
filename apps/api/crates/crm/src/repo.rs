@@ -1,6 +1,8 @@
 //! Customer SQL. Every query is tenant-scoped explicitly; RLS is the second layer.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff_sqlx::ToSqlx;
 use kernel::{AppError, TenantTx};
 use uuid::Uuid;
 
@@ -11,13 +13,13 @@ pub struct CustomerRow {
     pub phone_e164: Option<String>,
     pub gender: Option<String>,
     pub birth_year: Option<i16>,
-    pub birth_date: Option<NaiveDate>,
+    pub birth_date: Option<jiff_sqlx::Date>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
     pub health_note_ct: Option<Vec<u8>>,
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 pub struct CustomerFields<'a> {
@@ -26,7 +28,7 @@ pub struct CustomerFields<'a> {
     pub phone_e164: Option<&'a str>,
     pub gender: Option<&'a str>,
     pub birth_year: Option<i16>,
-    pub birth_date: Option<NaiveDate>,
+    pub birth_date: Option<Date>,
     pub address: Option<&'a str>,
     pub source: Option<&'a str>,
     pub note: Option<&'a str>,
@@ -76,7 +78,7 @@ pub async fn insert(
         f.source,
         f.note,
         health_note_ct,
-        f.birth_date
+        f.birth_date.map(ToSqlx::to_sqlx)
     )
     .execute(tx.conn())
     .await;
@@ -126,7 +128,7 @@ pub async fn update(
         f.address,
         f.source,
         f.note,
-        f.birth_date
+        f.birth_date.map(ToSqlx::to_sqlx)
     )
     .execute(tx.conn())
     .await;
@@ -327,25 +329,25 @@ pub async fn phone_holder(
 pub struct FollowUpInsert<'a> {
     pub id: Uuid,
     pub customer_id: Uuid,
-    pub contacted_on: NaiveDate,
+    pub contacted_on: Date,
     pub channel: &'a str,
     pub outcome: &'a str,
     pub note: Option<&'a str>,
-    pub next_follow_up_on: Option<NaiveDate>,
+    pub next_follow_up_on: Option<Date>,
     pub created_by: Uuid,
 }
 
 pub struct FollowUpRow {
     pub id: Uuid,
     pub customer_id: Uuid,
-    pub contacted_on: NaiveDate,
+    pub contacted_on: Date,
     pub channel: String,
     pub outcome: String,
     pub note: Option<String>,
-    pub next_follow_up_on: Option<NaiveDate>,
+    pub next_follow_up_on: Option<jiff_sqlx::Date>,
     pub created_by: Uuid,
     pub by_name: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 pub async fn insert_follow_up(tx: &mut TenantTx, f: &FollowUpInsert<'_>) -> Result<(), AppError> {
@@ -357,11 +359,11 @@ pub async fn insert_follow_up(tx: &mut TenantTx, f: &FollowUpInsert<'_>) -> Resu
         f.id,
         tenant,
         f.customer_id,
-        f.contacted_on,
+        f.contacted_on.to_sqlx(),
         f.channel,
         f.outcome,
         f.note,
-        f.next_follow_up_on,
+        f.next_follow_up_on.map(ToSqlx::to_sqlx),
         f.created_by
     )
     .execute(tx.conn())

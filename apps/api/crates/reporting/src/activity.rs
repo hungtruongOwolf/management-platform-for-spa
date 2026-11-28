@@ -20,7 +20,9 @@ use crate::activity_dto::{
     ActivityQuery, ActivitySubject, ActorKind, ChangeFormat, SubjectKind,
 };
 use crate::cursor;
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::{Span, Timestamp};
+use jiff_sqlx::ToSqlx;
 use kernel::audit::Action;
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use serde_json::Value;
@@ -619,7 +621,7 @@ fn detail(action: Action, before: Option<&Value>, after: Option<&Value>) -> Opti
 }
 
 /// The day a staff-book entry is about (it is filed on the staff member, not on the day).
-fn day_about(action: Action, before: Option<&Value>, after: Option<&Value>) -> Option<NaiveDate> {
+fn day_about(action: Action, before: Option<&Value>, after: Option<&Value>) -> Option<Date> {
     use Action as A;
     let date = |side: Option<&Value>, key: &str| {
         side.and_then(|s| s.get(key))
@@ -682,17 +684,13 @@ fn kind_filter(kind: Option<ActivityKind>) -> (Option<Vec<String>>, Option<Vec<S
     }
 }
 
-fn range(
-    from: Option<NaiveDate>,
-    to: Option<NaiveDate>,
-    today: NaiveDate,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
+fn range(from: Option<Date>, to: Option<Date>, today: Date) -> Result<(Date, Date), AppError> {
     let to = to.unwrap_or(today);
-    let from = from.unwrap_or(to - Duration::days(DEFAULT_RANGE_DAYS - 1));
+    let from = from.unwrap_or(to - Span::new().days(DEFAULT_RANGE_DAYS - 1));
     if from > to {
         return Err(field("from", "after_to"));
     }
-    if (to - from).num_days() >= MAX_RANGE_DAYS {
+    if i64::from((to - from).get_days()) >= MAX_RANGE_DAYS {
         return Err(field("to", "range_too_long"));
     }
     Ok((from, to))
@@ -702,8 +700,8 @@ fn range(
 /// and keys ([`fold_rule`]).
 pub(crate) struct Row {
     pub(crate) id: Uuid,
-    pub(crate) at: DateTime<Utc>,
-    day: NaiveDate,
+    pub(crate) at: Timestamp,
+    day: Date,
     actor_kind: String,
     actor_user_id: Option<Uuid>,
     actor_name: Option<String>,
@@ -720,7 +718,7 @@ pub(crate) struct Row {
     customer_gender: Option<String>,
     customer_gone: Option<bool>,
     target_name: Option<String>,
-    on_date: Option<NaiveDate>,
+    on_date: Option<jiff_sqlx::Date>,
     package: Option<String>,
     staff_before: Option<String>,
     staff_after: Option<String>,
@@ -862,9 +860,10 @@ fn entry(r: Row) -> ActivityEntry {
                 .customer_gender
                 .clone()
                 .filter(|_| kind == SubjectKind::Customer && !gone),
-            on: r
-                .on_date
-                .or_else(|| action.and_then(|a| day_about(a, before, after))),
+            on: (r.on_date.or_else(|| {
+                (action.and_then(|a| day_about(a, before, after))).map(ToSqlx::to_sqlx)
+            }))
+            .map(jiff_sqlx::Date::to_jiff),
             package: r.package.clone(),
         }
     });
@@ -999,8 +998,8 @@ pub async fn list(
 
     let mut tx = TenantTx::for_actor(pool, actor).await?;
     let profile = kernel::tenant::profile(&mut tx).await?;
-    let (from, to) = range(query.from, query.to, profile.business_date.as_naive())?;
-    let tz = profile.timezone.name();
+    let (from, to) = range(query.from, query.to, profile.business_date.as_date())?;
+    let tz = profile.zone_name();
     let tenant = tx.tenant().as_uuid();
     let fold_by = fold_table();
     // `k`: every row of the spa with its fold rank and keys ([`fold_rule`]); inlined, so each use
@@ -1092,9 +1091,9 @@ pub async fn list(
            SELECT l.id AS "id!", l.root AS "root!" FROM lines l"#,
         tenant,
         tz,
-        from,
-        to,
-        after.map(|(t, _)| t),
+        from.to_sqlx(),
+        to.to_sqlx(),
+        after.map(|(t, _)| t.to_sqlx()),
         after.map(|(_, id)| id),
         actor_kind,
         actor_user,
@@ -1395,12 +1394,12 @@ mod tests {
 
     #[test]
     fn the_range_is_bounded() {
-        let today = NaiveDate::from_ymd_opt(2026, 11, 11).unwrap_or_default();
+        let today = jiff::civil::date(2026, 11, 11);
         let (from, to) = range(None, None, today).unwrap_or((today, today));
-        assert_eq!((to - from).num_days(), 6);
-        assert!(range(Some(today), Some(today - Duration::days(1)), today).is_err());
-        assert!(range(Some(today - Duration::days(365)), Some(today), today).is_ok());
-        assert!(range(Some(today - Duration::days(366)), Some(today), today).is_err());
+        assert_eq!(i64::from((to - from).get_days()), 6);
+        assert!(range(Some(today), Some(today - Span::new().days(1)), today).is_err());
+        assert!(range(Some(today - Span::new().days(365)), Some(today), today).is_ok());
+        assert!(range(Some(today - Span::new().days(366)), Some(today), today).is_err());
     }
 
     #[test]
@@ -1486,8 +1485,8 @@ mod tests {
     fn row(action: Action, root: bool, keys: &[&str], after: Option<Value>) -> Row {
         Row {
             id: Uuid::now_v7(),
-            at: DateTime::<Utc>::UNIX_EPOCH,
-            day: NaiveDate::default(),
+            at: Timestamp::UNIX_EPOCH,
+            day: Date::default(),
             actor_kind: "user".to_owned(),
             actor_user_id: Some(Uuid::nil()),
             actor_name: None,
@@ -1791,7 +1790,7 @@ mod tests {
     #[test]
     fn rows_of_another_instant_or_person_never_fold() {
         let mut later = row(Action::SaleCreate, false, &["s1"], None);
-        later.at += Duration::seconds(1);
+        later.at += jiff::SignedDuration::from_secs(1);
         let mut by_other = row(Action::SaleCreate, false, &["s1"], None);
         by_other.actor_user_id = Some(Uuid::now_v7());
         let lines = fold(
@@ -1950,7 +1949,7 @@ mod tests {
                 &[],
                 Some(json!({"name": name, "sort_order": order})),
             );
-            r.at = DateTime::<Utc>::UNIX_EPOCH + Duration::seconds(seconds);
+            r.at = Timestamp::UNIX_EPOCH + jiff::SignedDuration::from_secs(seconds);
             r
         };
         let moved = || group(Action::CatalogCategoryUpdate, 3, "Gội đầu dưỡng sinh", 3);

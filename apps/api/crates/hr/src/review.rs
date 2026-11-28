@@ -6,7 +6,7 @@ use crate::month::Month;
 use crate::period;
 use crate::repo::{self, Cell, ReviewRow};
 use crate::scope::RecordScope;
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use org::profile::Profile;
@@ -24,7 +24,7 @@ pub const MAX_NOTE_CHARS: usize = 500;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct DailyReview {
     pub staff_id: Uuid,
-    pub date: NaiveDate,
+    pub date: Date,
     pub compliments: u32,
     pub complaints: u32,
     pub note: Option<String>,
@@ -46,7 +46,7 @@ impl From<ReviewRow> for DailyReview {
 #[derive(Debug, Clone)]
 pub struct ReviewEntry {
     pub staff_id: Uuid,
-    pub date: NaiveDate,
+    pub date: Date,
     pub compliments: u32,
     pub complaints: u32,
     pub note: Option<String>,
@@ -58,7 +58,7 @@ impl ReviewEntry {
     }
 }
 
-fn validate(entries: &[ReviewEntry], today: NaiveDate, staff: &[Profile]) -> Result<(), AppError> {
+fn validate(entries: &[ReviewEntry], today: Date, staff: &[Profile]) -> Result<(), AppError> {
     let mut errors = Vec::new();
     if entries.is_empty() || entries.len() > MAX_ENTRIES {
         errors.push(FieldError::new("entries", "count"));
@@ -117,7 +117,7 @@ pub async fn reviews_in(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct ReviewSheet {
     pub month: String,
-    pub today: NaiveDate,
+    pub today: Date,
     pub closed: bool,
     pub staff: Vec<StaffReviews>,
 }

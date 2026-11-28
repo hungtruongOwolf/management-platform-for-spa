@@ -242,11 +242,11 @@ pub(crate) async fn write_pending(tx: &mut TenantTx) -> Result<(), AppError> {
             p.after,
             p.reason,
             p.ip,
-            tx.clock,
+            tx.clock.map(jiff_sqlx::Timestamp::from),
         )
         .fetch_one(tx.conn())
         .await?;
-        tx.clock.get_or_insert(at);
+        tx.clock.get_or_insert(at.to_jiff());
     }
     Ok(())
 }

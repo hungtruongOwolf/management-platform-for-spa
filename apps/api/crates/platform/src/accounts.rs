@@ -11,8 +11,8 @@ use crate::audit::{self, PlatformEntry};
 use crate::auth::OperatorSession;
 use crate::gate_refusal;
 use crate::tenants::Reason;
-use chrono::{DateTime, Utc};
 use identity::account::TemporaryPassword;
+use jiff::Timestamp;
 use kernel::audit::Action;
 use kernel::{AppError, FieldError, PhoneE164};
 use serde::{Deserialize, Serialize};
@@ -42,10 +42,12 @@ pub struct AccountRow {
     /// `active` | `disabled` (locked by an operator).
     pub status: String,
     /// Temporarily locked after wrong passwords, until then.
-    pub locked_until: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub locked_until: Option<Timestamp>,
     pub mfa_enabled: bool,
     pub must_change_password: bool,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
     pub memberships: Vec<AccountMembership>,
 }
 
@@ -91,10 +93,10 @@ struct UserRow {
     full_name: String,
     phone_e164: String,
     status: String,
-    locked_until: Option<DateTime<Utc>>,
+    locked_until: Option<jiff_sqlx::Timestamp>,
     mfa_enabled: bool,
     must_change_password: bool,
-    created_at: DateTime<Utc>,
+    created_at: Timestamp,
 }
 
 fn row(user: UserRow, memberships: &[Membership]) -> AccountRow {
@@ -106,7 +108,7 @@ fn row(user: UserRow, memberships: &[Membership]) -> AccountRow {
         full_name: user.full_name,
         phone,
         status: user.status,
-        locked_until: user.locked_until,
+        locked_until: user.locked_until.map(jiff_sqlx::Timestamp::to_jiff),
         mfa_enabled: user.mfa_enabled,
         must_change_password: user.must_change_password,
         created_at: user.created_at,

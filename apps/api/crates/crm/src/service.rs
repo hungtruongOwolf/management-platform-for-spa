@@ -4,7 +4,7 @@
 use crate::cipher::{FieldCipher, customer_aad};
 use crate::repo::{self, CustomerFields, CustomerRow, SummaryRow};
 use crate::text::{clean_name, like_escape, search_key};
-use chrono::{Datelike, NaiveDate};
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry, REDACTED};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantTx};
@@ -47,7 +47,7 @@ pub struct ProfileInput {
     pub gender: Option<Gender>,
     pub birth_year: Option<i16>,
     /// Date of birth (birthday promotions later). Sets `birth_year` when that is left out.
-    pub birth_date: Option<NaiveDate>,
+    pub birth_date: Option<Date>,
     pub address: Option<String>,
     pub source: Option<String>,
     pub note: Option<String>,
@@ -63,7 +63,7 @@ pub fn label(full_name: Option<&str>) -> &str {
 }
 
 /// Oldest plausible age for a date of birth.
-const MAX_AGE_YEARS: i32 = 120;
+const MAX_AGE_YEARS: i16 = 120;
 
 /// A customer as the caller may see it: `health_note` is `None` when the caller lacks permission
 /// (the field is then omitted from the response entirely, AC2.6).
@@ -103,7 +103,7 @@ fn optional(text: Option<&String>) -> Option<String> {
 }
 
 /// Field rules of a profile. `today` is the spa's business day (a birth date is never after it).
-fn validate(input: &ProfileInput, today: NaiveDate) -> Result<Clean, AppError> {
+fn validate(input: &ProfileInput, today: Date) -> Result<Clean, AppError> {
     let mut errors = Vec::new();
     let full_name = input
         .full_name
@@ -136,15 +136,18 @@ fn validate(input: &ProfileInput, today: NaiveDate) -> Result<Clean, AppError> {
     }
     let mut birth_year = input.birth_year;
     if let Some(born) = input.birth_date {
+        // 29 February has no counterpart in a common year: the floor stays today, as before.
         let floor = today
-            .with_year(today.year() - MAX_AGE_YEARS)
+            .with()
+            .year(today.year() - MAX_AGE_YEARS)
+            .build()
             .unwrap_or(today);
         if born > today {
             errors.push(FieldError::new("birth_date", "in_future"));
         } else if born < floor {
             errors.push(FieldError::new("birth_date", "too_old"));
         }
-        let year = i16::try_from(born.year()).ok();
+        let year = Some(born.year());
         match input.birth_year {
             None => birth_year = year,
             Some(y) if Some(y) != year => {
@@ -182,8 +185,8 @@ fn validate(input: &ProfileInput, today: NaiveDate) -> Result<Clean, AppError> {
     })
 }
 
-async fn spa_today(tx: &mut TenantTx) -> Result<NaiveDate, AppError> {
-    Ok(kernel::tenant::profile(tx).await?.business_date.as_naive())
+async fn spa_today(tx: &mut TenantTx) -> Result<Date, AppError> {
+    Ok(kernel::tenant::profile(tx).await?.business_date.as_date())
 }
 
 fn clean_health_note(note: Option<&str>) -> Result<Option<String>, AppError> {

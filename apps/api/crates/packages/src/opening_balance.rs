@@ -5,10 +5,10 @@
 
 use crate::http::CustomerPackageDto;
 use crate::service::{self, NewItem, NewPackage, Origin};
-use chrono::NaiveDate;
 use crm::FieldCipher;
 use crm::http::CustomerCreate;
 use crm::service::ProfileInput;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use serde::{Deserialize, Serialize};
@@ -49,12 +49,12 @@ pub struct OpeningPackageCreate {
     #[serde(default)]
     pub paid_amount: i64,
     /// Day it was paid (the paper date), required when `paid_amount` > 0; not in the future.
-    pub paid_on: Option<NaiveDate>,
+    pub paid_on: Option<Date>,
     /// Default `cash`.
     pub method: Option<PaperMethodDto>,
     /// Original registration date (not in the future).
-    pub starts_on: NaiveDate,
-    pub expires_on: Option<NaiveDate>,
+    pub starts_on: Date,
+    pub expires_on: Option<Date>,
     pub items: Vec<OpeningItemCreate>,
 }
 
@@ -79,16 +79,16 @@ impl PaperMethodDto {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PaperPayment {
     pub amount: Money,
-    pub paid_on: NaiveDate,
+    pub paid_on: Date,
     pub method: PaperMethodDto,
 }
 
 /// Checks a paper payment; `None` = nothing was paid. Field names are relative to the package.
 pub fn paper_payment(
     amount: i64,
-    paid_on: Option<NaiveDate>,
+    paid_on: Option<Date>,
     method: Option<PaperMethodDto>,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Option<PaperPayment>, Vec<FieldError>> {
     let mut errors = Vec::new();
     let amount = match Money::vnd(amount) {
@@ -176,7 +176,7 @@ async fn build(
     tx: &mut TenantTx,
     customer_id: Uuid,
     p: &OpeningPackageCreate,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<(NewPackage, Option<PaperPayment>), AppError> {
     let mut errors = Vec::new();
     let plan = match p.package_plan_id {
@@ -291,7 +291,7 @@ pub async fn import_in(
     cipher: &FieldCipher,
     actor: &Actor,
     input: &OpeningBalanceCreate,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Imported, AppError> {
     actor.require(Permission::OpeningBalanceImport)?;
     let mut shape = Vec::new();
@@ -386,7 +386,7 @@ pub async fn import_in(
 pub async fn dto(
     tx: &mut TenantTx,
     imported: &Imported,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<OpeningBalanceDto, AppError> {
     let mut customer_packages = Vec::with_capacity(imported.packages.len());
     for (id, _) in &imported.packages {

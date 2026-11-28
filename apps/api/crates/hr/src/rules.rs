@@ -4,7 +4,7 @@
 
 use crate::attendance::LeaveCode;
 use crate::repo;
-use chrono::NaiveTime;
+use jiff::civil::Time;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ pub struct PayrollRules {
     /// Shift start used when a staff member has none (`HH:MM`, sheet: 09:00).
     #[schema(value_type = String, example = "09:00")]
     #[serde(with = "hhmm")]
-    pub default_shift_start: NaiveTime,
+    pub default_shift_start: Time,
     /// Minutes late that do not count as late (⚠️ #4; default 0: every minute is recorded).
     pub late_grace_minutes: u32,
     /// Deduction per late arrival beyond the grace (⚠️ #4; default 0đ: lateness is only recorded).
@@ -73,7 +73,7 @@ impl Default for PayrollRules {
         Self {
             free_leave_days: 2,
             free_leave_codes: vec![LeaveCode::LeaveP, LeaveCode::LeaveDx, LeaveCode::AbsentK],
-            default_shift_start: NaiveTime::from_hms_opt(9, 0, 0).unwrap_or(NaiveTime::MIN),
+            default_shift_start: jiff::civil::time(9, 0, 0, 0),
             late_grace_minutes: 0,
             late_penalty_amount: 0,
             commission_on_bonus_sessions: false,
@@ -86,16 +86,16 @@ impl Default for PayrollRules {
 }
 
 mod hhmm {
-    use chrono::NaiveTime;
+    use jiff::civil::Time;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(t: &NaiveTime, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&t.format("%H:%M").to_string())
+    pub fn serialize<S: Serializer>(t: &Time, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&t.strftime("%H:%M").to_string())
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<NaiveTime, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Time, D::Error> {
         let raw = String::deserialize(d)?;
-        NaiveTime::parse_from_str(&raw, "%H:%M").map_err(serde::de::Error::custom)
+        Time::strptime("%H:%M", &raw).map_err(serde::de::Error::custom)
     }
 }
 
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(partial.late_grace_minutes, 5);
         assert_eq!(partial.free_leave_days, 2);
         assert_eq!(
-            partial.default_shift_start.format("%H:%M").to_string(),
+            partial.default_shift_start.strftime("%H:%M").to_string(),
             "09:00"
         );
         assert!(serde_json::from_value::<PayrollRules>(serde_json::json!({"x": 1})).is_err());

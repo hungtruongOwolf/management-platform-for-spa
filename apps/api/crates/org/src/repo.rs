@@ -1,6 +1,8 @@
 //! Staff SQL. Tenant-scoped explicitly; RLS is the second layer.
 
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use jiff::Timestamp;
+use jiff::civil::{Date, Time};
+use jiff_sqlx::ToSqlx;
 use kernel::{AppError, TenantTx};
 use uuid::Uuid;
 
@@ -92,11 +94,11 @@ pub struct ProfileRow {
     pub position: String,
     pub phone_e164: Option<String>,
     pub status: String,
-    pub joined_on: Option<NaiveDate>,
-    pub left_on: Option<NaiveDate>,
+    pub joined_on: Option<jiff_sqlx::Date>,
+    pub left_on: Option<jiff_sqlx::Date>,
     pub user_id: Option<Uuid>,
     pub user_name: Option<String>,
-    pub shift_start: Option<NaiveTime>,
+    pub shift_start: Option<jiff_sqlx::Time>,
     pub note: Option<String>,
     pub version: i64,
     /// The linked login's role name(s); shown instead of `position` while linked.
@@ -183,8 +185,8 @@ pub struct ProfileWrite<'a> {
     pub position: &'a str,
     pub phone_e164: Option<&'a str>,
     /// Start of the current (latest) period, mirrored on the staff row.
-    pub joined_on: Option<NaiveDate>,
-    pub shift_start: Option<NaiveTime>,
+    pub joined_on: Option<Date>,
+    pub shift_start: Option<Time>,
     pub note: Option<&'a str>,
 }
 
@@ -207,9 +209,9 @@ pub async fn insert_profile(
         w.full_name,
         w.position,
         w.phone_e164,
-        w.joined_on,
+        w.joined_on.map(ToSqlx::to_sqlx),
         user_id,
-        w.shift_start,
+        w.shift_start.map(ToSqlx::to_sqlx),
         w.note
     )
     .execute(tx.conn())
@@ -240,8 +242,8 @@ pub async fn update_profile(
         w.full_name,
         w.position,
         w.phone_e164,
-        w.joined_on,
-        w.shift_start,
+        w.joined_on.map(ToSqlx::to_sqlx),
+        w.shift_start.map(ToSqlx::to_sqlx),
         w.note
     )
     .execute(tx.conn())
@@ -276,8 +278,8 @@ pub async fn set_mirror(
     tx: &mut TenantTx,
     id: Uuid,
     version: i64,
-    joined_on: Option<NaiveDate>,
-    left_on: Option<NaiveDate>,
+    joined_on: Option<Date>,
+    left_on: Option<Date>,
 ) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     let done = sqlx::query!(
@@ -288,8 +290,8 @@ pub async fn set_mirror(
         tenant,
         id,
         version,
-        joined_on,
-        left_on
+        joined_on.map(ToSqlx::to_sqlx),
+        left_on.map(ToSqlx::to_sqlx)
     )
     .execute(tx.conn())
     .await?;
@@ -414,8 +416,8 @@ pub async fn login_manages_staff(tx: &mut TenantTx, user_id: Uuid) -> Result<boo
 pub struct PeriodRow {
     pub id: Uuid,
     pub staff_id: Uuid,
-    pub started_on: Option<NaiveDate>,
-    pub ended_on: Option<NaiveDate>,
+    pub started_on: Option<jiff_sqlx::Date>,
+    pub ended_on: Option<jiff_sqlx::Date>,
     pub end_reason: Option<String>,
 }
 
@@ -437,7 +439,7 @@ pub async fn periods(tx: &mut TenantTx, staff: Option<Uuid>) -> Result<Vec<Perio
 pub async fn insert_period(
     tx: &mut TenantTx,
     staff: Uuid,
-    started_on: NaiveDate,
+    started_on: Date,
 ) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
@@ -445,7 +447,7 @@ pub async fn insert_period(
         Uuid::now_v7(),
         tenant,
         staff,
-        started_on
+        started_on.to_sqlx()
     )
     .execute(tx.conn())
     .await?;
@@ -456,14 +458,14 @@ pub async fn insert_period(
 pub async fn set_period_start(
     tx: &mut TenantTx,
     period: Uuid,
-    started_on: Option<NaiveDate>,
+    started_on: Option<Date>,
 ) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
         "UPDATE app.staff_employment SET started_on = $3 WHERE tenant_id = $1 AND id = $2 AND ended_on IS NULL",
         tenant,
         period,
-        started_on
+        started_on.map(ToSqlx::to_sqlx)
     )
     .execute(tx.conn())
     .await?;
@@ -473,7 +475,7 @@ pub async fn set_period_start(
 pub async fn end_period(
     tx: &mut TenantTx,
     period: Uuid,
-    ended_on: NaiveDate,
+    ended_on: Date,
     reason: &str,
     by: Uuid,
 ) -> Result<(), AppError> {
@@ -483,7 +485,7 @@ pub async fn end_period(
            WHERE tenant_id = $1 AND id = $2 AND ended_on IS NULL"#,
         tenant,
         period,
-        ended_on,
+        ended_on.to_sqlx(),
         reason,
         by
     )
@@ -494,11 +496,7 @@ pub async fn end_period(
 
 /// Whether anything was recorded for the person after `day`: attendance or a completed visit
 /// they served (ending employment before it would leave that record outside any period).
-pub async fn worked_after(
-    tx: &mut TenantTx,
-    staff: Uuid,
-    day: NaiveDate,
-) -> Result<bool, AppError> {
+pub async fn worked_after(tx: &mut TenantTx, staff: Uuid, day: Date) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_scalar!(
         r#"SELECT (EXISTS (SELECT 1 FROM app.attendance_day
@@ -509,7 +507,7 @@ pub async fn worked_after(
                              AND v.business_date > $3)) AS "e!""#,
         tenant,
         staff,
-        day
+        day.to_sqlx()
     )
     .fetch_one(tx.conn())
     .await?)
@@ -517,8 +515,8 @@ pub async fn worked_after(
 
 pub struct UpcomingBookingRow {
     pub id: Uuid,
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub starts_at: Timestamp,
     /// The customer's name, "Khách vãng lai" for a nameless record, the guest's name for a newcomer.
     pub customer: String,
 }
@@ -528,7 +526,7 @@ pub struct UpcomingBookingRow {
 pub async fn bookings_after(
     tx: &mut TenantTx,
     staff: Uuid,
-    day: NaiveDate,
+    day: Date,
     limit: i64,
 ) -> Result<Vec<UpcomingBookingRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -545,7 +543,7 @@ pub async fn bookings_after(
            LIMIT $4"#,
         tenant,
         staff,
-        day,
+        day.to_sqlx(),
         limit
     )
     .fetch_all(tx.conn())
@@ -555,7 +553,7 @@ pub async fn bookings_after(
 // --------------------------------------------------------------------------------- history
 
 pub struct HistoryRow {
-    pub at: DateTime<Utc>,
+    pub at: Timestamp,
     pub action: String,
     pub actor_name: Option<String>,
     pub before: Option<serde_json::Value>,

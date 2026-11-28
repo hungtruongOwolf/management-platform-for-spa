@@ -1,7 +1,8 @@
 //! SQL for identity. Global tables (accounts, sessions) are queried by unique keys only;
 //! tenant tables (memberships, roles) only inside a `TenantTx`.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use kernel::Feature;
 use kernel::tenant::TenantFacts;
 use kernel::{AppError, Permission, PhoneE164, TenantId, TenantTx, UserId};
@@ -16,7 +17,7 @@ pub struct AccountRow {
     pub phone: String,
     pub password_hash: String,
     pub active: bool,
-    pub locked_until: Option<DateTime<Utc>>,
+    pub locked_until: Option<Timestamp>,
     /// Encrypted TOTP secret (enrolled, or enrollment started but not confirmed).
     pub mfa_secret_ct: Option<Vec<u8>>,
     pub mfa_enabled: bool,
@@ -42,7 +43,7 @@ pub async fn account_by_phone(
         phone: r.phone_e164,
         password_hash: r.password_hash,
         active: r.status == "active",
-        locked_until: r.locked_until,
+        locked_until: r.locked_until.map(jiff_sqlx::Timestamp::to_jiff),
         mfa_secret_ct: r.mfa_secret_ct,
         mfa_enabled: r.mfa_enabled_at.is_some(),
         must_change_password: r.must_change_password,
@@ -64,7 +65,7 @@ pub async fn account_by_id(pool: &PgPool, id: UserId) -> Result<Option<AccountRo
         phone: r.phone_e164,
         password_hash: r.password_hash,
         active: r.status == "active",
-        locked_until: r.locked_until,
+        locked_until: r.locked_until.map(jiff_sqlx::Timestamp::to_jiff),
         mfa_secret_ct: r.mfa_secret_ct,
         mfa_enabled: r.mfa_enabled_at.is_some(),
         must_change_password: r.must_change_password,
@@ -87,13 +88,13 @@ pub async fn increment_failed_logins(pool: &PgPool, id: UserId) -> Result<i32, A
 pub async fn lock_account_until(
     pool: &PgPool,
     id: UserId,
-    until: DateTime<Utc>,
+    until: Timestamp,
 ) -> Result<(), AppError> {
     sqlx::query!(
         "UPDATE app.user_account SET locked_until = greatest(locked_until, $2), updated_at = now()
          WHERE id = $1",
         id.as_uuid(),
-        until
+        until.to_sqlx()
     )
     .execute(pool)
     .await?;
@@ -115,11 +116,11 @@ pub struct NewSession<'a> {
     pub token_hash: &'a [u8; 32],
     pub user_id: UserId,
     pub active_tenant: Option<TenantId>,
-    pub idle_expires_at: DateTime<Utc>,
-    pub absolute_expires_at: DateTime<Utc>,
+    pub idle_expires_at: Timestamp,
+    pub absolute_expires_at: Timestamp,
     /// When the user last proved the password (and second factor). The column has no default
     /// (migration 0011): a token rotation must carry the old value, never get a free "now".
-    pub recent_auth_at: DateTime<Utc>,
+    pub recent_auth_at: Timestamp,
     pub ip: Option<std::net::IpAddr>,
     pub user_agent: Option<&'a str>,
     /// Password accepted, second factor still owed.
@@ -137,9 +138,9 @@ pub async fn insert_session(pool: &PgPool, s: NewSession<'_>) -> Result<Uuid, Ap
         &s.token_hash[..],
         s.user_id.as_uuid(),
         s.active_tenant.map(|t| t.as_uuid()),
-        s.idle_expires_at,
-        s.absolute_expires_at,
-        s.recent_auth_at,
+        s.idle_expires_at.to_sqlx(),
+        s.absolute_expires_at.to_sqlx(),
+        s.recent_auth_at.to_sqlx(),
         s.ip.map(IpNetwork::from),
         s.user_agent,
         s.mfa_pending,
@@ -153,9 +154,9 @@ pub struct SessionRow {
     pub id: Uuid,
     pub user_id: UserId,
     pub active_tenant: Option<TenantId>,
-    pub last_seen_at: DateTime<Utc>,
-    pub absolute_expires_at: DateTime<Utc>,
-    pub recent_auth_at: DateTime<Utc>,
+    pub last_seen_at: Timestamp,
+    pub absolute_expires_at: Timestamp,
+    pub recent_auth_at: Timestamp,
     pub mfa_pending: bool,
     pub mfa_enrolled: bool,
     pub must_change_password: bool,
@@ -218,9 +219,9 @@ pub async fn session_actor(
             id: r.session_id,
             user_id: UserId::from_uuid(r.user_id),
             active_tenant,
-            last_seen_at: r.last_seen_at,
-            absolute_expires_at: r.absolute_expires_at,
-            recent_auth_at: r.recent_auth_at,
+            last_seen_at: r.last_seen_at.to_jiff(),
+            absolute_expires_at: r.absolute_expires_at.to_jiff(),
+            recent_auth_at: r.recent_auth_at.to_jiff(),
             mfa_pending: r.mfa_pending,
             mfa_enrolled: r.mfa_enrolled,
             must_change_password: r.must_change_password,
@@ -246,12 +247,12 @@ fn known_permissions(names: &[String]) -> Vec<Permission> {
 pub async fn touch_session(
     pool: &PgPool,
     id: Uuid,
-    idle_expires_at: DateTime<Utc>,
+    idle_expires_at: Timestamp,
 ) -> Result<(), AppError> {
     sqlx::query!(
         "UPDATE app.session SET last_seen_at = now(), idle_expires_at = least($2, absolute_expires_at) WHERE id = $1",
         id,
-        idle_expires_at
+        idle_expires_at.to_sqlx()
     )
     .execute(pool)
     .await?;
@@ -713,8 +714,8 @@ pub async fn open_reset_request(tx: &mut TenantTx, user: UserId) -> Result<bool,
 pub struct ResetRequestRow {
     pub id: Uuid,
     pub user_id: Uuid,
-    pub requested_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub requested_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 /// Open, unexpired requests of the transaction's spa, oldest first.

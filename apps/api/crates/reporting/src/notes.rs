@@ -15,8 +15,10 @@
 
 use crate::cursor;
 use crate::notes_dto::{NoteEntry, NoteKind, NotesPage, NotesQuery};
-use chrono::{DateTime, Duration, NaiveDate, Utc};
 use crm::text::{like_escape, search_key};
+use jiff::civil::Date;
+use jiff::{Span, Timestamp};
+use jiff_sqlx::ToSqlx;
 use kernel::crypto::FieldCipher;
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use sqlx::PgPool;
@@ -115,17 +117,13 @@ fn text_filter(q: Option<&str>) -> Result<Option<(String, String)>, AppError> {
 }
 
 /// `from` / `to` with their defaults and bounds.
-fn range(
-    from: Option<NaiveDate>,
-    to: Option<NaiveDate>,
-    today: NaiveDate,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
+fn range(from: Option<Date>, to: Option<Date>, today: Date) -> Result<(Date, Date), AppError> {
     let to = to.unwrap_or(today);
-    let from = from.unwrap_or(to - Duration::days(DEFAULT_RANGE_DAYS - 1));
+    let from = from.unwrap_or(to - Span::new().days(DEFAULT_RANGE_DAYS - 1));
     if from > to {
         return Err(field("from", "after_to"));
     }
-    if (to - from).num_days() >= MAX_RANGE_DAYS {
+    if i64::from((to - from).get_days()) >= MAX_RANGE_DAYS {
         return Err(field("to", "range_too_long"));
     }
     Ok((from, to))
@@ -133,8 +131,8 @@ fn range(
 
 struct NoteRow {
     kind: String,
-    at: DateTime<Utc>,
-    day: NaiveDate,
+    at: Timestamp,
+    day: Date,
     key: String,
     body: Option<String>,
     ct: Option<Vec<u8>>,
@@ -145,13 +143,13 @@ struct NoteRow {
     author_name: Option<String>,
     visit_id: Option<Uuid>,
     detail: Option<String>,
-    about: Option<NaiveDate>,
+    about: Option<jiff_sqlx::Date>,
     name_hit: bool,
 }
 
 struct Filters<'a> {
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
     allowed: Allowed,
     staff_id: Option<Uuid>,
     customer_id: Option<Uuid>,
@@ -162,7 +160,7 @@ struct Filters<'a> {
 }
 
 /// The sort key of the last row scanned: business day, instant, kind, key.
-type After = Option<(NaiveDate, DateTime<Utc>, String, String)>;
+type After = Option<(Date, Timestamp, String, String)>;
 
 fn encode(after: After) -> Option<String> {
     after.map(|(d, t, k, key)| cursor::encode(&[d.to_string(), cursor::instant_part(t), k, key]))
@@ -365,8 +363,8 @@ async fn fetch(
            LIMIT $16"#,
         tenant,
         tz,
-        f.from,
-        f.to,
+        f.from.to_sqlx(),
+        f.to.to_sqlx(),
         a.may(NoteKind::VisitNote),
         a.may(NoteKind::CustomerNote),
         a.may(NoteKind::HealthNote),
@@ -380,10 +378,10 @@ async fn fetch(
         f.customer_id,
         limit,
         f.pattern,
-        a_at,
+        a_at.map(ToSqlx::to_sqlx),
         a_kind,
         a_key,
-        a_day,
+        a_day.map(ToSqlx::to_sqlx),
         a.may(NoteKind::AppointmentNote),
         a.may(NoteKind::EvaluationNote),
         a.may(NoteKind::StaffNote),
@@ -444,7 +442,7 @@ fn entry(row: NoteRow, kind: NoteKind, text: String) -> NoteEntry {
         author_name: row.author_name,
         visit_id: row.visit_id,
         detail: row.detail,
-        about_date: row.about,
+        about_date: row.about.map(jiff_sqlx::Date::to_jiff),
     }
 }
 
@@ -481,8 +479,8 @@ pub async fn list(
 
     let mut tx = TenantTx::for_actor(pool, actor).await?;
     let profile = kernel::tenant::profile(&mut tx).await?;
-    let (from, to) = range(query.from, query.to, profile.business_date.as_naive())?;
-    let tz = profile.timezone.name();
+    let (from, to) = range(query.from, query.to, profile.business_date.as_date())?;
+    let tz = profile.zone_name();
     let tenant = tx.tenant().as_uuid();
     let hidden_staff = org::profile::hidden_from(&mut tx, actor).await?;
     let filters = Filters {
@@ -560,7 +558,7 @@ pub async fn list(
 mod tests {
     use super::*;
 
-    fn day(s: &str) -> NaiveDate {
+    fn day(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 

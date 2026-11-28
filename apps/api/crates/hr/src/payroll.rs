@@ -10,7 +10,8 @@ use crate::month::Month;
 use crate::period::{self, PeriodInfo};
 use crate::repo;
 use crate::rules::{self, PayrollRules};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, Permission, TenantTx};
@@ -45,7 +46,8 @@ pub struct PayrollTotals {
 pub struct PayrollMonth {
     pub month: String,
     pub closed: bool,
-    pub closed_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub closed_at: Option<Timestamp>,
     pub closed_by_name: Option<String>,
     /// The month has ended (it can be closed).
     pub ended: bool,
@@ -83,7 +85,7 @@ fn totals(slips: &[Payslip]) -> PayrollTotals {
 /// The payroll month that settles a refund dated `day` for the closer of the refunded package
 /// (ADR-0019 D2b): the refund's own month when they work in it, else the month of their last
 /// working day before it (a leaver's final month); `None` when they had not started yet.
-pub fn settling_month(employment: &Employment, day: NaiveDate) -> Option<Month> {
+pub fn settling_month(employment: &Employment, day: Date) -> Option<Month> {
     let own = Month::of(day);
     if employment.overlaps(own.first_day(), own.last_day()) {
         return Some(own);
@@ -110,7 +112,7 @@ pub struct LeaverRefund {
     pub description: String,
     /// The amount refunded (positive).
     pub amount: i64,
-    pub refund_date: NaiveDate,
+    pub refund_date: Date,
     /// `YYYY-MM` of the payslip it is deducted from (the closer's last month, open when the
     /// refund was made); `null` = not clawed back: that month was already closed, the spa bears
     /// it.
@@ -218,7 +220,7 @@ async fn compute_in(
     tx: &mut TenantTx,
     month: Month,
     only: Option<Uuid>,
-    today: NaiveDate,
+    today: Date,
     rules: &PayrollRules,
 ) -> Result<(Vec<Payslip>, Vec<Uuid>), AppError> {
     let profiles: Vec<Profile> = org::profile::profiles_in(tx)
@@ -233,7 +235,8 @@ async fn compute_in(
     let upsell = repo::upsell_lines(tx, from, to).await?;
     // D2b: a refund after this month of a package closed by someone whose last month this is
     // comes back from this payslip while the month is open.
-    let later: Vec<repo::PackageRefundRow> = match to.succ_opt().filter(|next| *next <= today) {
+    let later: Vec<repo::PackageRefundRow> = match to.tomorrow().ok().filter(|next| *next <= today)
+    {
         None => Vec::new(),
         Some(next) => repo::package_refunds_between(tx, next, today)
             .await?
@@ -337,7 +340,7 @@ pub async fn payslips_in(
     month: Month,
     only: Option<Uuid>,
     info: &PeriodInfo,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Vec<Payslip>, AppError> {
     if info.closed {
         parse_slips(repo::payslips(tx, month.first_day(), only).await?)
@@ -507,11 +510,10 @@ pub async fn close(
 mod tests {
     use super::*;
     use crate::evaluation::Level;
-    use chrono::Datelike;
     use org::Period;
     use org::profile::PayTerms;
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 
@@ -593,7 +595,7 @@ mod tests {
     #[test]
     fn the_table_columns_add_up_to_net_pay_on_every_row_and_in_the_totals() {
         let month = Month::of(d("2026-10-01"));
-        let days = |leave: &[u32], late: u32| -> Vec<Day> {
+        let days = |leave: &[i8], late: u32| -> Vec<Day> {
             month
                 .iter_days()
                 .map(|date| Day {

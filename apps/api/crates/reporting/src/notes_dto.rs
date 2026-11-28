@@ -1,6 +1,7 @@
 //! Shapes of `GET /notes` ("Nhật ký ghi chú", spec management-views §10).
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -101,9 +102,9 @@ impl NoteKind {
 #[serde(deny_unknown_fields)]
 pub struct NotesQuery {
     /// First business day (inclusive). Default: 29 days before `to`.
-    pub from: Option<NaiveDate>,
+    pub from: Option<Date>,
     /// Last business day (inclusive). Default: today. At most 366 days after `from`.
-    pub to: Option<NaiveDate>,
+    pub to: Option<Date>,
     /// Only notes of this kind (still only the kinds the caller may read).
     pub kind: Option<NoteKind>,
     /// Notes about this staff member, written by their login, or on visits they served.
@@ -124,9 +125,10 @@ pub struct NoteEntry {
     pub kind: NoteKind,
     /// When it was written (a customer profile / health note or a staff HR note: the profile's
     /// last change, EM Q-N2; an end of employment: the start of its last day).
-    pub at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub at: Timestamp,
     /// The business day it belongs to (the visit's, the attendance day, the contact day…).
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub customer_id: Option<Uuid>,
@@ -155,13 +157,13 @@ pub struct NoteEntry {
     /// (`appointment_note`, `appointment_reason`), the evaluated month's first day
     /// (`evaluation_note`), the new expiry (`package_extension`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub about_date: Option<NaiveDate>,
+    pub about_date: Option<Date>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct NotesPage {
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     pub items: Vec<NoteEntry>,
     /// The kinds this caller may read (the type filter offers only these).
     pub kinds: Vec<NoteKind>,

@@ -7,11 +7,12 @@ use crate::audit::{self, PlatformEntry};
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, header};
-use chrono::{DateTime, Duration, Utc};
 use identity::mfa::{self, SecondFactor, TotpSecret};
 use identity::service::ClientMeta;
 use identity::token::{self, SessionToken};
 use identity::{lockout, password};
+use jiff::{SignedDuration, Timestamp};
+use jiff_sqlx::ToSqlx;
 use kernel::crypto::FieldCipher;
 use kernel::{AppError, FieldError};
 use serde::Serialize;
@@ -79,7 +80,8 @@ pub struct OperatorSummary {
 pub struct OperatorMe {
     pub operator: OperatorSummary,
     /// Writes are allowed until then without a new step-up (`null` = step-up needed now).
-    pub step_up_until: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub step_up_until: Option<Timestamp>,
 }
 
 /// What the browser does after the password step: always a second factor.
@@ -115,16 +117,16 @@ pub struct OperatorSession {
     pub operator_id: Uuid,
     /// SHA-256 of the cookie secret: what the platform DB functions check (`platform_gate`).
     pub token_hash: [u8; 32],
-    pub recent_auth_at: DateTime<Utc>,
+    pub recent_auth_at: Timestamp,
     pub meta: ClientMeta,
 }
 
 impl OperatorSession {
-    pub fn step_up_until(&self) -> DateTime<Utc> {
-        self.recent_auth_at + Duration::minutes(STEP_UP_MINUTES)
+    pub fn step_up_until(&self) -> Timestamp {
+        self.recent_auth_at + SignedDuration::from_mins(STEP_UP_MINUTES)
     }
 
-    pub fn stepped_up(&self, now: DateTime<Utc>) -> bool {
+    pub fn stepped_up(&self, now: Timestamp) -> bool {
         now < self.step_up_until()
     }
 }
@@ -141,9 +143,9 @@ pub struct PendingOperator {
 struct SessionRow {
     id: Uuid,
     operator_id: Uuid,
-    last_seen_at: DateTime<Utc>,
-    absolute_expires_at: DateTime<Utc>,
-    recent_auth_at: DateTime<Utc>,
+    last_seen_at: Timestamp,
+    absolute_expires_at: Timestamp,
+    recent_auth_at: Timestamp,
     mfa_pending: bool,
     mfa_enrolled: bool,
 }
@@ -162,13 +164,16 @@ async fn live_session(pool: &PgPool, hash: &[u8; 32]) -> Result<SessionRow, AppE
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::Unauthenticated)?;
-    let now = Utc::now();
-    if !row.mfa_pending && now - row.last_seen_at > Duration::seconds(TOUCH_INTERVAL_SECONDS) {
-        let idle = (now + Duration::minutes(IDLE_TIMEOUT_MINUTES)).min(row.absolute_expires_at);
+    let now = Timestamp::now();
+    if !row.mfa_pending
+        && now.duration_since(row.last_seen_at) > SignedDuration::from_secs(TOUCH_INTERVAL_SECONDS)
+    {
+        let idle =
+            (now + SignedDuration::from_mins(IDLE_TIMEOUT_MINUTES)).min(row.absolute_expires_at);
         sqlx::query!(
             "UPDATE app.platform_session SET last_seen_at = now(), idle_expires_at = $2 WHERE id = $1",
             row.id,
-            idle
+            idle.to_sqlx()
         )
         .execute(pool)
         .await?;
@@ -221,7 +226,7 @@ where
         let pool = PgPool::from_ref(state);
         let session = resolve(&pool, &secret, identity::http::client_meta(parts)).await?;
         let safe = matches!(parts.method, Method::GET | Method::HEAD);
-        if !safe && !session.stepped_up(Utc::now()) {
+        if !safe && !session.stepped_up(Timestamp::now()) {
             return Err(AppError::Forbidden {
                 code: "platform.step_up_required",
             });
@@ -284,7 +289,7 @@ struct OperatorRow {
     full_name: String,
     password_hash: String,
     active: bool,
-    locked_until: Option<DateTime<Utc>>,
+    locked_until: Option<jiff_sqlx::Timestamp>,
     mfa_secret_ct: Option<Vec<u8>>,
     mfa_enabled: bool,
 }
@@ -338,15 +343,15 @@ async fn issue_session(
     issue: Issue,
 ) -> Result<SessionToken, AppError> {
     let token = token::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (idle, absolute) = match issue {
         Issue::MfaPending => {
-            let deadline = now + Duration::minutes(MFA_PENDING_MINUTES);
+            let deadline = now + SignedDuration::from_mins(MFA_PENDING_MINUTES);
             (deadline, deadline)
         }
         Issue::Authenticated => (
-            now + Duration::minutes(IDLE_TIMEOUT_MINUTES),
-            now + Duration::hours(ABSOLUTE_TIMEOUT_HOURS),
+            now + SignedDuration::from_mins(IDLE_TIMEOUT_MINUTES),
+            now + SignedDuration::from_hours(ABSOLUTE_TIMEOUT_HOURS),
         ),
     };
     let ip = meta.ip.map(sqlx::types::ipnetwork::IpNetwork::from);
@@ -358,9 +363,9 @@ async fn issue_session(
         Uuid::now_v7(),
         &token.hash[..],
         operator,
-        idle,
-        absolute,
-        now,
+        idle.to_sqlx(),
+        absolute.to_sqlx(),
+        now.to_sqlx(),
         matches!(issue, Issue::MfaPending),
         ip,
         meta.user_agent.as_deref()
@@ -388,11 +393,11 @@ async fn record_failure(pool: &PgPool, operator: Uuid) -> Result<(), AppError> {
     )
     .fetch_one(pool)
     .await?;
-    if let Some(until) = lockout::lock_until(failures, Utc::now()) {
+    if let Some(until) = lockout::lock_until(failures, Timestamp::now()) {
         sqlx::query!(
             "UPDATE app.platform_operator SET locked_until = $2 WHERE id = $1",
             operator,
-            until
+            until.to_sqlx()
         )
         .execute(pool)
         .await?;
@@ -440,7 +445,7 @@ pub async fn login(
     };
     let locked = operator
         .locked_until
-        .is_some_and(|until| until > Utc::now());
+        .is_some_and(|until| until > Timestamp::now().to_sqlx());
     let matches = verify_password(password_input, &operator.password_hash).await?;
     if locked || !operator.active || !matches {
         if !locked && !matches {
@@ -468,7 +473,7 @@ pub async fn login(
 }
 
 fn unix_now() -> Result<u64, AppError> {
-    u64::try_from(Utc::now().timestamp()).map_err(|e| AppError::Internal(e.to_string()))
+    u64::try_from(Timestamp::now().as_second()).map_err(|e| AppError::Internal(e.to_string()))
 }
 
 /// TOTP (each step once) or, with `allow_recovery`, a recovery code. `Ok(false)` = wrong.
@@ -529,7 +534,7 @@ async fn pending_operator(
     let operator = operator_by_id(pool, pending.operator_id).await?;
     if operator
         .locked_until
-        .is_some_and(|until| until > Utc::now())
+        .is_some_and(|until| until > Timestamp::now().to_sqlx())
         || !operator.active
     {
         return Err(AppError::InvalidMfaCode);
@@ -715,7 +720,7 @@ pub async fn reauth(
     let operator = operator_by_id(pool, session.operator_id).await?;
     if operator
         .locked_until
-        .is_some_and(|until| until > Utc::now())
+        .is_some_and(|until| until > Timestamp::now().to_sqlx())
     {
         return Err(AppError::InvalidCredentials);
     }
@@ -748,7 +753,7 @@ pub async fn logout(pool: &PgPool, secret: &str, meta: &ClientMeta) -> Result<()
 
 pub async fn me(pool: &PgPool, session: &OperatorSession) -> Result<OperatorMe, AppError> {
     let operator = operator_by_id(pool, session.operator_id).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     Ok(OperatorMe {
         operator: summary(&operator),
         step_up_until: session.stepped_up(now).then(|| session.step_up_until()),

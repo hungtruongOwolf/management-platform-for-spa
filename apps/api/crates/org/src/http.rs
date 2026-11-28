@@ -13,9 +13,10 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use identity::AuthUser;
 use identity::account::LoginRole;
+use jiff::Timestamp;
+use jiff::civil::{Date, Time};
 use kernel::http::{IfMatch, IfMatchOrNew, etag};
 use kernel::{AppError, FieldError};
 use serde::{Deserialize, Serialize};
@@ -124,9 +125,9 @@ impl From<PayTerms> for StaffPayDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct EmploymentPeriodDto {
     /// `null` = before the books (start date never recorded).
-    pub started_on: Option<NaiveDate>,
+    pub started_on: Option<Date>,
     /// `null` = still working.
-    pub ended_on: Option<NaiveDate>,
+    pub ended_on: Option<Date>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_reason: Option<String>,
 }
@@ -207,11 +208,11 @@ pub struct StaffProfileDto {
     pub position: String,
     pub status: StaffStatusDto,
     /// Start of the current (or, once left, the latest) period: "Ngày vào làm".
-    pub joined_on: Option<NaiveDate>,
+    pub joined_on: Option<Date>,
     /// Start of the first period ("vào làm lần đầu"), differs from `joined_on` after a rehire.
-    pub first_joined_on: Option<NaiveDate>,
+    pub first_joined_on: Option<Date>,
     /// Last day of the latest period, once the person has left.
-    pub left_on: Option<NaiveDate>,
+    pub left_on: Option<Date>,
     /// Oldest first.
     pub periods: Vec<EmploymentPeriodDto>,
     /// Days worked, summed over the periods up to today; `null` = a start date is unknown.
@@ -258,7 +259,7 @@ impl From<ProfileView> for StaffProfileDto {
             tenure_months: v.tenure.map(|t| t.months),
             login_linked: p.user_id.is_some(),
             position_from_account: p.position_from_account,
-            shift_start: p.shift_start.map(|t| t.format("%H:%M").to_string()),
+            shift_start: p.shift_start.map(|t| t.strftime("%H:%M").to_string()),
             version: p.version,
             details: details.then(|| StaffDetailsDto {
                 phone: p.phone.map(|ph| ph.display_national()),
@@ -283,7 +284,7 @@ pub struct StaffProfileWrite {
     pub phone: Option<String>,
     /// Start of the current period; `null` = not recorded (tenure unknown).
     #[serde(default)]
-    pub joined_on: Option<NaiveDate>,
+    pub joined_on: Option<Date>,
     /// `HH:MM`.
     #[serde(default)]
     pub shift_start: Option<String>,
@@ -302,7 +303,7 @@ pub struct StaffCreate {
     pub phone: Option<String>,
     /// First day of work; `null` = not recorded (the UI fills in today).
     #[serde(default)]
-    pub joined_on: Option<NaiveDate>,
+    pub joined_on: Option<Date>,
     /// `HH:MM`.
     #[serde(default)]
     pub shift_start: Option<String>,
@@ -324,7 +325,7 @@ pub struct StaffAccountWrite {
 #[serde(deny_unknown_fields)]
 pub struct StaffEndWrite {
     /// Last working day (≤ today).
-    pub ended_on: NaiveDate,
+    pub ended_on: Date,
     pub reason: String,
     /// `true` = also lock the linked login in this spa ("Khóa tài khoản"). Default `false`: the
     /// login stays, reaching only the person's own past attendance and payslips (ADR-0014).
@@ -336,7 +337,7 @@ pub struct StaffEndWrite {
 #[serde(deny_unknown_fields)]
 pub struct StaffRehireWrite {
     /// First day of the new period (after the last period's end).
-    pub started_on: NaiveDate,
+    pub started_on: Date,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -390,7 +391,8 @@ pub struct StaffChangeDto {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct StaffHistoryEntryDto {
-    pub at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub at: Timestamp,
     /// `staff.create`, `staff.update`, `staff.account_link`, `staff.end`, `staff.rehire`,
     /// `staff.pay_update` (only for `payroll.read`).
     pub action: String,
@@ -421,11 +423,11 @@ impl From<HistoryEntry> for StaffHistoryEntryDto {
 }
 
 /// `HH:MM` (or `HH:MM:SS`) at the boundary.
-pub fn parse_hhmm(field: &str, raw: Option<&str>) -> Result<Option<NaiveTime>, AppError> {
+pub fn parse_hhmm(field: &str, raw: Option<&str>) -> Result<Option<Time>, AppError> {
     match raw.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(None),
-        Some(s) => NaiveTime::parse_from_str(s, "%H:%M")
-            .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S"))
+        Some(s) => Time::strptime("%H:%M", s)
+            .or_else(|_| Time::strptime("%H:%M:%S", s))
             .map(Some)
             .map_err(|_| AppError::Validation(vec![FieldError::new(field, "invalid_time")])),
     }
@@ -702,8 +704,10 @@ pub struct PasswordResetRequestDto {
     pub full_name: String,
     /// The profile of the login, when linked (its sheet holds "Đặt lại").
     pub staff_id: Option<Uuid>,
-    pub requested_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub requested_at: Timestamp,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub expires_at: Timestamp,
 }
 
 impl From<ResetRequest> for PasswordResetRequestDto {
