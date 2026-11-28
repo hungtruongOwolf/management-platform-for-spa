@@ -14,11 +14,11 @@ const PRIZES_MAX = 50;
 type Open = { kind: "add" } | { kind: "edit"; prize: Prize } | { kind: "delete"; prize: Prize } | null;
 
 /**
- * "Giải thưởng" (US3, AC4.1): each prize is a choice for the stage (`aria-pressed`), with its
+ * The "Giải thưởng" tab (US3, AC4.1): each prize is a choice for the stage (`aria-pressed`), with its
  * audience, the slots left, and why it cannot be drawn when it cannot. Edit / delete sit behind ⋯;
  * a prize with a result cannot be deleted, so its menu has no "Xóa".
  */
-export function PrizesCard({
+export function PrizesPanel({
   draw,
   current,
   locked,
@@ -37,11 +37,8 @@ export function PrizesCard({
   const remove = useDrawWrite(draw.id, (prizeId: string) => deletePrize(draw.id, prizeId), close);
 
   return (
-    <section className="card panel" aria-labelledby="ld-prizes-title">
-      <div className="panel-head">
-        <h2 id="ld-prizes-title" className="panel-title">
-          Giải thưởng
-        </h2>
+    <>
+      <div className="ld-panel-head">
         {draw.prizes.length < PRIZES_MAX && (
           <button
             type="button"
@@ -55,6 +52,7 @@ export function PrizesCard({
           </button>
         )}
       </div>
+      <div className="ld-scroll" role="region" aria-label="Các giải thưởng" tabIndex={0}>
       {draw.prizes.length === 0 ? (
         <p className="empty-note">Chưa có giải thưởng. Bấm “Thêm giải thưởng”: tên giải, dành cho ai, số suất.</p>
       ) : (
@@ -115,6 +113,7 @@ export function PrizesCard({
           })}
         </ul>
       )}
+      </div>
       {open?.kind === "add" && <PrizeSheet drawId={draw.id} drawn={false} onClose={close} />}
       {open?.kind === "edit" && (
         <PrizeSheet drawId={draw.id} prize={open.prize} drawn={prizeDrawn(draw, open.prize.id)} onClose={close} />
@@ -133,6 +132,6 @@ export function PrizesCard({
           Giải này chưa có ai trúng. Xóa xong, giải không còn trong chương trình.
         </ConfirmSheet>
       )}
-    </section>
+    </>
   );
 }
