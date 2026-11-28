@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import { useBackdropClose, useModalDialog } from "../../components/useModalDialog";
 import { GENDER_LABEL, wins } from "./draw";
 import type { LuckyDrawDetail, Prize } from "./types";
@@ -36,6 +36,11 @@ export function WinnerDialog({
   const ref = useModalDialog(true);
   const backdrop = useBackdropClose(onClose);
   const id = useId();
+  const primary = useRef<HTMLButtonElement>(null);
+  // After showModal (the effect above): the next step, or "Đóng" when there is none.
+  useEffect(() => {
+    primary.current?.focus();
+  }, []);
   const win = wins(draw).find((w) => w.result.id === resultId);
   if (!win) return null;
   const { person, prize, result } = win;
@@ -78,11 +83,11 @@ export function WinnerDialog({
         )}
         <div className="ld-winner-actions">
           {draw.finished ? (
-            <button type="button" className="btn btn-primary btn-lg btn-block" autoFocus onClick={onSummary}>
+            <button ref={primary} type="button" className="btn btn-primary btn-lg btn-block" onClick={onSummary}>
               Xem tổng kết
             </button>
           ) : next ? (
-            <button type="button" className="btn btn-primary btn-lg btn-block" autoFocus onClick={onNext}>
+            <button ref={primary} type="button" className="btn btn-primary btn-lg btn-block" onClick={onNext}>
               Quay tiếp
             </button>
           ) : (
@@ -100,7 +105,7 @@ export function WinnerDialog({
                 Vắng mặt, trả giải
               </button>
             )}
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
+            <button ref={draw.finished || next ? undefined : primary} type="button" className="btn btn-ghost" onClick={onClose}>
               Đóng
             </button>
           </div>

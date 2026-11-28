@@ -10,6 +10,13 @@ import { OWNER, fakeApi } from "./testServer";
 const at = (path: string) => render(<App history={createMemoryHistory({ initialEntries: [path] })} />);
 const MANAGER = { ...OWNER, permissions: ["customer.read", "visit.read", "report.read"] };
 
+/** The wheel's turning disk on a stage. */
+function diskOf(stage: HTMLElement): HTMLElement {
+  const disk = stage.querySelector<HTMLElement>(".ld-wheel-disk");
+  if (!disk) throw new Error("no wheel disk");
+  return disk;
+}
+
 /** The table row holding `el`. */
 function rowOf(el: HTMLElement): HTMLElement {
   const row = el.closest("tr");
@@ -95,31 +102,53 @@ describe("spin (US4)", () => {
     expect(within(screen.getByRole("region", { name: "Vòng quay" })).getByText("Cổ vai gáy")).toBeInTheDocument();
   });
 
-  it("turns at once, and shows the winner only once the wheel has stopped (AC4.2–4.3)", async () => {
+  it("turns at once, and announces the winner in a popup only once the wheel has stopped (AC4.2–4.3)", async () => {
     const api = fakeApi(OWNER, [DRAW]);
     at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
-    // Busy at once, before the server has answered.
+    // The wheel turns at the press, like the prototype: +6 turns in 4.1 s.
+    const disk = diskOf(stage);
+    expect(disk.style.getPropertyValue("transition")).toContain("4100ms");
+    expect(disk.style.getPropertyPriority("transition")).toBe("important");
+    expect(disk.style.transform).not.toBe("rotate(0deg)");
     expect(within(stage).getByRole("button", { name: "Quay" })).toHaveAttribute("aria-busy", "true");
-    await act(() => vi.advanceTimersByTimeAsync(3900));
+    await act(() => vi.advanceTimersByTimeAsync(4000));
     const spin = api.calls.find((c) => c.path.endsWith("/spins"));
     expect(spin?.body).toEqual({ prize_id: "q1" });
     expect(spin?.headers["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/);
-    expect(within(stage).getByRole("button", { name: "Quay" })).toHaveAttribute("aria-busy", "true");
+    // Answered, but the wheel still turns: nothing shows yet.
     expect(within(stage).getByText("Đang quay…")).toBeInTheDocument();
-    expect(screen.queryByText("Nguyễn Thị Lan", { selector: ".ld-result-name" })).not.toBeInTheDocument();
-    // Nothing else moved yet either: the counts change with the reveal.
+    expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
     expect(screen.getByText("Chưa có ai trúng. Chọn giải rồi bấm “Quay”: người trúng hiện ở đây.")).toBeInTheDocument();
     await act(() => vi.advanceTimersByTimeAsync(600));
-    expect(within(stage).getByText("Nguyễn Thị Lan")).toBeInTheDocument();
-    expect(within(stage).getByText("Cổ vai gáy")).toBeInTheDocument();
+    const popup = screen.getByRole("dialog", { name: "Chúc mừng" });
+    expect(popup).toHaveTextContent("Lượt 1");
+    expect(within(popup).getByText("Nguyễn Thị Lan")).toHaveClass("ld-winner-name");
+    expect(within(popup).getByText("Cổ vai gáy")).toBeInTheDocument();
+    expect(popup).toHaveTextContent("Còn 0/1 suất");
+    // Not under the wheel (EM): a screen reader hears it from the status line.
+    expect(within(stage).getByText("Nguyễn Thị Lan trúng Cổ vai gáy")).toHaveClass("sr-only");
     expect(within(stage).getByRole("button", { name: "Quay tiếp" })).not.toHaveAttribute("aria-busy");
-    const winners = screen.getByRole("table", { name: "Danh sách trúng thưởng" });
-    expect(within(winners).getByText("Nguyễn Thị Lan")).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Người trúng giải Cổ vai gáy" })).getByText("Nguyễn Thị Lan")).toBeInTheDocument();
     // "Cổ vai gáy" is used up: the stage moved on to the next prize.
     expect(within(screen.getByRole("list", { name: "Chọn giải để quay" })).getByRole("button", { name: /^Gội đầu/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("an answer later than the stop keeps the button busy until it arrives", async () => {
+    const api = fakeApi(OWNER, [DRAW]);
+    at(`/vong-quay/${D1}`);
+    const stage = await screen.findByRole("region", { name: "Vòng quay" });
+    api.slow((c) => (c.path.endsWith("/spins") ? 7000 : 0));
+    vi.useFakeTimers();
+    fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(within(stage).getByRole("button", { name: "Quay" })).toHaveAttribute("aria-busy", "true");
+    expect(within(stage).getByText("Đang quay…")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(2500));
+    expect(screen.getByRole("dialog", { name: "Chúc mừng" })).toHaveTextContent("Nguyễn Thị Lan");
   });
 
   it("ignores a second press while the wheel turns (AC4.4)", async () => {
@@ -134,24 +163,26 @@ describe("spin (US4)", () => {
     expect(api.calls.filter((c) => c.path.endsWith("/spins"))).toHaveLength(1);
   });
 
-  it("after a network error says so, goes back, and retries with the same key (AC4.6)", async () => {
+  it("after a network error says so once the wheel stops, and retries with the same key (AC4.6)", async () => {
     const api = fakeApi(OWNER, [DRAW]);
     at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     api.intercept((c) => (c.path.endsWith("/spins") ? Promise.reject(new TypeError("Failed to fetch")) : undefined));
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
-    await act(() => vi.advanceTimersByTimeAsync(1200));
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(within(stage).queryByRole("alert")).not.toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(3600));
     expect(within(stage).getByRole("alert")).toHaveTextContent("Chưa quay được, kiểm tra mạng rồi bấm “Quay” lại.");
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
-    await act(() => vi.advanceTimersByTimeAsync(4500));
+    await act(() => vi.advanceTimersByTimeAsync(4600));
     const keys = api.calls.filter((c) => c.path.endsWith("/spins")).map((c) => c.headers["Idempotency-Key"]);
     expect(keys).toHaveLength(2);
     expect(keys[1]).toBe(keys[0]);
-    expect(within(stage).getByText("Nguyễn Thị Lan")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Chúc mừng" })).toHaveTextContent("Nguyễn Thị Lan");
   });
 
-  it("with reduced motion, shows the winner as soon as the server answers", async () => {
+  it("with reduced motion the wheel still turns, gentler, and the winner shows once it stops", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: query.includes("reduce"),
       media: query,
@@ -159,14 +190,63 @@ describe("spin (US4)", () => {
       removeEventListener: () => undefined,
     }));
     fakeApi(OWNER, [DRAW]);
-    const user = userEvent.setup();
     at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
-    await user.click(within(stage).getByRole("button", { name: "Quay" }));
-    expect(await within(stage).findByText("Nguyễn Thị Lan")).toBeInTheDocument();
+    vi.useFakeTimers();
+    fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
+    const disk = diskOf(stage);
+    expect(disk.style.getPropertyValue("transition")).toContain("2500ms");
+    expect(disk.style.getPropertyPriority("transition")).toBe("important");
+    expect(disk.style.transform).toMatch(/^rotate\((\d+(\.\d+)?)deg\)$/);
+    expect(disk.style.transform).not.toBe("rotate(0deg)");
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(screen.getByRole("dialog", { name: "Chúc mừng" })).toHaveTextContent("Nguyễn Thị Lan");
+  });
+});
+
+describe("winner popup (EM 2026-11-28)", () => {
+  async function spunOnce(draw = DRAW) {
+    const api = fakeApi(OWNER, [draw]);
+    at(`/vong-quay/${D1}`);
+    const stage = await screen.findByRole("region", { name: "Vòng quay" });
+    vi.useFakeTimers();
+    fireEvent.click(within(stage).getByRole("button", { name: /^Quay/ }));
+    await act(() => vi.advanceTimersByTimeAsync(4600));
+    return { api, stage, popup: screen.getByRole("dialog", { name: "Chúc mừng" }) };
+  }
+
+  it("“Quay tiếp” closes it and spins the next prize at once", async () => {
+    const { api, popup } = await spunOnce();
+    fireEvent.click(within(popup).getByRole("button", { name: "Quay tiếp" }));
+    expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(4600));
+    expect(api.calls.filter((c) => c.path.endsWith("/spins")).map((c) => c.body)).toEqual([{ prize_id: "q1" }, { prize_id: "q2" }]);
+    expect(screen.getByRole("dialog", { name: "Chúc mừng" })).toHaveTextContent("Lượt 2");
   });
 
-  it("opens the summary once the spin gives out the last slot (AC6.1)", async () => {
+  it("“Vắng mặt, trả giải” goes to the confirm, then the slot comes back", async () => {
+    const { api, popup } = await spunOnce();
+    fireEvent.click(within(popup).getByRole("button", { name: "Vắng mặt, trả giải" }));
+    expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
+    const confirm = screen.getByRole("dialog", { name: "Trả giải “Cổ vai gáy” của Nguyễn Thị Lan?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Vắng mặt, trả giải" }));
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    expect(api.calls.some((c) => c.path.endsWith("/forfeit"))).toBe(true);
+    expect(within(screen.getByRole("list", { name: "Chọn giải để quay" })).getByRole("button", { name: /^Cổ vai gáy/ })).toHaveTextContent("Còn 1/1 suất");
+  });
+
+  it("“Đóng” gives focus back to the spin button", async () => {
+    const { stage, popup } = await spunOnce();
+    expect(within(popup).getByRole("button", { name: "Quay tiếp" })).toHaveFocus();
+    fireEvent.click(within(popup).getByRole("button", { name: "Đóng" }));
+    await act(() => vi.advanceTimersByTimeAsync(50));
+    expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
+    expect(within(stage).getByRole("button", { name: "Quay tiếp" })).toHaveFocus();
+  });
+
+  it("the spin that finishes the program offers “Xem tổng kết” instead, and only then the summary (AC6.1)", async () => {
     const last = detail({
       ...DRAW,
       participants: [person("p1", "Nguyễn Thị Lan", "female", 0), person("p2", "Trần Văn Minh", "male", 1, "r1")],
@@ -174,18 +254,44 @@ describe("spin (US4)", () => {
       results: [result("r1", 1, "q2", "p2")],
       status: "in_progress",
     });
-    fakeApi(OWNER, [last]);
-    at(`/vong-quay/${D1}`);
-    const stage = await screen.findByRole("region", { name: "Vòng quay" });
-    vi.useFakeTimers();
-    fireEvent.click(within(stage).getByRole("button", { name: "Quay tiếp" }));
-    await act(() => vi.advanceTimersByTimeAsync(3000));
+    const { popup } = await spunOnce(last);
+    expect(within(popup).queryByRole("button", { name: "Quay tiếp" })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Tổng kết chương trình" })).not.toBeInTheDocument();
-    await act(() => vi.advanceTimersByTimeAsync(2000));
+    fireEvent.click(within(popup).getByRole("button", { name: "Xem tổng kết" }));
+    expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
     const sheet = screen.getByRole("dialog", { name: "Tổng kết chương trình" });
-    expect(within(sheet).getByRole("heading", { name: /Cổ vai gáy/ })).toBeInTheDocument();
-    expect(within(sheet).getByText(/Nguyễn Thị Lan \(Nữ\)/)).toBeInTheDocument();
-    expect(within(sheet).getByText(/Trần Văn Minh \(Nam\)/)).toBeInTheDocument();
+    const women = within(sheet).getByRole("region", { name: "Cổ vai gáy" });
+    expect(within(women).getByText("Nguyễn Thị Lan")).toBeInTheDocument();
+    expect(within(women).getByText("Nữ", { selector: ".ld-win .gender-chip" })).toBeInTheDocument();
+    expect(within(within(sheet).getByRole("region", { name: "Gội đầu" })).getByText("Trần Văn Minh")).toBeInTheDocument();
+  });
+});
+
+describe("winners list (EM 2026-11-28: cards grouped by prize)", () => {
+  it("groups by prize in prize order, spin order within, with Đã trao a/b; a forfeit stays dimmed", async () => {
+    const won = detail({
+      ...DRAW,
+      participants: DRAW.participants.map((p) => ({ ...p, result_id: { p1: "r2", p2: "r1", p3: "r3" }[p.id] ?? null })),
+      prizes: [
+        prize("q1", "Cổ vai gáy", { eligible: "female", quantity: 1, remaining: 1, awarded: 0, eligible_count: 0, position: 0 }),
+        prize("q2", "Gội đầu", { quantity: 2, remaining: 0, awarded: 2, eligible_count: 1, position: 1 }),
+      ],
+      results: [result("r1", 1, "q2", "p2"), result("r2", 2, "q1", "p1", true), result("r3", 3, "q2", "p3")],
+      status: "in_progress",
+    });
+    fakeApi(OWNER, [won]);
+    at(`/vong-quay/${D1}`);
+    const card = await screen.findByRole("region", { name: "Danh sách trúng thưởng" });
+    const groups = within(card).getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    expect(groups).toEqual(["Cổ vai gáy", "Gội đầu"]);
+    expect(within(card).getByText("Đã trao 2/2")).toBeInTheDocument();
+    const anyone = within(card).getByRole("list", { name: "Người trúng giải Gội đầu" });
+    expect(within(anyone).getAllByRole("listitem").map((li) => li.querySelector(".ld-win-who")?.textContent)).toEqual(["Trần Văn Minh", "Lê Thu Hà"]);
+    const absent = within(within(card).getByRole("list", { name: "Người trúng giải Cổ vai gáy" })).getByRole("listitem");
+    expect(absent).toHaveClass("is-absent");
+    expect(within(absent).getByText("Vắng mặt")).toBeInTheDocument();
+    expect(within(absent).queryByRole("button")).not.toBeInTheDocument();
+    expect(absent.querySelector(".ld-seq")).toHaveTextContent("Lượt 2");
   });
 });
 
@@ -200,7 +306,7 @@ describe("forfeit (US5)", () => {
     const api = fakeApi(OWNER, [won]);
     const user = userEvent.setup();
     at(`/vong-quay/${D1}`);
-    const winners = await screen.findByRole("table", { name: "Danh sách trúng thưởng" });
+    const winners = await screen.findByRole("list", { name: "Người trúng giải Cổ vai gáy" });
     await user.click(within(winners).getByRole("button", { name: "Thao tác với lượt 1, Nguyễn Thị Lan" }));
     await user.click(screen.getByRole("menuitem", { name: "Vắng mặt, trả giải" }));
     const sheet = await screen.findByRole("dialog", { name: "Trả giải “Cổ vai gáy” của Nguyễn Thị Lan?" });
@@ -211,8 +317,8 @@ describe("forfeit (US5)", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(api.calls.find((c) => c.path.endsWith("/forfeit"))?.path).toBe(`/api/v1/lucky-draws/${D1}/results/r1/forfeit`);
-    const row = rowOf(within(screen.getByRole("table", { name: "Danh sách trúng thưởng" })).getByText("Nguyễn Thị Lan"));
-    expect(row).toHaveClass("ld-row-absent");
+    const row = within(screen.getByRole("list", { name: "Người trúng giải Cổ vai gáy" })).getByRole("listitem");
+    expect(row).toHaveClass("is-absent");
     expect(within(row).getByText("Vắng mặt")).toBeInTheDocument();
     expect(within(row).queryByRole("button")).not.toBeInTheDocument();
     expect(within(screen.getByRole("list", { name: "Chọn giải để quay" })).getByRole("button", { name: /^Cổ vai gáy/ })).toHaveTextContent("Còn 1/1 suất");
