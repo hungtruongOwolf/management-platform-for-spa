@@ -47,6 +47,7 @@ pub struct MyDayLine {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct MyDayVisit {
     pub visit_id: Uuid,
+    #[serde(with = "kernel::time::rfc3339")]
     pub check_in_at: Timestamp,
     pub customer_name: String,
     /// The visit's session note (`null`: none written, or the caller is a former staff member).

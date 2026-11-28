@@ -209,6 +209,7 @@ pub struct Evaluation {
     pub coaching_plan: Option<String>,
     pub comment: Option<String>,
     pub by_name: String,
+    #[serde(with = "kernel::time::rfc3339")]
     pub updated_at: Timestamp,
     pub version: i64,
 }

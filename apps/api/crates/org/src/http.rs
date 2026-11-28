@@ -391,6 +391,7 @@ pub struct StaffChangeDto {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct StaffHistoryEntryDto {
+    #[serde(with = "kernel::time::rfc3339")]
     pub at: Timestamp,
     /// `staff.create`, `staff.update`, `staff.account_link`, `staff.end`, `staff.rehire`,
     /// `staff.pay_update` (only for `payroll.read`).
@@ -703,7 +704,9 @@ pub struct PasswordResetRequestDto {
     pub full_name: String,
     /// The profile of the login, when linked (its sheet holds "Đặt lại").
     pub staff_id: Option<Uuid>,
+    #[serde(with = "kernel::time::rfc3339")]
     pub requested_at: Timestamp,
+    #[serde(with = "kernel::time::rfc3339")]
     pub expires_at: Timestamp,
 }
 

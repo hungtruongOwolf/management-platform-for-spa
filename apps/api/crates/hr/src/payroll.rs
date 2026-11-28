@@ -46,6 +46,7 @@ pub struct PayrollTotals {
 pub struct PayrollMonth {
     pub month: String,
     pub closed: bool,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
     pub closed_at: Option<Timestamp>,
     pub closed_by_name: Option<String>,
     /// The month has ended (it can be closed).

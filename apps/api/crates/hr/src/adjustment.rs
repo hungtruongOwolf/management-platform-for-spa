@@ -59,6 +59,7 @@ pub struct Adjustment {
     /// `YYYY-MM` of the closed month this entry corrects.
     pub corrects_month: Option<String>,
     pub by_name: String,
+    #[serde(with = "kernel::time::rfc3339")]
     pub created_at: Timestamp,
     /// Whether the caller may remove or edit it (decision C scope, month open). Always false on
     /// `/me/staff`.
