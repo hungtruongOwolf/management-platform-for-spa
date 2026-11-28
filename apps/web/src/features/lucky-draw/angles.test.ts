@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GENTLE, SECTORS, SPIN, randomSector, stopAngle } from "./angles";
+import { GENTLE, SECTORS, SPIN, SPIN_MS, randomSector, stopAngle } from "./angles";
 
 describe("wheel angles", () => {
   it("stops after the given turns, at the middle of the sector, as the prototype", () => {
@@ -15,10 +15,18 @@ describe("wheel angles", () => {
     }
   });
 
-  it("reduced motion is gentler but still turns", () => {
+  it("lasts three times the prototype's 4.1 s, at its opening speed; reduced motion is gentler but still turns", () => {
+    expect(SPIN_MS).toBe(3 * 4100);
+    expect(SPIN.ms).toBe(SPIN_MS);
+    expect(GENTLE.ms).toBe(SPIN_MS);
     expect(GENTLE.turns).toBeGreaterThanOrEqual(2);
-    expect(GENTLE.ms).toBeLessThan(SPIN.ms);
-    expect(SPIN).toEqual({ turns: 6, ms: 4100, ease: "cubic-bezier(0.14, 0.72, 0.12, 1)" });
+    expect(GENTLE.turns).toBeLessThan(SPIN.turns);
+    // Opening speed (deg/ms) = the curve's first slope (y1 / x1) × the average speed.
+    const opening = (turns: number, ms: number, x1: number, y1: number) => ((y1 / x1) * turns * 360) / ms;
+    const prototype = opening(6, 4100, 0.14, 0.72);
+    expect(opening(SPIN.turns, SPIN.ms, 0.12, 0.65)).toBeGreaterThan(prototype * 0.9);
+    expect(opening(SPIN.turns, SPIN.ms, 0.12, 0.65)).toBeLessThan(prototype * 1.1);
+    expect(SPIN.ease).toBe("cubic-bezier(0.12, 0.65, 0.04, 1)");
   });
 
   it("draws a sector from the crypto source", () => {
