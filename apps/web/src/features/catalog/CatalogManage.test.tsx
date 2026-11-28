@@ -1,5 +1,5 @@
 import { createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
@@ -405,6 +405,39 @@ describe("owner edits the price list", () => {
       await within(form).findByText("Nhập giá để bán dịch vụ."),
     ).toBeInTheDocument();
     expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("Esc in an open select list closes the list, not the service form; Esc on the select still closes it", async () => {
+    serve(OWNER);
+    at("/bang-gia");
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Sửa Thư Giãn" }),
+    );
+    const form = screen.getByRole("form", { name: "Sửa: Thư Giãn" });
+    // The customizable select's open list sends its keys from the focused option.
+    const group = within(form).getByLabelText("Nhóm");
+    fireEvent.keyDown(within(group).getByRole("option", { name: "Gội đầu dưỡng sinh" }), {
+      key: "Escape",
+    });
+    expect(screen.getByRole("form", { name: "Sửa: Thư Giãn" })).toBeInTheDocument();
+    fireEvent.keyDown(group, { key: "Escape" });
+    expect(screen.queryByRole("form", { name: "Sửa: Thư Giãn" })).toBeNull();
+  });
+
+  it("Esc in an open select list closes the list, not the plan form; Esc in a field still closes it", async () => {
+    serve(OWNER);
+    at("/bang-gia/goi");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Tạo mẫu gói" }));
+    const plan = screen.getByRole("form", { name: "Tạo mẫu gói liệu trình" });
+    const service = within(plan).getByLabelText("Dịch vụ 1");
+    fireEvent.keyDown(within(service).getByRole("option", { name: "Thư Giãn" }), {
+      key: "Escape",
+    });
+    expect(screen.getByRole("form", { name: "Tạo mẫu gói liệu trình" })).toBeInTheDocument();
+    fireEvent.keyDown(within(plan).getByLabelText("Tên gói"), { key: "Escape" });
+    expect(screen.queryByRole("form", { name: "Tạo mẫu gói liệu trình" })).toBeNull();
   });
 
   it("creates a combo package plan", async () => {

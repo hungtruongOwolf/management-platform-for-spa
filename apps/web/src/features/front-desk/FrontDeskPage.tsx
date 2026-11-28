@@ -22,6 +22,7 @@ import {
 import { useAfterFirstPaint } from "../../lib/afterFirstPaint";
 import { useSearchState } from "../../lib/searchState";
 import { messageFor } from "../../lib/errors";
+import { isSelectListKey } from "../../lib/selectList";
 import { can, meQuery } from "../auth/session";
 import { customerQuery } from "../customers/api";
 import { CustomerSearch } from "../customers/CustomerSearch";
@@ -370,9 +371,12 @@ export function FrontDeskPage() {
     // The cart is hidden behind the calendar tab; a sheet or palette keeps its own keys.
     if (showsCalendar) return;
     const onKey = (e: KeyboardEvent) => {
+      // An open select list (the technician's) keeps its keys: Esc there closes the list, it does
+      // not drop the customer.
       if (
         e.defaultPrevented ||
-        (e.target instanceof Element && e.target.closest("dialog[open]"))
+        (e.target instanceof Element && e.target.closest("dialog[open]")) ||
+        isSelectListKey(e)
       )
         return;
       const typing = isTyping(document.activeElement);

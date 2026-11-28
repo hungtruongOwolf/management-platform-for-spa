@@ -877,6 +877,37 @@ describe("/quay", () => {
     expect(within(cart).getAllByRole("listitem")).toHaveLength(2);
   });
 
+  it("adds a one-off picked with the keys of the open list at once (customizable select)", async () => {
+    serve(MANAGER);
+    const user = userEvent.setup();
+    at("/quay");
+    await user.type(
+      await screen.findByRole("combobox", {
+        name: "Tìm khách theo SĐT hoặc tên",
+      }),
+      "0905111",
+    );
+    await screen.findByRole("option", { name: /Nguyễn Thị Hà/ });
+    await user.keyboard("{Enter}");
+    await screen.findByRole("option", { name: /Đại Thông Lạc/ });
+    const picker = screen.getByLabelText("Thêm dịch vụ lẻ");
+
+    // ↓ on the closed select opens the list; ↓ and Enter inside it come from the focused option.
+    picker.focus();
+    fireEvent.keyDown(picker, { key: "ArrowDown" });
+    const row = within(picker).getByRole("option", { name: /Đại Thông Lạc/ });
+    fireEvent.keyDown(row, { key: "ArrowDown" });
+    fireEvent.keyDown(row, { key: "Enter" });
+    fireEvent.change(picker, { target: { value: "s5" } });
+    const cart = await screen.findByRole("list", {
+      name: "Dịch vụ trong lượt",
+    });
+    expect(
+      within(cart).getByText("Cổ vai gáy · Đại Thông Lạc"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Nhấn Enter để thêm/)).not.toBeInTheDocument();
+  });
+
   it("keeps the owner's note behind the clock's ⓘ, one line on the page", async () => {
     serve([...MANAGER, "visit.backdate"]);
     const user = userEvent.setup();
@@ -1302,6 +1333,26 @@ describe("/quay cart review (front-desk audit 2026-11-09)", () => {
     await user.keyboard("{Escape}");
     expect(
       await screen.findByRole("alertdialog", { name: /Đổi khách\?/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves Esc inside an open select list to the list: the cart stays, no prompt", async () => {
+    serve(MANAGER);
+    const user = userEvent.setup();
+    at("/quay");
+    await cartWithSession(user);
+    (document.activeElement as HTMLElement | null)?.blur();
+    // The customizable select's open list sends its keys from the focused option.
+    const tech = screen.getByRole("combobox", { name: "KTV" });
+    fireEvent.keyDown(within(tech).getAllByRole("option")[1] as HTMLElement, {
+      key: "Escape",
+    });
+    // The prompt would come asynchronously: wait for it a while before saying it never came.
+    await expect(
+      screen.findByRole("alertdialog", { name: /Đổi khách\?/ }, { timeout: 500 }),
+    ).rejects.toThrow();
+    expect(
+      screen.getByRole("list", { name: "Dịch vụ trong lượt" }),
     ).toBeInTheDocument();
   });
 
