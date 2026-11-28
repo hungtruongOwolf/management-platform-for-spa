@@ -25,9 +25,10 @@ use crate::history_dto::{
     RecordCreated, RecordHistory, RecordKind, RecordLast, RecordRef, RecordSource, RecordState,
     RecordSummary, StaffBook,
 };
-use chrono::{DateTime, NaiveDate, Utc};
 use hr::month::Month;
 use hr::scope::RecordScope;
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::audit::Action;
 use kernel::{Actor, AppError, Permission, TenantTx};
 use sqlx::PgPool;
@@ -112,7 +113,7 @@ enum Anchor {
     /// A bonus / penalty (the chain of its edits is found when selecting).
     Adjustment(Uuid),
     /// One person's cell of one book on one day.
-    StaffDay(Uuid, NaiveDate, StaffBook),
+    StaffDay(Uuid, Date, StaffBook),
     Catalog(Catalog, Uuid),
     Settings(Settings),
 }
@@ -313,9 +314,9 @@ struct Selected {
     /// The creating action's row, by its action and entity (D12).
     creation: Creation,
     /// Without a creating row: who / when from the record itself.
-    fallback: Option<(Option<Uuid>, DateTime<Utc>)>,
+    fallback: Option<(Option<Uuid>, Timestamp)>,
     /// A paper-book package: its book's day.
-    paper_day: Option<NaiveDate>,
+    paper_day: Option<Date>,
     state: RecordState,
 }
 
@@ -467,7 +468,7 @@ async fn visit(tx: &mut TenantTx, id: Uuid) -> Result<Selected, AppError> {
         extra: extra.into_iter().map(|r| r.id).collect(),
         edits: Vec::new(),
         creation: Creation::Visit(first.id),
-        fallback: Some((Some(first.created_by), first.created_at)),
+        fallback: Some((Some(first.created_by), first.created_at.to_jiff())),
         paper_day: None,
         state,
     })
@@ -515,8 +516,8 @@ async fn package(tx: &mut TenantTx, id: Uuid) -> Result<Selected, AppError> {
         extra: Vec::new(),
         edits: Vec::new(),
         creation: Creation::Package(id),
-        fallback: Some((Some(p.created_by), p.created_at)),
-        paper_day: paper.then_some(p.starts_on),
+        fallback: Some((Some(p.created_by), p.created_at.to_jiff())),
+        paper_day: paper.then_some(p.starts_on.to_jiff()),
         state: if p.cancelled {
             RecordState::Cancelled
         } else {
@@ -578,7 +579,7 @@ async fn appointment(tx: &mut TenantTx, id: Uuid) -> Result<Selected, AppError> 
         extra: Vec::new(),
         edits: Vec::new(),
         creation: Creation::Appointment(id),
-        fallback: Some((Some(a.created_by), a.created_at)),
+        fallback: Some((Some(a.created_by), a.created_at.to_jiff())),
         paper_day: None,
         state: if a.status == "cancelled" {
             RecordState::Cancelled
@@ -598,7 +599,7 @@ async fn staff_day(
     tx: &mut TenantTx,
     actor: &Actor,
     staff: Uuid,
-    date: NaiveDate,
+    date: Date,
     book: StaffBook,
 ) -> Result<Selected, AppError> {
     let profile = org::profile::profile_in(tx, staff).await?;
@@ -658,7 +659,7 @@ async fn adjustment(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<Select
         id,
         staff: this.staff_id,
         created_by: this.created_by,
-        created_at: this.created_at,
+        created_at: this.created_at.to_jiff(),
     }];
     for _ in 0..MAX_CHAIN {
         let Some(head) = chain.first() else { break };
@@ -693,11 +694,10 @@ async fn adjustment(tx: &mut TenantTx, actor: &Actor, id: Uuid) -> Result<Select
     .await?;
     // The chain grew both ways from `id`: an entry after it exists exactly when it was edited.
     let replaced = chain.last().is_some_and(|e| e.id != id);
-    let (first_id, fallback) = chain
-        .first()
-        .map_or((id, (Some(this.created_by), this.created_at)), |e| {
-            (e.id, (Some(e.created_by), e.created_at))
-        });
+    let (first_id, fallback) = chain.first().map_or(
+        (id, (Some(this.created_by), this.created_at.to_jiff())),
+        |e| (e.id, (Some(e.created_by), e.created_at)),
+    );
     Ok(Selected {
         kind: RecordKind::Adjustment,
         id: Some(id),
@@ -722,7 +722,7 @@ struct Entry {
     id: Uuid,
     staff: Uuid,
     created_by: Uuid,
-    created_at: DateTime<Utc>,
+    created_at: Timestamp,
 }
 
 /// Which way [`edit_link`] looks from an entry.
@@ -775,7 +775,7 @@ async fn edit_link(tx: &mut TenantTx, entry: &Entry, way: Link) -> Result<Option
         id: x.id,
         staff: x.staff_id,
         created_by: x.created_by,
-        created_at: x.created_at,
+        created_at: x.created_at.to_jiff(),
     }))
 }
 
@@ -968,7 +968,7 @@ pub async fn read_staff_day(
     pool: &PgPool,
     actor: &Actor,
     staff: Uuid,
-    date: NaiveDate,
+    date: Date,
     book: StaffBook,
 ) -> Result<RecordHistory, AppError> {
     require_staff_book(actor, Some(book))?;
@@ -1010,14 +1010,14 @@ async fn history(
         id: selected.id,
     };
     let profile = kernel::tenant::profile(&mut tx).await?;
-    let tz = profile.timezone;
+    let tz = &profile.timezone;
     let ids: Vec<Uuid> = selected
         .members
         .iter()
         .chain(&selected.extra)
         .copied()
         .collect();
-    let rows = activity::rows_by_ids(&mut tx, tz.name(), &ids).await?;
+    let rows = activity::rows_by_ids(&mut tx, profile.zone_name(), &ids).await?;
     let fallback = match selected.fallback {
         Some((Some(user), at)) => Some((person(&mut tx, user).await?, at)),
         _ => None,
@@ -1097,7 +1097,7 @@ async fn history(
         (None, None) => fallback.map(|(who, at)| RecordCreated {
             actor: Some(who),
             at: Some(at),
-            day: at.with_timezone(&tz).date_naive(),
+            day: tz.to_datetime(at).date(),
             source: RecordSource::Record,
         }),
     };
@@ -1238,8 +1238,8 @@ mod tests {
     fn entry(action: Action, changes: &[(&str, Option<&str>, Option<&str>)]) -> ActivityEntry {
         ActivityEntry {
             id: Uuid::now_v7(),
-            at: DateTime::<Utc>::UNIX_EPOCH,
-            day: NaiveDate::default(),
+            at: Timestamp::UNIX_EPOCH,
+            day: Date::default(),
             actor: ActivityActor {
                 kind: ActorKind::User,
                 user_id: None,

@@ -2,8 +2,9 @@
 //! Money is integer đồng. Fields behind `report.revenue.read` are `Option` and left out of the
 //! JSON entirely when the caller lacks it (entitled data only, never hidden on the client).
 
-use chrono::{DateTime, NaiveDate, Utc};
 use crm::http::{FollowUpChannelDto, FollowUpOutcomeDto, GenderDto};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use packages::http::{CustomerPackageDto, PackageStatusDto};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -189,7 +190,7 @@ pub struct TechnicianDay {
 /// The headline numbers of another day, for "so với hôm qua / cùng thứ tuần trước".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 pub struct DayHeadline {
-    pub date: NaiveDate,
+    pub date: Date,
     pub customers: i64,
     pub visits: i64,
     pub sessions_used: i64,
@@ -208,7 +209,7 @@ pub struct DayComparison {
 /// `GET /reports/daily`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct DailyReport {
-    pub date: NaiveDate,
+    pub date: Date,
     pub counts: DayCounts,
     /// Only with `report.revenue.read`; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -222,7 +223,7 @@ pub struct DailyReport {
 #[into_params(parameter_in = Query)]
 pub struct DailyQuery {
     /// Business day `YYYY-MM-DD` (spa time zone); default today.
-    pub date: Option<NaiveDate>,
+    pub date: Option<Date>,
 }
 
 // ------------------------------------------------------------------------------ range report
@@ -285,9 +286,9 @@ pub enum RangePreset {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 pub struct RangeBucket {
     /// First day of the bucket (clipped to `from`).
-    pub start: NaiveDate,
+    pub start: Date,
     /// Last day of the bucket (clipped to `to`).
-    pub end: NaiveDate,
+    pub end: Date,
     /// `customers` = distinct customers inside this bucket.
     pub counts: DayCounts,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -326,8 +327,8 @@ pub struct TopPackage {
 /// `GET /reports/range`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct RangeReport {
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     pub granularity: Granularity,
     /// The preset the range came from, if any.
     pub preset: Option<RangePreset>,
@@ -350,11 +351,11 @@ pub struct RangeReport {
 #[into_params(parameter_in = Query)]
 pub struct RangeQuery {
     /// First business day; default `to` − 6 days. Not with `preset`.
-    pub from: Option<NaiveDate>,
+    pub from: Option<Date>,
     /// Last business day (inclusive); default today. Not with `preset`. Span: at most 366 days
     /// for `day` / `week`, at most 732 days (2 years) for `month` / `year`; 1830 days (5 years)
     /// with `report.long_range` (owner).
-    pub to: Option<NaiveDate>,
+    pub to: Option<Date>,
     /// Bucket size of `series`; default `day`, or the preset's default.
     pub granularity: Option<Granularity>,
     /// A ready-made period instead of `from` / `to`.
@@ -380,8 +381,9 @@ pub struct LedgerRow {
     /// The sale id (`sale`, `void`) or the refund id (`refund`).
     pub id: Uuid,
     pub entry: LedgerEntry,
-    pub business_date: NaiveDate,
-    pub at: DateTime<Utc>,
+    pub business_date: Date,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub at: Timestamp,
     pub customer_id: Uuid,
     pub customer_name: String,
     pub customer_gender: Option<GenderDto>,
@@ -416,7 +418,7 @@ pub struct LedgerRow {
 /// Daily subtotal of the book, for every day of the range (not only the current page).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 pub struct LedgerDay {
-    pub date: NaiveDate,
+    pub date: Date,
     pub bank_transfer: i64,
     pub cash: i64,
     pub unpaid: i64,
@@ -428,8 +430,8 @@ pub struct LedgerDay {
 /// `GET /reports/ledger`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct LedgerPage {
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     /// Book order: day, then time.
     pub rows: Vec<LedgerRow>,
     /// Days of the range that have entries, in order.
@@ -442,9 +444,9 @@ pub struct LedgerPage {
 #[into_params(parameter_in = Query)]
 pub struct LedgerQuery {
     /// Default today.
-    pub from: Option<NaiveDate>,
+    pub from: Option<Date>,
     /// Default `from`; at most 92 days after `from`.
-    pub to: Option<NaiveDate>,
+    pub to: Option<Date>,
     pub cursor: Option<String>,
     /// 1–100, default 20.
     pub limit: Option<u32>,
@@ -496,12 +498,14 @@ pub struct HistoryVisitLine {
 pub struct HistoryVisit {
     pub id: Uuid,
     pub voided: bool,
-    pub check_in_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub check_in_at: Timestamp,
     pub lines: Vec<HistoryVisitLine>,
     /// Money received for the one-off lines (before any void).
     pub paid: MethodSplit,
     pub void_reason: Option<String>,
-    pub voided_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub voided_at: Option<Timestamp>,
     /// "Sửa lượt": the voided visit this one replaces.
     pub corrects_visit_id: Option<Uuid>,
     /// "Sửa lượt": the visit that replaced this (voided) one.
@@ -532,7 +536,8 @@ pub struct HistoryPurchase {
     pub paid: MethodSplit,
     pub closer_name: Option<String>,
     pub void_reason: Option<String>,
-    pub voided_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub voided_at: Option<Timestamp>,
     /// The visit this package was sold in, if any.
     pub visit_id: Option<Uuid>,
     /// Bought for someone else (US13): who the packages belong to.
@@ -553,8 +558,8 @@ pub struct HistoryPurchase {
 pub struct HistoryExtension {
     pub customer_package_id: Uuid,
     pub package_name: String,
-    pub previous_expires_on: NaiveDate,
-    pub expires_on: NaiveDate,
+    pub previous_expires_on: Date,
+    pub expires_on: Date,
     pub reason: String,
     /// The user who extended it.
     pub by_name: String,
@@ -575,7 +580,7 @@ pub struct HistoryVoid {
 pub struct HistoryRefund {
     pub amount: i64,
     pub method: String,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
 }
 
 /// A package cancelled (US7). Its `refund` is on the payer's timeline only (ADR-0019 D6): a
@@ -599,8 +604,9 @@ pub struct HistoryCancellation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct HistoryEvent {
     pub kind: HistoryKind,
-    pub at: DateTime<Utc>,
-    pub business_date: NaiveDate,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub at: Timestamp,
+    pub business_date: Date,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visit: Option<HistoryVisit>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -633,9 +639,9 @@ pub struct HistoryQuery {
     /// Only events of this kind.
     pub kind: Option<HistoryKind>,
     /// First business day of the event (inclusive).
-    pub from: Option<NaiveDate>,
+    pub from: Option<Date>,
     /// Last business day of the event (inclusive).
-    pub to: Option<NaiveDate>,
+    pub to: Option<Date>,
     pub cursor: Option<String>,
     /// 1–100, default 20.
     pub limit: Option<u32>,
@@ -653,8 +659,8 @@ pub struct PackageCounts {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct CustomerStats {
     pub customer_id: Uuid,
-    pub first_visit_on: Option<NaiveDate>,
-    pub last_visit_on: Option<NaiveDate>,
+    pub first_visit_on: Option<Date>,
+    pub last_visit_on: Option<Date>,
     /// Days from the last completed visit to today.
     pub days_since_last_visit: Option<i64>,
     /// Completed visits.
@@ -678,8 +684,9 @@ pub struct CustomerStats {
 pub struct PackageUse {
     pub visit_id: Uuid,
     pub visit_line_id: Uuid,
-    pub business_date: NaiveDate,
-    pub check_in_at: DateTime<Utc>,
+    pub business_date: Date,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub check_in_at: Timestamp,
     pub item_id: Uuid,
     pub service_name: String,
     /// Current catalog category of the service.
@@ -738,13 +745,14 @@ pub struct PackageOverviewRow {
     pub status: PackageStatusDto,
     pub sessions_total: i64,
     pub sessions_remaining: i64,
-    pub starts_on: NaiveDate,
-    pub expires_on: Option<NaiveDate>,
+    pub starts_on: Date,
+    pub expires_on: Option<Date>,
     /// Days from today to `expires_on` (negative once expired).
     pub days_to_expiry: Option<i64>,
     /// Last completed visit that used this package.
-    pub last_used_on: Option<NaiveDate>,
-    pub cancelled_at: Option<DateTime<Utc>>,
+    pub last_used_on: Option<Date>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub cancelled_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, ToSchema)]
@@ -844,7 +852,7 @@ pub enum InactiveSort {
 /// The latest follow-up of the current absence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct LastFollowUp {
-    pub on: NaiveDate,
+    pub on: Date,
     pub channel: FollowUpChannelDto,
     pub outcome: FollowUpOutcomeDto,
     /// Name of the user who recorded it.
@@ -859,20 +867,20 @@ pub struct InactiveCustomer {
     pub phone: Option<String>,
     pub gender: Option<GenderDto>,
     pub kind: CustomerKind,
-    pub last_visit_on: Option<NaiveDate>,
+    pub last_visit_on: Option<Date>,
     /// Latest of: last completed visit, last sale not voided, last package start.
-    pub last_seen_on: NaiveDate,
+    pub last_seen_on: Date,
     pub days_absent: i64,
     pub active_packages: i64,
     pub sessions_remaining: i64,
     /// Latest follow-up since `last_seen_on`; `null` = not contacted in this absence.
     pub last_follow_up: Option<LastFollowUp>,
     /// The date that follow-up planned for the next try (`null` = none planned).
-    pub next_follow_up_on: Option<NaiveDate>,
+    pub next_follow_up_on: Option<Date>,
     /// When this contacted customer is due again: `next_follow_up_on`, or for `not_interested`
     /// without a date, contact day + 90 (shown once more then). `null` = not contacted in this
     /// absence (already due) or nothing due.
-    pub due_on: Option<NaiveDate>,
+    pub due_on: Option<Date>,
 }
 
 /// `GET /customers/inactive`: longest absence first.

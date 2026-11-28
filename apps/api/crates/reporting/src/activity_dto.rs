@@ -5,7 +5,8 @@
 //! keeps only the fields [`crate::activity`] names for it, so a health note or a session note can
 //! never reach the screen.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::audit::Action;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -81,9 +82,9 @@ impl ToSchema for AuditAction {
 #[serde(deny_unknown_fields)]
 pub struct ActivityQuery {
     /// First day (spa time zone, inclusive). Default: 6 days before `to`.
-    pub from: Option<NaiveDate>,
+    pub from: Option<Date>,
     /// Last day (inclusive). Default: today. At most 366 days after `from`.
-    pub to: Option<NaiveDate>,
+    pub to: Option<Date>,
     /// Who did it: a member's user id, `platform` (the platform team) or `system`.
     pub actor: Option<String>,
     /// Only this group of actions.
@@ -153,7 +154,7 @@ pub struct ActivitySubject {
     /// The business day the record belongs to: a visit's, a sale's, a booking's, an attendance
     /// or review day, the day a bonus / penalty happened.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub on: Option<NaiveDate>,
+    pub on: Option<Date>,
     /// A customer package's name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
@@ -198,9 +199,10 @@ pub struct ActivityChange {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct ActivityEntry {
     pub id: Uuid,
-    pub at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub at: Timestamp,
     /// The day `at` falls on in the spa's time zone (the screen groups by it).
-    pub day: NaiveDate,
+    pub day: Date,
     pub actor: ActivityActor,
     pub kind: ActivityKind,
     /// The action key (see `AuditAction`; a legacy row may hold another).
@@ -247,8 +249,8 @@ pub struct ActivityPerson {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct ActivityPage {
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub from: Date,
+    pub to: Date,
     pub items: Vec<ActivityEntry>,
     pub next_cursor: Option<String>,
     /// For the person filter (with "Đội vận hành" and "Hệ thống", which the web adds).

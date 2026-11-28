@@ -13,6 +13,7 @@ use crate::dto::{
     PackageUse,
 };
 use crm::text::{like_escape, search_key};
+use jiff_sqlx::ToSqlx;
 use kernel::crypto::FieldCipher;
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use packages::http::CustomerPackageDto;
@@ -181,11 +182,11 @@ async fn visits(
                     note,
                     id: h.id,
                     voided: h.status == "voided",
-                    check_in_at: h.check_in_at,
+                    check_in_at: h.check_in_at.to_jiff(),
                     lines: lines.remove(&h.id).unwrap_or_default(),
                     paid: money.paid,
                     void_reason: h.void_reason,
-                    voided_at: h.voided_at,
+                    voided_at: h.voided_at.map(jiff_sqlx::Timestamp::to_jiff),
                     corrects_visit_id: h.corrects_visit_id,
                     corrected_by_visit_id: h.corrected_by_visit_id,
                 },
@@ -274,7 +275,7 @@ async fn purchases(
                 paid: paid.get(&s.id).map(|p| p.paid).unwrap_or_default(),
                 closer_name: s.closer_name,
                 void_reason: s.void_reason,
-                voided_at: s.voided_at,
+                voided_at: s.voided_at.map(jiff_sqlx::Timestamp::to_jiff),
                 visit_id: s.visit_id,
                 beneficiary_name: s.beneficiary_name,
                 payer_name: s.payer_name,
@@ -321,7 +322,7 @@ async fn cancellations(
             (true, Some(amount), Some(method), Some(business_date)) => Some(HistoryRefund {
                 amount,
                 method,
-                business_date,
+                business_date: business_date.to_jiff(),
             }),
             _ => None,
         };
@@ -365,8 +366,8 @@ async fn extensions(
             HistoryExtension {
                 customer_package_id: e.customer_package_id,
                 package_name: e.name_snapshot,
-                previous_expires_on: e.previous_expires_on,
-                expires_on: e.expires_on,
+                previous_expires_on: e.previous_expires_on.to_jiff(),
+                expires_on: e.expires_on.to_jiff(),
                 reason: e.reason,
                 by_name: e.by_name,
             },
@@ -457,7 +458,8 @@ pub async fn history(
     });
     let mut tx = TenantTx::for_actor(pool, actor).await?;
     require_customer(&mut tx, customer_id).await?;
-    let tz = kernel::tenant::profile(&mut tx).await?.timezone.name();
+    let profile = kernel::tenant::profile(&mut tx).await?;
+    let tz = profile.zone_name();
     let tenant = tx.tenant().as_uuid();
     let mut heads = sqlx::query!(
         r#"WITH ev AS (
@@ -547,14 +549,14 @@ pub async fn history(
         tenant,
         customer_id,
         tz,
-        a_day,
-        a_at,
+        a_day.map(ToSqlx::to_sqlx),
+        a_at.map(ToSqlx::to_sqlx),
         a_rank,
         a_id,
         limit + 1,
         only_kind,
-        query.from,
-        query.to,
+        query.from.map(ToSqlx::to_sqlx),
+        query.to.map(ToSqlx::to_sqlx),
         pattern
     )
     .fetch_all(tx.conn())
@@ -593,8 +595,8 @@ pub async fn history(
 
     let next_cursor = more.then(|| heads.last()).flatten().map(|h| {
         cursor::encode(&[
-            h.business_date.to_string(),
-            cursor::instant_part(h.at),
+            h.business_date.to_jiff().to_string(),
+            cursor::instant_part(h.at.to_jiff()),
             h.rank.to_string(),
             h.id.to_string(),
         ])
@@ -604,8 +606,8 @@ pub async fn history(
         let kind = kind(&h.kind)?;
         let mut event = HistoryEvent {
             kind,
-            at: h.at,
-            business_date: h.business_date,
+            at: h.at.to_jiff(),
+            business_date: h.business_date.to_jiff(),
             visit: None,
             purchase: None,
             void: None,
@@ -682,7 +684,7 @@ pub async fn summary(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let tenant = tx.tenant().as_uuid();
     let visits = sqlx::query!(
         r#"SELECT min(v.business_date) FILTER (WHERE v.status = 'completed') AS first_on,
@@ -738,7 +740,7 @@ pub async fn summary(
            GROUP BY 1"#,
         tenant,
         customer_id,
-        today
+        today.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?
@@ -756,9 +758,11 @@ pub async fn summary(
     tx.commit().await?;
     Ok(CustomerStats {
         customer_id,
-        first_visit_on: visits.first_on,
-        last_visit_on: visits.last_on,
-        days_since_last_visit: visits.last_on.map(|d| (today - d).num_days()),
+        first_visit_on: visits.first_on.map(jiff_sqlx::Date::to_jiff),
+        last_visit_on: visits.last_on.map(jiff_sqlx::Date::to_jiff),
+        days_since_last_visit: visits
+            .last_on
+            .map(|d| i64::from((today - d.to_jiff()).get_days())),
         visit_count: visits.visits,
         voided_visit_count: visits.voided,
         sessions_used: visits.sessions,
