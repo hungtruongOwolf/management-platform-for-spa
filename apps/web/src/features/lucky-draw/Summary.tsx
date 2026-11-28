@@ -11,7 +11,7 @@ const who = (w: Win) => (w.person ? `${w.person.name} (${GENDER_LABEL[w.person.g
  * then spin order) as the same card rows as the winners list, what is left of a prize and why, and
  * the absent winners on a line of their own.
  */
-export function SummaryBody({ draw, headingLevel = 3 }: { draw: LuckyDrawDetail; headingLevel?: 3 | 4 }) {
+function SummaryBody({ draw }: { draw: LuckyDrawDetail }) {
   const summary = summaryByPrize(draw);
   return (
     <div className="ld-summary">
@@ -21,7 +21,7 @@ export function SummaryBody({ draw, headingLevel = 3 }: { draw: LuckyDrawDetail;
       </p>
       {summary.prizes.map(({ prize, winners }) => (
         <section key={prize.id} className="ld-group" aria-label={prize.name}>
-          <PrizeHeading prize={prize} level={headingLevel} />
+          <PrizeHeading prize={prize} />
           {winners.length > 0 ? (
             <ul className="ld-wins">
               {winners.map((w) => (

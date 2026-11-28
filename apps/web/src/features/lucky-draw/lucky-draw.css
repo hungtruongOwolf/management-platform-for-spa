@@ -597,10 +597,6 @@
     display: grid;
     gap: 16px;
   }
-  .ld-summary-heading {
-    font-size: var(--fs-base);
-    font-weight: 600;
-  }
 
   /* --- Sheets ------------------------------------------------------------------------------------ */
   textarea.ld-paste {
