@@ -3,7 +3,7 @@
 
 use crate::error::{AppError, FieldError};
 use crate::permission::{Actor, Permission};
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 pub const MAX_REASON: usize = 500;
 
@@ -14,11 +14,7 @@ pub const MAX_REASON: usize = 500;
 /// - closed day without `record.void_closed_day` → `403 day.locked`;
 /// - closed day with it (the owner) → allowed. EM decision 2026-11-05: the owner is not asked
 ///   for the password again on business actions; MFA at login and the audit log cover it.
-pub fn authorize_void(
-    actor: &Actor,
-    record_day: NaiveDate,
-    today: NaiveDate,
-) -> Result<(), AppError> {
+pub fn authorize_void(actor: &Actor, record_day: Date, today: Date) -> Result<(), AppError> {
     actor.require(Permission::RecordVoidSameDay)?;
     authorize_closed_day(actor, record_day, today)
 }
@@ -28,11 +24,7 @@ pub fn authorize_void(
 /// - `record_day` is today → allowed;
 /// - closed day without `record.void_closed_day` → `403 day.locked`;
 /// - closed day with it → allowed, without re-auth.
-pub fn authorize_closed_day(
-    actor: &Actor,
-    record_day: NaiveDate,
-    today: NaiveDate,
-) -> Result<(), AppError> {
+pub fn authorize_closed_day(actor: &Actor, record_day: Date, today: Date) -> Result<(), AppError> {
     if record_day >= today {
         return Ok(());
     }
@@ -65,8 +57,8 @@ mod tests {
     use super::*;
     use crate::ids::{TenantId, UserId};
 
-    fn day(d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 11, d).unwrap_or_default()
+    fn day(d: i8) -> Date {
+        jiff::civil::date(2026, 11, d)
     }
 
     fn actor(perms: &[Permission]) -> Actor {

@@ -5,28 +5,43 @@ use crate::business_date::BusinessDate;
 use crate::db::TenantTx;
 use crate::error::AppError;
 use crate::ids::{BranchId, TenantId};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 
 /// Manager discount cap when the tenant has not configured one (spec R1-1 D10).
 pub const DEFAULT_MANAGER_DISCOUNT_MAX_PCT: u32 = 10;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TenantProfile {
     pub business_date: BusinessDate,
     /// The spa's time zone: which business day an instant (e.g. a visit's check-in) belongs to.
-    pub timezone: chrono_tz::Tz,
+    /// Cheap to clone (a shared handle into the compiled-in zone database).
+    pub timezone: TimeZone,
     /// Branch new records belong to. R1 spas have one branch; per-user branch scope comes with spec #4.
     pub branch: BranchId,
     /// Highest discount, in percent of the subtotal, allowed without `sale.discount_unlimited`.
     pub manager_discount_max_pct: u32,
 }
 
+impl TenantProfile {
+    /// The spa's IANA zone name, for SQL that converts in the database (`AT TIME ZONE`).
+    pub fn zone_name(&self) -> &str {
+        zone_name(&self.timezone)
+    }
+}
+
+/// The IANA name of a zone read from the database ([`BusinessDate::parse_tz`]): such a zone always
+/// carries its name, so the `UTC` fallback is unreachable.
+pub fn zone_name(tz: &TimeZone) -> &str {
+    tz.iana_name().unwrap_or("UTC")
+}
+
 /// The spa's settings behind a [`TenantProfile`], without the clock. Read once per request, in
 /// the same statement as the caller's permissions (db review A4), and carried by the `Actor` into
 /// every `TenantTx` the request opens, so use cases do not spend a round trip re-reading them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TenantFacts {
-    pub timezone: chrono_tz::Tz,
+    pub timezone: TimeZone,
     pub branch: BranchId,
     pub manager_discount_max_pct: u32,
 }
@@ -51,10 +66,10 @@ impl TenantFacts {
         })
     }
 
-    pub fn profile_at(&self, now: DateTime<Utc>) -> TenantProfile {
+    pub fn profile_at(&self, now: Timestamp) -> TenantProfile {
         TenantProfile {
-            business_date: BusinessDate::of_instant(now, self.timezone),
-            timezone: self.timezone,
+            business_date: BusinessDate::of_instant(now, &self.timezone),
+            timezone: self.timezone.clone(),
             branch: self.branch,
             manager_discount_max_pct: self.manager_discount_max_pct,
         }
@@ -64,17 +79,14 @@ impl TenantFacts {
 /// Reads the tenant of `tx` (RLS lets a tenant see only its own row); today is the business day
 /// of the server clock.
 pub async fn profile(tx: &mut TenantTx) -> Result<TenantProfile, AppError> {
-    profile_as_of(tx, Utc::now()).await
+    profile_as_of(tx, Timestamp::now()).await
 }
 
 /// Like [`profile`], with today taken from `now` instead of the server clock. Only operator
 /// tooling that back-fills history (`app seed-demo`) passes another instant; HTTP use cases
 /// always go through [`profile`]. A transaction opened for a request's actor already carries the
 /// facts and answers without a query; any other transaction reads them.
-pub async fn profile_as_of(
-    tx: &mut TenantTx,
-    now: DateTime<Utc>,
-) -> Result<TenantProfile, AppError> {
+pub async fn profile_as_of(tx: &mut TenantTx, now: Timestamp) -> Result<TenantProfile, AppError> {
     if let Some(facts) = tx.facts() {
         return Ok(facts.profile_at(now));
     }
@@ -145,11 +157,11 @@ mod tests {
             Some(uuid::Uuid::now_v7()),
         )?;
         // 2026-11-08 18:30 UTC is already 2026-11-09 in Vietnam.
-        let late = DateTime::parse_from_rfc3339("2026-11-08T18:30:00Z")
-            .map_err(|e| AppError::Internal(e.to_string()))?
-            .with_timezone(&Utc);
+        let late: Timestamp = "2026-11-08T18:30:00Z"
+            .parse()
+            .map_err(|e: jiff::Error| AppError::Internal(e.to_string()))?;
         assert_eq!(
-            facts.profile_at(late).business_date.as_naive().to_string(),
+            facts.profile_at(late).business_date.as_date().to_string(),
             "2026-11-09"
         );
         Ok(())
