@@ -271,6 +271,23 @@ describe("participants (US2)", () => {
     expect(screen.getByText("Hiện thêm (1.000 dòng nữa)")).toBeInTheDocument();
   });
 
+  it("says what the server refused: a program already full (participants too_many)", async () => {
+    const api = fakeApi(OWNER, [detail()]);
+    api.intercept((c) =>
+      c.method === "POST"
+        ? Response.json({ code: "validation_failed", errors: [{ field: "participants", code: "too_many" }] }, { status: 422 })
+        : undefined,
+    );
+    const user = userEvent.setup();
+    at(`/vong-quay/${D1}`);
+    await user.click(await screen.findByRole("button", { name: "Dán danh sách" }));
+    const sheet = await screen.findByRole("dialog", { name: "Dán danh sách người tham gia" });
+    await user.click(within(sheet).getByLabelText("Danh sách"));
+    await user.paste("Lan, Nữ");
+    await user.click(await within(sheet).findByRole("button", { name: "Thêm 1 người" }));
+    expect(await within(sheet).findByRole("alert")).toHaveTextContent("Một chương trình có tối đa 2.000 người tham gia.");
+  });
+
   it("filters by chip with counts and searches without accents; only people not drawn have ⋯", async () => {
     const won = detail({
       ...DRAW,

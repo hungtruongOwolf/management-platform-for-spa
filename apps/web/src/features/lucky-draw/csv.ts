@@ -3,13 +3,13 @@ import { GENDER_LABEL, fold, wins } from "./draw";
 import type { LuckyDrawDetail } from "./types";
 
 /**
- * A cell Excel or Sheets would run as a formula (`=`, `+`, `-`, `@`, or a leading tab / CR, also
- * after spaces) gets a leading apostrophe, so a pasted name like `=HYPERLINK(…)` stays text
- * (OWASP "CSV injection"). Every cell is quoted.
+ * A cell Excel or Sheets would run as a formula (`=`, `+`, `-`, `@`, also after spaces, or a
+ * leading tab / CR / LF) gets a leading apostrophe, so a pasted name like `=HYPERLINK(…)` stays
+ * text (OWASP "CSV injection"). Every cell is quoted.
  */
 export function csvCell(value: string | number): string {
   let text = String(value);
-  if (/^\s*[=+\-@]|^[\t\r]/.test(text)) text = `'${text}`;
+  if (/^\s*[=+\-@]|^[\t\r\n]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 }
 

@@ -27,7 +27,7 @@ describe("winnersCsv (AC6.3)", () => {
 
 describe("csvCell: CSV injection guard", () => {
   it("prefixes a cell a spreadsheet would run", () => {
-    for (const bad of ["=1+1", "+1", "-1", "@SUM(A1)", "\tx", "\rx", "  =1"]) expect(csvCell(bad).startsWith(`"'`)).toBe(true);
+    for (const bad of ["=1+1", "+1", "-1", "@SUM(A1)", "\tx", "\rx", "\nx", "  =1"]) expect(csvCell(bad).startsWith(`"'`)).toBe(true);
     expect(csvCell("Lan")).toBe('"Lan"');
     expect(csvCell(12)).toBe('"12"');
     expect(csvCell("Lê-Na")).toBe('"Lê-Na"');

@@ -58,7 +58,7 @@ export function PrizeSheet({
   const noteProblem =
     (chars(note.trim()) > NOTE_MAX ? `Mô tả dài quá ${String(NOTE_MAX)} ký tự.` : undefined) ??
     fieldMessage(save.error, "description", DRAW_FIELDS);
-  const audienceProblem = fieldMessage(save.error, "eligible", DRAW_FIELDS);
+  const audienceProblem = fieldMessage(save.error, "eligible", { ...DRAW_FIELDS, invalid: "Chọn một đối tượng: cả nam và nữ, chỉ nữ hoặc chỉ nam." });
   const quantityRefused = save.error instanceof ApiError && save.error.code === "lucky_draw.quantity_below_awarded";
 
   return (

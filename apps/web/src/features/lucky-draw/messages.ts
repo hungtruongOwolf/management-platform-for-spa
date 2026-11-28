@@ -14,12 +14,27 @@ addMessages({
   "precondition.if_match_required": "Dữ liệu trên màn đã cũ. Vui lòng tải lại trang rồi thử lại.",
 });
 
-/** Field refusals of these forms (`fieldMessage(…, DRAW_FIELDS)`). */
+/**
+ * Field refusals of these forms (`fieldMessage(…, DRAW_FIELDS)`), the codes the API sends
+ * (architecture/lucky-draw.md §5 B4): `out_of_range` is only ever the prize's slots.
+ */
 export const DRAW_FIELDS: FieldTexts = {
   required: "Bắt buộc nhập.",
   too_long: "Quá dài.",
-  out_of_range: "Ngoài khoảng cho phép.",
+  out_of_range: "Số suất từ 1 đến 1.000.",
+  invalid: "Giá trị không hợp lệ.",
+  count_out_of_range: "Mỗi lần thêm từ 1 đến 500 người.",
   too_many: "Quá số lượng cho phép.",
+};
+
+/** Refusals of a whole list or body rather than of one field: `errors[].field` → code → text. */
+export const LIST_LIMITS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  prizes: { too_many: "Một chương trình có tối đa 50 giải thưởng." },
+  participants: {
+    too_many: "Một chương trình có tối đa 2.000 người tham gia.",
+    count_out_of_range: "Mỗi lần thêm từ 1 đến 500 người.",
+  },
+  body: { invalid: "Dữ liệu gửi đi không hợp lệ. Tải lại trang rồi thử lại." },
 };
 
 /**

@@ -1,7 +1,8 @@
 import { useId, useState, type ReactNode } from "react";
 import { BottomSheet } from "../../components/BottomSheet";
+import { ApiError } from "../../lib/api";
 import { fieldMessage, messageFor } from "../../lib/errors";
-import { DRAW_FIELDS } from "./messages";
+import { DRAW_FIELDS, LIST_LIMITS } from "./messages";
 import { chars } from "./roster";
 
 export const DRAW_NAME_MAX = 80;
@@ -12,19 +13,22 @@ export interface Pending {
   error: Error | null;
 }
 
-/** Refusals of a whole list rather than of one field (`errors[].field` of the API). */
-const LIMITS: Record<string, string> = {
-  prizes: "Một chương trình có tối đa 50 giải thưởng.",
-  participants: "Một chương trình có tối đa 2.000 người tham gia.",
-};
+/** The text for a refusal of a whole list or body (`LIST_LIMITS`), if the error is one. */
+function limitText(error: unknown): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  for (const { field, code } of error.errors) {
+    const text = LIST_LIMITS[field]?.[code];
+    if (text) return text;
+  }
+  return undefined;
+}
 
 /** The server's refusal of a form, under it, unless a field already says it. */
 export function FormError({ error, fields = [] }: { error: unknown; fields?: readonly string[] }) {
   if (!error || fields.some((f) => fieldMessage(error, f, DRAW_FIELDS))) return null;
-  const limit = Object.keys(LIMITS).find((f) => fieldMessage(error, f) !== undefined);
   return (
     <p role="alert" className="alert">
-      {limit ? LIMITS[limit] : messageFor(error)}
+      {limitText(error) ?? messageFor(error)}
     </p>
   );
 }

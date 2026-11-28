@@ -52,7 +52,7 @@ export function PersonSheet({
     fieldMessage(save.error, person ? "name" : "participants[0].name", DRAW_FIELDS);
   const genderProblem =
     (touched && gender === null ? "Chọn Nữ hoặc Nam." : undefined) ??
-    fieldMessage(save.error, person ? "gender" : "participants[0].gender", DRAW_FIELDS);
+    fieldMessage(save.error, person ? "gender" : "participants[0].gender", { ...DRAW_FIELDS, invalid: "Chọn Nữ hoặc Nam." });
 
   return (
     <BottomSheet
