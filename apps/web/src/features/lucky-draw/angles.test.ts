@@ -15,8 +15,8 @@ describe("wheel angles", () => {
     }
   });
 
-  it("lasts three times the prototype's 4.1 s, at its opening speed; reduced motion is gentler but still turns", () => {
-    expect(SPIN_MS).toBe(3 * 4100);
+  it("lasts about 6 s (EM), at the prototype's opening speed; reduced motion is gentler but still turns", () => {
+    expect(SPIN_MS).toBe(6000);
     expect(SPIN.ms).toBe(SPIN_MS);
     expect(GENTLE.ms).toBe(SPIN_MS);
     expect(GENTLE.turns).toBeGreaterThanOrEqual(2);
@@ -24,9 +24,9 @@ describe("wheel angles", () => {
     // Opening speed (deg/ms) = the curve's first slope (y1 / x1) × the average speed.
     const opening = (turns: number, ms: number, x1: number, y1: number) => ((y1 / x1) * turns * 360) / ms;
     const prototype = opening(6, 4100, 0.14, 0.72);
-    expect(opening(SPIN.turns, SPIN.ms, 0.12, 0.65)).toBeGreaterThan(prototype * 0.9);
-    expect(opening(SPIN.turns, SPIN.ms, 0.12, 0.65)).toBeLessThan(prototype * 1.1);
-    expect(SPIN.ease).toBe("cubic-bezier(0.12, 0.65, 0.04, 1)");
+    expect(opening(SPIN.turns, SPIN.ms, 0.13, 0.66)).toBeGreaterThan(prototype * 0.95);
+    expect(opening(SPIN.turns, SPIN.ms, 0.13, 0.66)).toBeLessThan(prototype * 1.05);
+    expect(SPIN.ease).toBe("cubic-bezier(0.13, 0.66, 0.04, 1)");
   });
 
   it("draws a sector from the crypto source", () => {

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
 import { navFor } from "../../app/nav";
-import { SPIN_MS } from "./angles";
+import { GENTLE, SPIN_MS } from "./angles";
 import { D1, detail, person, prize, result } from "./fixtures";
 import { OWNER, fakeApi } from "./testServer";
 
@@ -109,7 +109,7 @@ describe("spin (US4)", () => {
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
-    // The wheel turns at the press: 18 turns in 12.3 s (3× the prototype, EM 2026-11-28).
+    // The wheel turns at the press: 9 turns in 6 s (EM 2026-11-28: "tầm 6s thôi").
     const disk = diskOf(stage);
     expect(disk.style.getPropertyValue("transition")).toContain(`${String(SPIN_MS)}ms`);
     expect(disk.style.getPropertyPriority("transition")).toBe("important");
@@ -199,9 +199,12 @@ describe("spin (US4)", () => {
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
     const disk = diskOf(stage);
-    expect(disk.style.getPropertyValue("transition")).toContain(`${String(SPIN_MS)}ms`);
+    expect(disk.style.getPropertyValue("transition")).toContain(`${String(SPIN_MS)}ms ${GENTLE.ease}`);
     expect(disk.style.getPropertyPriority("transition")).toBe("important");
-    expect(disk.style.transform).toMatch(/^rotate\((\d+(\.\d+)?)deg\)$/);
+    // Gentler: 3 turns (and part of one), not the 9 of the full spin.
+    const deg = Number(/^rotate\((\d+(?:\.\d+)?)deg\)$/.exec(disk.style.transform)?.[1]);
+    expect(deg).toBeGreaterThanOrEqual(GENTLE.turns * 360);
+    expect(deg).toBeLessThan((GENTLE.turns + 1) * 360);
     expect(disk.style.transform).not.toBe("rotate(0deg)");
     await act(() => vi.advanceTimersByTimeAsync(SPIN_MS - 500));
     expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();

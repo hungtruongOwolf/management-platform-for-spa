@@ -266,6 +266,9 @@
     .ld-side-skeleton {
       height: auto;
     }
+    .ld-stage-skeleton {
+      min-height: 0;
+    }
     .ld-stage {
       min-height: 0;
       container: ld-stage / size;

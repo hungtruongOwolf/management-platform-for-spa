@@ -12,22 +12,22 @@ export interface Turn {
 }
 
 /**
- * How long one spin lasts, press to stop (EM 2026-11-28: "lâu hơn 3 lần" than the 4.1 s of the
+ * How long one spin lasts, press to stop (EM 2026-11-28: "tầm 6s thôi", up from the 4.1 s of the
  * prototype). The one number to tune; both timings below use it.
  */
-export const SPIN_MS = 12300;
+export const SPIN_MS = 6000;
 
 /**
- * One eased turn from the press to the stop. 18 turns keep the opening speed of the 6-turn, 4.1 s
- * prototype (the curve's first slope ≈ 5.4 × the average speed); the ease-out ends on a long, slow
+ * One eased turn from the press to the stop. 9 turns keep the opening speed of the 6-turn, 4.1 s
+ * prototype (the curve's first slope ≈ 5.1 × the average speed); the ease-out ends on a long, slow
  * tail, the suspense of the last turns.
  */
-export const SPIN: Turn = { turns: 18, ms: SPIN_MS, ease: "cubic-bezier(0.12, 0.65, 0.04, 1)" };
+export const SPIN: Turn = { turns: 9, ms: SPIN_MS, ease: "cubic-bezier(0.13, 0.66, 0.04, 1)" };
 /**
  * `prefers-reduced-motion`: still a spin the room can see (EM: the spin is the content of a draw),
- * as long, gentler: four turns, a soft start and the same slow end.
+ * as long, gentler: three turns, a soft start and the same slow end.
  */
-export const GENTLE: Turn = { turns: 4, ms: SPIN_MS, ease: "cubic-bezier(0.3, 0.15, 0.1, 1)" };
+export const GENTLE: Turn = { turns: 3, ms: SPIN_MS, ease: "cubic-bezier(0.3, 0.15, 0.1, 1)" };
 
 /** A uniform sector (8 divides 2³², so the modulo has no bias). */
 export function randomSector(): number {
