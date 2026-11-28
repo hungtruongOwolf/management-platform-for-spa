@@ -8,7 +8,7 @@
 
 use crate::repo;
 use crate::service::load;
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, Permission, TenantTx, corrections};
@@ -32,7 +32,7 @@ pub async fn void_in(
     actor: &Actor,
     sale_id: Uuid,
     reason: &str,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<VoidedSale, AppError> {
     let sale = repo::lock_sale(tx, sale_id)
         .await?
@@ -87,7 +87,7 @@ pub async fn authorized_then(
         let today = kernel::tenant::profile(&mut tx)
             .await?
             .business_date
-            .as_naive();
+            .as_date();
         corrections::authorize_void(actor, sale.business_date, today)?;
         tx.commit().await?;
         Ok::<(), AppError>(())
@@ -131,7 +131,7 @@ pub async fn void_sale(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     corrections::authorize_void(actor, sale.business_date, today)?;
     if sale.status != "open" {
         return Err(AppError::Conflict {

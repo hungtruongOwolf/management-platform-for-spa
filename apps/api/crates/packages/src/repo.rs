@@ -1,6 +1,8 @@
 //! Customer package SQL. Tenant-scoped explicitly in every query; RLS is the second layer.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff_sqlx::ToSqlx;
 use kernel::{AppError, TenantTx};
 use uuid::Uuid;
 
@@ -15,12 +17,12 @@ pub struct PackageRow {
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
-    pub starts_on: NaiveDate,
-    pub expires_on: Option<NaiveDate>,
-    pub cancelled_at: Option<DateTime<Utc>>,
+    pub starts_on: Date,
+    pub expires_on: Option<jiff_sqlx::Date>,
+    pub cancelled_at: Option<jiff_sqlx::Timestamp>,
     pub cancel_reason: Option<String>,
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 pub struct ItemRow {
@@ -46,8 +48,8 @@ pub struct PackageInsert<'a> {
     pub origin: &'a str,
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
-    pub starts_on: NaiveDate,
-    pub expires_on: Option<NaiveDate>,
+    pub starts_on: Date,
+    pub expires_on: Option<Date>,
     pub created_by: Uuid,
 }
 
@@ -68,8 +70,8 @@ pub async fn insert_package(tx: &mut TenantTx, p: &PackageInsert<'_>) -> Result<
         p.origin,
         p.sale_id,
         p.closer_staff_id,
-        p.starts_on,
-        p.expires_on,
+        p.starts_on.to_sqlx(),
+        p.expires_on.map(ToSqlx::to_sqlx),
         p.created_by
     )
     .execute(tx.conn())
@@ -198,7 +200,7 @@ pub async fn consume(
     customer_id: Uuid,
     qty: i32,
     allow_expired: bool,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Option<ConsumedRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -220,7 +222,7 @@ pub async fn consume(
         qty,
         customer_id,
         allow_expired,
-        today
+        today.to_sqlx()
     )
     .fetch_optional(tx.conn())
     .await?)
@@ -263,7 +265,7 @@ pub async fn usable_items(
     tx: &mut TenantTx,
     customer_id: Uuid,
     service_id: Uuid,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Vec<UsableItem>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -279,7 +281,7 @@ pub async fn usable_items(
         tenant,
         customer_id,
         service_id,
-        today
+        today.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -288,7 +290,7 @@ pub async fn usable_items(
 pub struct ItemState {
     pub customer_id: Uuid,
     pub cancelled: bool,
-    pub expires_on: Option<NaiveDate>,
+    pub expires_on: Option<jiff_sqlx::Date>,
 }
 
 /// Why a consume matched nothing: read after the failed update, inside the same transaction.
@@ -312,7 +314,7 @@ pub async fn item_state(tx: &mut TenantTx, item_id: Uuid) -> Result<Option<ItemS
 pub struct LockedPackage {
     pub customer_id: Uuid,
     pub sold_price: i64,
-    pub expires_on: Option<NaiveDate>,
+    pub expires_on: Option<jiff_sqlx::Date>,
     pub cancelled: bool,
     pub version: i64,
 }
@@ -444,7 +446,7 @@ pub async fn set_expiry(
     tx: &mut TenantTx,
     id: Uuid,
     version: i64,
-    expires_on: NaiveDate,
+    expires_on: Date,
 ) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query!(
@@ -453,7 +455,7 @@ pub async fn set_expiry(
         tenant,
         id,
         version,
-        expires_on
+        expires_on.to_sqlx()
     )
     .execute(tx.conn())
     .await?
@@ -464,10 +466,10 @@ pub async fn set_expiry(
 /// One "Gia hạn" of a package, for the customer timeline (append-only book, 0023).
 pub struct ExtensionInsert<'a> {
     pub customer_package_id: Uuid,
-    pub previous_expires_on: NaiveDate,
-    pub expires_on: NaiveDate,
+    pub previous_expires_on: Date,
+    pub expires_on: Date,
     pub reason: &'a str,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub created_by: Uuid,
 }
 
@@ -481,10 +483,10 @@ pub async fn insert_extension(tx: &mut TenantTx, e: &ExtensionInsert<'_>) -> Res
         Uuid::now_v7(),
         tenant,
         e.customer_package_id,
-        e.previous_expires_on,
-        e.expires_on,
+        e.previous_expires_on.to_sqlx(),
+        e.expires_on.to_sqlx(),
         e.reason,
-        e.business_date,
+        e.business_date.to_sqlx(),
         e.created_by
     )
     .execute(tx.conn())
@@ -547,7 +549,7 @@ pub struct RefundInsert<'a> {
     pub branch_id: Uuid,
     pub customer_id: Uuid,
     pub customer_package_id: Uuid,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub method: &'a str,
     pub amount: i64,
     pub reason: &'a str,
@@ -566,7 +568,7 @@ pub async fn insert_refund(tx: &mut TenantTx, r: &RefundInsert<'_>) -> Result<()
         r.branch_id,
         r.customer_id,
         r.customer_package_id,
-        r.business_date,
+        r.business_date.to_sqlx(),
         r.method,
         r.amount,
         r.reason,
@@ -580,10 +582,10 @@ pub async fn insert_refund(tx: &mut TenantTx, r: &RefundInsert<'_>) -> Result<()
 pub struct RefundRow {
     pub id: Uuid,
     pub customer_package_id: Uuid,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub method: String,
     pub amount: i64,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 pub async fn refunds(tx: &mut TenantTx, package_ids: &[Uuid]) -> Result<Vec<RefundRow>, AppError> {

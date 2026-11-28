@@ -1,6 +1,8 @@
 //! Sales SQL. `payment` and `sale_line` are insert-only (no grant, plus a trigger).
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff_sqlx::ToSqlx;
 use kernel::{AppError, TenantTx};
 use uuid::Uuid;
 
@@ -8,7 +10,7 @@ pub struct SaleInsert<'a> {
     pub id: Uuid,
     pub branch_id: Uuid,
     pub customer_id: Uuid,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub subtotal: i64,
     pub discount_amount: i64,
     pub discount_reason: Option<&'a str>,
@@ -33,7 +35,7 @@ pub async fn insert_sale(tx: &mut TenantTx, s: &SaleInsert<'_>) -> Result<(), Ap
         tenant,
         s.branch_id,
         s.customer_id,
-        s.business_date,
+        s.business_date.to_sqlx(),
         s.subtotal,
         s.discount_amount,
         s.discount_reason,
@@ -124,7 +126,7 @@ pub struct SalePaymentRow {
     pub method: String,
     pub amount: i64,
     pub reference: Option<String>,
-    pub paid_at: DateTime<Utc>,
+    pub paid_at: Timestamp,
 }
 
 /// Payments of several sales in one query (read models such as the day's visit list).
@@ -147,7 +149,7 @@ pub async fn payments_of(
 pub struct PaymentInsert<'a> {
     pub branch_id: Uuid,
     pub sale_id: Uuid,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub method: &'a str,
     pub amount: i64,
     pub reference: Option<&'a str>,
@@ -164,7 +166,7 @@ pub async fn insert_payment(tx: &mut TenantTx, p: &PaymentInsert<'_>) -> Result<
         tenant,
         p.branch_id,
         p.sale_id,
-        p.business_date,
+        p.business_date.to_sqlx(),
         p.method,
         p.amount,
         p.reference,
@@ -178,7 +180,7 @@ pub async fn insert_payment(tx: &mut TenantTx, p: &PaymentInsert<'_>) -> Result<
 pub struct SaleRow {
     pub id: Uuid,
     pub customer_id: Uuid,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub subtotal: i64,
     pub discount_amount: i64,
     pub discount_reason: Option<String>,
@@ -186,11 +188,11 @@ pub struct SaleRow {
     pub amount_paid: i64,
     pub status: String,
     pub void_reason: Option<String>,
-    pub voided_at: Option<DateTime<Utc>>,
+    pub voided_at: Option<jiff_sqlx::Timestamp>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
     pub visit_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     pub version: i64,
     pub note_ct: Option<Vec<u8>>,
 }
@@ -244,7 +246,7 @@ pub async fn lines(tx: &mut TenantTx, sale_ids: &[Uuid]) -> Result<Vec<LineRow>,
 // ---------------------------------------------------------------- voids (S8)
 
 pub struct LockedSale {
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub status: String,
     /// The sale created packages (a package sale); otherwise it is a visit's one-off services.
     pub sells_packages: bool,
@@ -262,7 +264,7 @@ pub struct DaySaleHead {
 /// Package sales of `day` saved without a visit (not paper-book imports), newest first.
 pub async fn day_sales(
     tx: &mut TenantTx,
-    day: NaiveDate,
+    day: Date,
     limit: i64,
 ) -> Result<Vec<DaySaleHead>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -289,7 +291,7 @@ pub async fn day_sales(
            ORDER BY s.created_at DESC, s.id DESC
            LIMIT $3"#,
         tenant,
-        day,
+        day.to_sqlx(),
         limit
     )
     .fetch_all(tx.conn())
@@ -387,7 +389,7 @@ pub async fn insert_reversal(
     tx: &mut TenantTx,
     sale_id: Uuid,
     original: &OpenPayment,
-    business_date: NaiveDate,
+    business_date: Date,
     by: Uuid,
 ) -> Result<Uuid, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -400,7 +402,7 @@ pub async fn insert_reversal(
         tenant,
         original.branch_id,
         sale_id,
-        business_date,
+        business_date.to_sqlx(),
         original.method,
         original.amount,
         original.id,
@@ -416,14 +418,14 @@ pub struct PaperSaleInsert<'a> {
     pub branch_id: Uuid,
     pub customer_id: Uuid,
     /// The paper date.
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub amount: i64,
     pub plan_id: Option<Uuid>,
     pub customer_package_id: Uuid,
     pub description: &'a str,
     pub method: &'a str,
     /// Instant on the paper day (its noon in the spa's time zone).
-    pub at: chrono::DateTime<chrono::Utc>,
+    pub at: Timestamp,
     pub created_by: Uuid,
 }
 
@@ -440,10 +442,10 @@ pub async fn insert_paper_sale(tx: &mut TenantTx, s: &PaperSaleInsert<'_>) -> Re
         tenant,
         s.branch_id,
         s.customer_id,
-        s.business_date,
+        s.business_date.to_sqlx(),
         s.amount,
         s.created_by,
-        s.at
+        s.at.to_sqlx()
     )
     .execute(tx.conn())
     .await?;
@@ -470,10 +472,10 @@ pub async fn insert_paper_sale(tx: &mut TenantTx, s: &PaperSaleInsert<'_>) -> Re
         tenant,
         s.branch_id,
         s.id,
-        s.business_date,
+        s.business_date.to_sqlx(),
         s.method,
         s.amount,
-        s.at,
+        s.at.to_sqlx(),
         s.created_by
     )
     .execute(tx.conn())

@@ -9,7 +9,9 @@
 
 use crate::domain::{self, PackageStatus, RefundMethod};
 use crate::repo::{self, ItemInsert, ItemRow, PackageInsert, PackageRow, RefundRow};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff_sqlx::ToSqlx;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use serde_json::json;
@@ -58,8 +60,8 @@ pub struct NewPackage {
     /// Price actually paid, after discount.
     pub sold_price: Money,
     pub origin: Origin,
-    pub starts_on: NaiveDate,
-    pub expires_on: Option<NaiveDate>,
+    pub starts_on: Date,
+    pub expires_on: Option<Date>,
     pub items: Vec<NewItem>,
 }
 
@@ -204,7 +206,7 @@ pub struct Consume {
     pub customer_id: Uuid,
     pub qty: u32,
     /// The visit's business day, for the expiry check.
-    pub today: NaiveDate,
+    pub today: Date,
     /// The caller verified `package.use_expired_override` and recorded a reason (AC4.6).
     pub allow_expired: bool,
 }
@@ -285,7 +287,7 @@ pub async fn consume_session(tx: &mut TenantTx, c: Consume) -> Result<Consumed, 
         Some(s) if s.customer_id != c.customer_id => None,
         None => None,
         Some(s) if s.cancelled => Some("package.cancelled"),
-        Some(s) if !c.allow_expired && s.expires_on.is_some_and(|d| d < c.today) => {
+        Some(s) if !c.allow_expired && s.expires_on.is_some_and(|d| d < c.today.to_sqlx()) => {
             Some("package.expired")
         }
         Some(_) => Some("package.no_sessions_left"),
@@ -309,7 +311,7 @@ pub async fn default_item(
     tx: &mut TenantTx,
     customer_id: Uuid,
     service_id: Uuid,
-    today: NaiveDate,
+    today: Date,
     qty: u32,
     planned: &HashMap<Uuid, u32>,
 ) -> Result<Option<Uuid>, AppError> {
@@ -354,9 +356,9 @@ pub struct CustomerPackage {
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
-    pub starts_on: NaiveDate,
-    pub expires_on: Option<NaiveDate>,
-    pub cancelled_at: Option<DateTime<Utc>>,
+    pub starts_on: Date,
+    pub expires_on: Option<Date>,
+    pub cancelled_at: Option<Timestamp>,
     pub cancel_reason: Option<String>,
     /// Money paid back when the package was cancelled (US7), if any.
     pub refund: Option<Refund>,
@@ -364,7 +366,7 @@ pub struct CustomerPackage {
     pub sessions_total: i64,
     pub sessions_remaining: i64,
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     pub items: Vec<PackageItem>,
 }
 
@@ -373,8 +375,8 @@ pub struct Refund {
     pub id: Uuid,
     pub amount: Money,
     pub method: RefundMethod,
-    pub business_date: NaiveDate,
-    pub created_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub created_at: Timestamp,
 }
 
 fn refund(r: RefundRow) -> Result<Refund, AppError> {
@@ -407,7 +409,7 @@ fn item(r: ItemRow) -> Result<PackageItem, AppError> {
 async fn assemble(
     tx: &mut TenantTx,
     rows: Vec<PackageRow>,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Vec<CustomerPackage>, AppError> {
     let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
     let mut by_package: HashMap<Uuid, Vec<PackageItem>> = HashMap::new();
@@ -435,7 +437,7 @@ async fn assemble(
                 status: PackageStatus::derive(
                     r.cancelled_at.is_some(),
                     remaining,
-                    r.expires_on,
+                    r.expires_on.map(jiff_sqlx::Date::to_jiff),
                     today,
                 ),
                 sold_price: Money::vnd(r.sold_price)
@@ -452,8 +454,8 @@ async fn assemble(
                 closer_staff_id: r.closer_staff_id,
                 closer_name: r.closer_name,
                 starts_on: r.starts_on,
-                expires_on: r.expires_on,
-                cancelled_at: r.cancelled_at,
+                expires_on: r.expires_on.map(jiff_sqlx::Date::to_jiff),
+                cancelled_at: r.cancelled_at.map(jiff_sqlx::Timestamp::to_jiff),
                 refund: refunds.remove(&r.id),
                 cancel_reason: r.cancel_reason,
                 version: r.version,
@@ -467,7 +469,7 @@ async fn assemble(
 pub async fn load(
     tx: &mut TenantTx,
     id: Uuid,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Option<CustomerPackage>, AppError> {
     let rows = repo::packages(tx, Some(id), None).await?;
     Ok(assemble(tx, rows, today).await?.into_iter().next())
@@ -477,7 +479,7 @@ pub async fn load(
 pub async fn of_sales(
     tx: &mut TenantTx,
     sale_ids: &[Uuid],
-    today: NaiveDate,
+    today: Date,
 ) -> Result<Vec<CustomerPackage>, AppError> {
     if sale_ids.is_empty() {
         return Ok(Vec::new());
@@ -493,7 +495,7 @@ pub async fn get(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<CustomerPacka
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let found = load(&mut tx, id, today).await?;
     tx.commit().await?;
     found.ok_or(AppError::NotFound)
@@ -513,7 +515,7 @@ pub async fn for_customer(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let rows = repo::packages(&mut tx, None, Some(customer_id)).await?;
     let packages = assemble(&mut tx, rows, today).await?;
     tx.commit().await?;

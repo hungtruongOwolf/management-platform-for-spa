@@ -1,7 +1,8 @@
 //! Wire types of the sales API. The stored idempotent response is a `SaleDto`, so a replay is
 //! byte-for-byte what the first request returned.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use packages::http::CustomerPackageDto;
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
@@ -155,14 +156,15 @@ pub struct PaymentDto {
     pub method: PaymentMethodDto,
     pub amount: i64,
     pub reference: Option<String>,
-    pub paid_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub paid_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SaleDto {
     pub id: Uuid,
     pub customer_id: Uuid,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub subtotal: i64,
     pub discount_amount: i64,
     pub discount_reason: Option<String>,
@@ -171,13 +173,15 @@ pub struct SaleDto {
     pub status: SaleStatusDto,
     /// Set when the sale was voided (US6); its payments then each have a `reversal`.
     pub void_reason: Option<String>,
-    pub voided_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub voided_at: Option<Timestamp>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
     /// The visit this sale was made in (its one-off lines, a package sold in the cart, an
     /// addition); null = a sale at the desk without a visit.
     pub visit_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
     /// Optimistic-lock version: `PATCH /sales/{id}` takes it as `If-Match` (also sent as `ETag`).
     pub version: i64,
     pub lines: Vec<SaleLineDto>,
@@ -219,7 +223,7 @@ where
 #[serde(deny_unknown_fields)]
 pub struct SaleListQuery {
     /// Business day (`YYYY-MM-DD`). Default: today.
-    pub date: Option<NaiveDate>,
+    pub date: Option<Date>,
 }
 
 /// One package sale of the day list at Quầy (F6, live test 2026-11-08): a cart of packages saved
