@@ -458,7 +458,12 @@ impl<'a> Chain<'a> {
         if lines.is_empty() {
             lines.push(self.one_off(v.day, data::ONE_OFF_SERVICES)?);
         }
-        if self.rng.chance(20) {
+        // A scripted void / "Sửa lượt" is a mistake with money: its payment is reversed on the
+        // visit's own day. One drawn among package-only visits takes an add-on, so the history
+        // keeps past reversals whatever day the seed runs (2026-11-28 drew only package visits).
+        let add_on = self.rng.chance(20);
+        let pays = lines.iter().any(|l| matches!(l.source, Source::OneOff));
+        if add_on || (matches!(v.script, Script::Void | Script::Correct) && !pays) {
             lines.push(self.one_off(v.day, data::ADD_ONS)?);
         }
         let subtotal: i64 = lines.iter().map(|l| l.unit_price).sum();
