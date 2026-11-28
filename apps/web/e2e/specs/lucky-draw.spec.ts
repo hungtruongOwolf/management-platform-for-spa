@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { ownerState } from "../stack";
 import { sidewaysOverflow } from "../support/responsive";
@@ -32,14 +32,30 @@ async function addPrize(page: Page, name: string, audience: "Cả nam và nữ" 
   await expect(prizes(page).getByRole("button", { name: new RegExp(`^${name}`) })).toContainText(`Còn ${String(slots)}/${String(slots)} suất`);
 }
 
-/** Presses "Quay" / "Quay tiếp" and waits for the wheel to stop on spin number `seq`'s winner. */
-async function spinOnce(page: Page, seq: number): Promise<string> {
-  const button = stage(page).getByRole("button", { name: /^Quay/ });
-  await button.click();
-  // The slow-down lasts ~4 s; the winner shows only after it.
-  await expect(stage(page).locator(".ld-result-label")).toHaveText(`Người trúng · lượt ${String(seq)}`, { timeout: 10_000 });
-  await expect(button).not.toHaveAttribute("aria-busy", "true");
-  return (await stage(page).locator(".ld-result-name").innerText()).split(",")[0]?.trim() ?? "";
+const winner = (page: Page) => page.getByRole("dialog", { name: "Chúc mừng" });
+const disk = (page: Page) => page.getByRole("img", { name: "Vòng quay tám cánh sen" }).locator(".ld-wheel-disk");
+const angleOf = (page: Page) => disk(page).evaluate((el) => getComputedStyle(el).transform);
+
+/**
+ * Presses `press` (the stage's "Quay" or the popup's "Quay tiếp") and checks, in the real browser,
+ * that the wheel's disk turns while the popup waits; then waits for spin number `seq`'s popup and
+ * returns the winner's name. `probeMs`: when to sample the turn (shorter for the gentle spin).
+ */
+async function spinOnce(page: Page, press: Locator, seq: number, probeMs = 700): Promise<string> {
+  const before = await angleOf(page);
+  await press.click();
+  await page.waitForTimeout(probeMs);
+  const a = await angleOf(page);
+  await page.waitForTimeout(probeMs / 2);
+  const b = await angleOf(page);
+  expect(a, "the disk has left its resting angle").not.toBe(before);
+  expect(b, "the disk is still turning").not.toBe(a);
+  // Still turning: no winner yet.
+  await expect(winner(page)).toBeHidden();
+  await expect(page.getByText("Đang quay…").first()).toBeVisible();
+  await expect(winner(page)).toBeVisible({ timeout: 10_000 });
+  await expect(winner(page).getByText(`Lượt ${String(seq)}`, { exact: true })).toBeVisible();
+  return (await winner(page).locator(".ld-winner-name").innerText()).trim();
 }
 
 async function signInAsManager(browser: Browser): Promise<Page> {
@@ -95,48 +111,79 @@ test.describe("vòng quay may mắn", () => {
     await expectAccessible(page, "lucky-draw-ready-dark");
     await page.emulateMedia({ colorScheme: "light" });
 
-    // US4: the first spin with the wheel turning, the others without motion (same server path).
-    const button = stage(page).getByRole("button", { name: "Quay" });
-    const first = spinOnce(page, 1);
-    // Busy at once, while the wheel turns and before the winner is shown.
-    await expect(button).toHaveAttribute("aria-busy", "true");
-    await expect(stage(page).locator(".ld-result-name")).toHaveCount(0);
-    expect(WOMEN).toContain(await first);
-    await expectAccessible(page, "lucky-draw-result");
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    for (const seq of [2, 3, 4]) await spinOnce(page, seq);
+    // US4: every press turns the wheel (EM: the spin is the content); the winner pops up once it stops.
+    const first = await spinOnce(page, stage(page).getByRole("button", { name: "Quay" }), 1);
+    expect(WOMEN).toContain(first);
+    await expect(winner(page).getByRole("button", { name: "Quay tiếp" })).toBeFocused();
+    // Not under the wheel: only the popup shows the winner.
+    await expect(stage(page).getByText(first, { exact: true })).toHaveCount(0);
+    await expectAccessible(page, "lucky-draw-popup");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expectAccessible(page, "lucky-draw-popup-dark");
+    await page.emulateMedia({ colorScheme: "light" });
 
-    // US6: the last slot opens the summary; the women-only prize went to women.
+    // Reduced motion still spins, gentler (2 turns in 2.5 s).
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await spinOnce(page, winner(page).getByRole("button", { name: "Quay tiếp" }), 2, 500);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await sidewaysOverflow(page)).toBe(0);
+    await expectAccessible(page, "lucky-draw-popup-390");
+    await spinOnce(page, winner(page).getByRole("button", { name: "Quay tiếp" }), 3, 500);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await spinOnce(page, winner(page).getByRole("button", { name: "Quay tiếp" }), 4, 500);
+
+    // US6: the spin that gives out the last slot offers the summary; the women-only prize went to women.
+    await expect(winner(page).getByRole("button", { name: "Quay tiếp" })).toHaveCount(0);
+    await winner(page).getByRole("button", { name: "Xem tổng kết" }).click();
+    await expect(winner(page)).toBeHidden();
     const summary = page.getByRole("dialog", { name: "Tổng kết chương trình" });
     await expect(summary).toBeVisible();
     await expect(summary.getByText("4 suất đã trao", { exact: false })).toBeVisible();
     const womenOnly = summary.getByRole("region", { name: "Gội đầu E2E" });
     await expect(womenOnly.getByRole("listitem")).toHaveCount(2);
-    for (const item of await womenOnly.getByRole("listitem").allInnerTexts()) expect(item).toContain("(Nữ)");
+    for (const chip of await womenOnly.locator(".ld-win .gender-chip").allInnerTexts()) expect(chip).toBe("Nữ");
     await expectAccessible(page, "lucky-draw-summary");
     const [download] = await Promise.all([page.waitForEvent("download"), summary.getByRole("button", { name: "Tải danh sách (CSV)" }).click()]);
     const csv = readFileSync(await download.path(), "utf8");
-    expect(csv.startsWith("﻿\"Lượt\",\"Họ tên\",\"Giới tính\",\"Giải thưởng\",\"Lúc quay\",\"Trạng thái\"")).toBe(true);
+    expect(csv.startsWith('﻿"Lượt","Họ tên","Giới tính","Giải thưởng","Lúc quay","Trạng thái"')).toBe(true);
     expect(csv.trim().split("\r\n")).toHaveLength(5);
     await summary.getByRole("button", { name: "Đóng", exact: true }).last().click();
     await expect(stage(page).getByRole("button", { name: "Quay tiếp" })).toHaveAttribute("aria-disabled", "true");
 
+    // The winners list: cards grouped by prize.
+    const anyone = page.getByRole("list", { name: "Người trúng giải Cổ vai gáy E2E" });
+    await expect(anyone.getByRole("listitem")).toHaveCount(2);
+    await expectAccessible(page, "lucky-draw-winners");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expectAccessible(page, "lucky-draw-winners-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+
     // US5: a winner of the prize for anyone is absent; the slot comes back and goes to someone else.
-    const winners = page.getByRole("table", { name: "Danh sách trúng thưởng" });
-    const absentRow = winners.getByRole("row").filter({ hasText: "Cổ vai gáy E2E" }).first();
-    const absent = (await absentRow.locator(".ld-who .font-semibold").innerText()).trim();
+    const absentRow = anyone.getByRole("listitem").first();
+    const absent = (await absentRow.locator(".ld-win-who").innerText()).trim();
     await absentRow.getByRole("button", { name: /^Thao tác với lượt/ }).click();
     await page.getByRole("menuitem", { name: "Vắng mặt, trả giải" }).click();
-    const forfeit = page.getByRole("dialog", { name: new RegExp(`^Trả giải “Cổ vai gáy E2E” của`) });
+    const forfeit = page.getByRole("dialog", { name: /^Trả giải “Cổ vai gáy E2E” của/ });
     await expect(forfeit).toContainText("Suất này quay lại cho lượt sau");
     await forfeit.getByRole("button", { name: "Vắng mặt, trả giải" }).click();
     await expect(forfeit).toBeHidden();
-    await expect(winners.getByRole("row").filter({ hasText: absent })).toContainText("Vắng mặt");
+    await expect(anyone.getByRole("listitem").filter({ hasText: absent })).toContainText("Vắng mặt");
     await expect(prizes(page).getByRole("button", { name: /^Cổ vai gáy E2E/ })).toContainText("Còn 1/2 suất");
-    const again = await spinOnce(page, 5);
+
+    // US7: the presentation; the popup opens over it, TV size; then both close.
+    const present = page.getByRole("button", { name: "Trình chiếu" });
+    await present.click();
+    const show = page.getByRole("dialog", { name });
+    await expect(show.getByRole("button", { name: "Thoát trình chiếu" })).toBeVisible();
+    await expectAccessible(page, "lucky-draw-presentation");
+    const again = await spinOnce(page, show.getByRole("button", { name: "Quay tiếp" }), 5, 500);
     expect(again).not.toBe(absent);
-    await expect(page.getByRole("dialog", { name: "Tổng kết chương trình" })).toBeVisible();
-    await page.keyboard.press("Escape");
+    await expect(winner(page)).toHaveClass(/is-big/);
+    await expectAccessible(page, "lucky-draw-presentation-popup");
+    await winner(page).getByRole("button", { name: "Đóng", exact: true }).click();
+    await expect(winner(page)).toBeHidden();
+    await show.getByRole("button", { name: "Thoát trình chiếu" }).click();
+    await expect(present).toBeFocused();
 
     // Phones: one column, nothing sideways.
     await page.setViewportSize({ width: 390, height: 844 });
@@ -145,15 +192,6 @@ test.describe("vòng quay may mắn", () => {
     await page.setViewportSize({ width: 1024, height: 900 });
     expect(await sidewaysOverflow(page)).toBe(0);
     await page.setViewportSize({ width: 1280, height: 900 });
-
-    // US7: the presentation covers the screen; Esc gives focus back to its button.
-    const present = page.getByRole("button", { name: "Trình chiếu" });
-    await present.click();
-    const show = page.getByRole("dialog", { name });
-    await expect(show.getByRole("button", { name: "Thoát trình chiếu" })).toBeVisible();
-    await expectAccessible(page, "lucky-draw-presentation");
-    await show.getByRole("button", { name: "Thoát trình chiếu" }).click();
-    await expect(present).toBeFocused();
 
     // US1: delete; the e2e leaves no program behind.
     await page.getByRole("button", { name: "Thao tác với chương trình" }).click();
