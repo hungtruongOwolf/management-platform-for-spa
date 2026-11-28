@@ -10,7 +10,7 @@
 
 use crate::demo::{member_actor, owner_of};
 use anyhow::{Context, bail};
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::hash_request;
 use kernel::{PhoneE164, TenantId};
@@ -133,9 +133,9 @@ struct Package {
     name: String,
     sold_price: i64,
     /// Money paid on paper (0 = none): `(amount, paid_on, method)`.
-    paid: Option<(i64, NaiveDate, PaperMethodDto)>,
-    starts_on: NaiveDate,
-    expires_on: Option<NaiveDate>,
+    paid: Option<(i64, Date, PaperMethodDto)>,
+    starts_on: Date,
+    expires_on: Option<Date>,
     gift_note: Option<String>,
     items: Vec<Item>,
 }
@@ -196,7 +196,7 @@ fn packages_of(csv: &str) -> anyhow::Result<(usize, Vec<Package>)> {
             ));
         }
         let number = |c: &str| get(c).parse::<u32>().ok();
-        let date = |c: &str| NaiveDate::parse_from_str(get(c), "%Y-%m-%d").ok();
+        let date = |c: &str| Date::strptime("%Y-%m-%d", get(c)).ok();
         let sold_price = get("sold_price").parse::<i64>().ok();
         let paid = paid_of(get("paid_amount"), get("paid_on"), get("method"));
         if let Err(what) = &paid {
@@ -304,7 +304,7 @@ fn paid_of(
     amount: &str,
     paid_on: &str,
     method: &str,
-) -> Result<Option<(i64, NaiveDate, PaperMethodDto)>, String> {
+) -> Result<Option<(i64, Date, PaperMethodDto)>, String> {
     let amount = if amount.is_empty() {
         0
     } else {
@@ -325,7 +325,7 @@ fn paid_of(
         (0, true) => Ok(None),
         (0, false) => Err("paid_on is set but paid_amount is 0".into()),
         (_, true) => Err("paid_on is required when paid_amount > 0".into()),
-        (_, false) => NaiveDate::parse_from_str(paid_on, "%Y-%m-%d")
+        (_, false) => Date::strptime("%Y-%m-%d", paid_on)
             .map(|d| Some((amount, d, method)))
             .map_err(|_| "paid_on must be YYYY-MM-DD".into()),
     }
@@ -375,12 +375,13 @@ pub async fn import(
     );
     let actor = member_actor(app, owner_of(owner, tenant).await?, tenant).await?;
     // Paper money is back-dated, never post-dated: check every row before anything is written.
-    let today: NaiveDate = sqlx::query_scalar(
+    let today: jiff_sqlx::Date = sqlx::query_scalar(
         "SELECT (now() AT TIME ZONE timezone)::date FROM app.tenant WHERE id = $1",
     )
     .bind(tenant.as_uuid())
     .fetch_one(owner)
     .await?;
+    let today = today.to_jiff();
     if let Some(p) = packages
         .iter()
         .find(|p| p.paid.is_some_and(|(_, on, _)| on > today))
@@ -442,7 +443,7 @@ pub async fn import(
                     .bind(tenant.as_uuid())
                     .bind(customer)
                     .bind(p.name.trim())
-                    .bind(p.starts_on)
+                    .bind(jiff_sqlx::Date::from(p.starts_on))
                     .fetch_optional(owner)
                     .await?
                 }
@@ -554,7 +555,7 @@ mod tests {
 
     #[test]
     fn paper_money_columns_are_checked_per_row_and_per_package() -> anyhow::Result<()> {
-        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap_or_default();
+        let d = |s: &str| Date::strptime("%Y-%m-%d", s).unwrap_or_default();
         assert_eq!(paid_of("", "", ""), Ok(None));
         assert_eq!(
             paid_of("1500000", "2026-06-01", ""),
@@ -619,10 +620,7 @@ mod tests {
             "same phone (any format) + name + start"
         );
         assert_eq!(packages[0].gift_note.as_deref(), Some("Khăn"));
-        assert_eq!(
-            packages[1].expires_on,
-            NaiveDate::from_ymd_opt(2026, 12, 31)
-        );
+        assert_eq!(packages[1].expires_on, Date::new(2026, 12, 31).ok());
         assert_eq!(packages[1].items[0].bonus, 0, "empty bonus = 0");
         Ok(())
     }

@@ -4,14 +4,14 @@
 mod common;
 
 use axum::http::StatusCode;
-use chrono::{Datelike, Duration, NaiveDate, Utc};
-use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, Reply, TestResult, add_member, call, call_with_headers, harness, post_customer,
     session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
+use jiff::Span;
+use jiff::civil::Date;
 use kernel::testing::app_pool;
 use kernel::{TenantId, TenantTx};
 use serde_json::{Value, json};
@@ -42,22 +42,22 @@ struct Spa {
     plan: Uuid,
 }
 
-fn today() -> NaiveDate {
-    Utc::now().with_timezone(&Ho_Chi_Minh).date_naive()
+fn today() -> Date {
+    common::vn_today()
 }
 
-fn yesterday() -> NaiveDate {
-    today() - Duration::days(1)
+fn yesterday() -> Date {
+    today() - Span::new().days(1)
 }
 
-fn ym(d: NaiveDate) -> String {
-    d.format("%Y-%m").to_string()
+fn ym(d: Date) -> String {
+    d.strftime("%Y-%m").to_string()
 }
 
 /// Last day of the previous month.
-fn end_of_last_month() -> NaiveDate {
+fn end_of_last_month() -> Date {
     let t = today();
-    t - Duration::days(i64::from(t.day()))
+    t - Span::new().days(i64::from(t.day()))
 }
 
 fn id(reply: &Reply) -> Uuid {
@@ -248,7 +248,7 @@ impl Spa {
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     }
 
-    async fn attend(&self, session: &str, staff: Uuid, day: NaiveDate, status: &str) -> Reply {
+    async fn attend(&self, session: &str, staff: Uuid, day: Date, status: &str) -> Reply {
         let mut entry = json!({"staff_id": staff, "date": day, "status": status});
         if status == "present" {
             entry["check_in"] = json!("09:12");
@@ -539,7 +539,7 @@ async fn two_technicians_at_work(s: &Spa) -> Setup<Work> {
         .await;
     assert_eq!(void.status, StatusCode::OK, "{}", void.body);
 
-    let starts = format!("{}T10:00:00+07:00", today() + Duration::days(2));
+    let starts = format!("{}T10:00:00+07:00", today() + Span::new().days(2));
     let book_a = s
         .post(
             &s.manager,
@@ -585,7 +585,7 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
     let week = format!(
         "/me/appointments?from={}&to={}",
         today(),
-        today() + Duration::days(6)
+        today() + Span::new().days(6)
     );
 
     // A (Lan).
@@ -699,12 +699,12 @@ async fn a_technician_sees_only_their_own_calendar(pool: PgPool) -> TestResult {
     let backwards = format!(
         "/me/appointments?from={}&to={}",
         today(),
-        today() - Duration::days(1)
+        today() - Span::new().days(1)
     );
     let too_long = format!(
         "/me/appointments?from={}&to={}",
         today(),
-        today() + Duration::days(14)
+        today() + Span::new().days(14)
     );
     for path in [backwards, too_long] {
         assert_eq!(
@@ -854,7 +854,7 @@ async fn a_technician_sees_their_own_day_in_detail(pool: PgPool) -> TestResult {
     let before = s
         .get(
             &s.tech,
-            &format!("/me/staff/day?date={}", today() - Duration::days(40)),
+            &format!("/me/staff/day?date={}", today() - Span::new().days(40)),
         )
         .await;
     assert_eq!(before.status, StatusCode::OK, "{}", before.body);
@@ -1275,7 +1275,7 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
     assert_eq!(mai["commission_lines"].as_array().map(Vec::len), Some(2));
 
     // Independent reconciliation against the visit tables.
-    let start = today().with_day(1).unwrap_or_default();
+    let start = today().first_of_month();
     for staff in [s.lan, s.mai] {
         let base: i64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(vl.line_value), 0)::bigint FROM app.visit_line vl
@@ -1285,7 +1285,7 @@ async fn commission_reconciles_with_visits(pool: PgPool) -> TestResult {
         )
         .bind(s.tenant)
         .bind(staff)
-        .bind(start)
+        .bind(jiff_sqlx::Date::from(start))
         .fetch_one(&s.h.owner)
         .await?;
         assert_eq!(slip(&payroll.body, staff)["service_commission_base"], base);
@@ -1358,7 +1358,7 @@ async fn rules_and_attendance_drive_deductions(pool: PgPool) -> TestResult {
         StatusCode::OK
     );
     assert_eq!(
-        s.attend(&s.owner, s.lan, last - Duration::days(1), "present")
+        s.attend(&s.owner, s.lan, last - Span::new().days(1), "present")
             .await
             .status,
         StatusCode::OK
@@ -1380,7 +1380,7 @@ async fn rules_and_attendance_drive_deductions(pool: PgPool) -> TestResult {
     );
 
     let future = s
-        .attend(&s.owner, s.lan, today() + Duration::days(1), "present")
+        .attend(&s.owner, s.lan, today() + Span::new().days(1), "present")
         .await;
     assert_eq!(future.status, StatusCode::UNPROCESSABLE_ENTITY);
     let cleared = s
@@ -2152,7 +2152,7 @@ impl Spa {
     }
 
     /// Ends `staff`'s employment as the owner.
-    async fn end(&self, staff: Uuid, on: NaiveDate, reason: &str) -> Reply {
+    async fn end(&self, staff: Uuid, on: Date, reason: &str) -> Reply {
         let p = self.profile(staff).await;
         self.versioned(
             &self.owner,
@@ -2164,7 +2164,7 @@ impl Spa {
         .await
     }
 
-    async fn rehire(&self, staff: Uuid, on: NaiveDate) -> Reply {
+    async fn rehire(&self, staff: Uuid, on: Date) -> Reply {
         let p = self.profile(staff).await;
         self.versioned(
             &self.owner,
@@ -2195,7 +2195,7 @@ fn names(list: &Value) -> Vec<String> {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let joined = today() - Duration::days(40);
+    let joined = today() - Span::new().days(40);
     let hired = s
         .post(
             &s.owner,
@@ -2221,7 +2221,7 @@ async fn the_roster_hires_ends_and_rehires_without_losing_history(pool: PgPool) 
     );
     let customer = s.customer("0905123987").await;
     s.one_off_visit(customer, thu, 1).await;
-    let tomorrow = today() + Duration::days(1);
+    let tomorrow = today() + Span::new().days(1);
     let booking = s
         .post(
             &s.owner,
@@ -2502,9 +2502,9 @@ async fn permissions(s: &Spa, session: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn next_month_day() -> NaiveDate {
+fn next_month_day() -> Date {
     let t = today();
-    t - Duration::days(i64::from(t.day()) - 1) + Duration::days(40)
+    t - Span::new().days(i64::from(t.day()) - 1) + Span::new().days(40)
 }
 
 /// EM 2026-11-07 Q-S6 (ADR-0014): a leaver's login still signs in, but from the next request it
@@ -2585,7 +2585,7 @@ async fn a_leaver_keeps_only_their_own_past_pay(pool: PgPool) -> TestResult {
     }
 
     // Rehiring gives the role back.
-    let back = s.rehire(s.lan, today() + Duration::days(1)).await;
+    let back = s.rehire(s.lan, today() + Span::new().days(1)).await;
     assert_eq!(back.status, StatusCode::OK, "{}", back.body);
     let perms = permissions(&s, &s.tech).await;
     assert!(perms.contains(&"staff.read_own".to_owned()), "{perms:?}");
@@ -2844,7 +2844,7 @@ async fn my_day_shows_no_commission_when_payroll_is_off(pool: PgPool) -> TestRes
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn adjustments_need_a_month_the_person_worked_in(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let first = today().with_day(1).unwrap_or_default();
+    let first = today().first_of_month();
     let new = call(
         &s.h.app,
         "POST",
@@ -3074,12 +3074,12 @@ async fn a_leavers_refund_is_settled_in_their_last_open_month_or_shown_as_not_cl
         "UPDATE app.staff_employment SET ended_on = $2, end_reason = 'Nghỉ' WHERE staff_id = $1",
     )
     .bind(s.mai)
-    .bind(last)
+    .bind(jiff_sqlx::Date::from(last))
     .execute(&s.h.owner)
     .await?;
     sqlx::query("UPDATE app.staff SET status = 'left', left_on = $2 WHERE id = $1")
         .bind(s.mai)
-        .bind(last)
+        .bind(jiff_sqlx::Date::from(last))
         .execute(&s.h.owner)
         .await?;
 

@@ -2,12 +2,13 @@
 //! booking lasts, whether it fits the opening hours and slot grid, and where each booking or visit
 //! stands on the desk's timeline (waiting / in service / done).
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike, Utc};
-use chrono_tz::Tz;
+use jiff::civil::{Date, Time};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 
-pub const DEFAULT_OPEN: (u32, u32) = (9, 0);
-pub const DEFAULT_CLOSE: (u32, u32) = (21, 0);
+pub const DEFAULT_OPEN: (i8, i8) = (9, 0);
+pub const DEFAULT_CLOSE: (i8, i8) = (21, 0);
 pub const DEFAULT_SLOT_MINUTES: u32 = 15;
 /// A service without a duration ("theo tư vấn") books one hour.
 pub const DEFAULT_SERVICE_MINUTES: u32 = 60;
@@ -43,7 +44,7 @@ pub enum Phase {
 }
 
 /// A recorded visit (walk-in or from a booking): in service until `ends_at`, then done.
-pub fn served_phase(voided: bool, ends_at: DateTime<Utc>, now: DateTime<Utc>) -> Phase {
+pub fn served_phase(voided: bool, ends_at: Timestamp, now: Timestamp) -> Phase {
     if voided {
         Phase::Voided
     } else if now < ends_at {
@@ -57,18 +58,20 @@ pub fn served_phase(voided: bool, ends_at: DateTime<Utc>, now: DateTime<Utc>) ->
 /// lasts as long as the booking.
 pub fn appointment_phase(
     status: Status,
-    visit: Option<(DateTime<Utc>, bool)>,
+    visit: Option<(Timestamp, bool)>,
     booked_minutes: i64,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Phase {
     match (status, visit) {
         (Status::Booked, _) => Phase::Waiting,
         (Status::Arrived, _) => Phase::InService,
         (Status::NoShow, _) => Phase::NoShow,
         (Status::Cancelled, _) => Phase::Cancelled,
-        (Status::Done, Some((start, voided))) => {
-            served_phase(voided, start + Duration::minutes(booked_minutes), now)
-        }
+        (Status::Done, Some((start, voided))) => served_phase(
+            voided,
+            start + SignedDuration::from_mins(booked_minutes),
+            now,
+        ),
         (Status::Done, None) => Phase::Done,
     }
 }
@@ -114,13 +117,18 @@ impl Status {
 /// Opening hours and slot grid of a spa (`tenant.settings`), with safe defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CalendarSettings {
-    pub open: NaiveTime,
-    pub close: NaiveTime,
+    pub open: Time,
+    pub close: Time,
     pub slot_minutes: u32,
 }
 
-fn hm(h: u32, m: u32) -> NaiveTime {
-    NaiveTime::from_hms_opt(h, m, 0).unwrap_or(NaiveTime::MIN)
+/// Minutes since midnight on the wall clock (seconds ignored).
+fn minute_of_day(t: Time) -> u32 {
+    u32::from(t.hour().unsigned_abs()) * 60 + u32::from(t.minute().unsigned_abs())
+}
+
+fn hm(h: i8, m: i8) -> Time {
+    Time::new(h, m, 0, 0).unwrap_or(Time::MIN)
 }
 
 impl Default for CalendarSettings {
@@ -142,7 +150,7 @@ impl CalendarSettings {
             opening_hours
                 .and_then(|o| o.get(key))
                 .and_then(Value::as_str)
-                .and_then(|s| NaiveTime::parse_from_str(s, "%H:%M").ok())
+                .and_then(|s| Time::strptime("%H:%M", s).ok())
         };
         let (open, close) = match (time("open"), time("close")) {
             (Some(o), Some(c)) if o < c => (o, c),
@@ -153,7 +161,7 @@ impl CalendarSettings {
             .and_then(|v| u32::try_from(v).ok())
             .filter(|v| [5, 10, 15, 20, 30, 60].contains(v))
             .unwrap_or(d.slot_minutes);
-        let on_grid = |t: NaiveTime| (t.hour() * 60 + t.minute()).is_multiple_of(slot);
+        let on_grid = |t: Time| minute_of_day(t).is_multiple_of(slot);
         if on_grid(open) && on_grid(close) {
             Self {
                 open,
@@ -216,40 +224,40 @@ pub fn visit_minutes(service_minutes: &[Option<i32>]) -> u32 {
 
 /// The booking's end, its business day, and whether it fits the day's grid and opening hours.
 pub fn place(
-    starts_at: DateTime<Utc>,
+    starts_at: Timestamp,
     minutes: u32,
-    tz: Tz,
+    tz: &TimeZone,
     settings: CalendarSettings,
-) -> Result<(DateTime<Utc>, NaiveDate), SlotError> {
-    let local = starts_at.with_timezone(&tz);
+) -> Result<(Timestamp, Date), SlotError> {
+    // Wall-clock reading only: the arithmetic below is on instants.
+    let local = tz.to_datetime(starts_at);
     let start = local.time();
     if start.second() != 0
-        || start.nanosecond() != 0
-        || !(start.hour() * 60 + start.minute()).is_multiple_of(settings.slot_minutes.max(1))
+        || start.subsec_nanosecond() != 0
+        || !minute_of_day(start).is_multiple_of(settings.slot_minutes.max(1))
     {
         return Err(SlotError::NotOnSlot);
     }
-    let ends_at = starts_at + Duration::minutes(i64::from(minutes));
-    let end_local = ends_at.with_timezone(&tz);
+    let ends_at = starts_at + SignedDuration::from_mins(i64::from(minutes));
+    let end_local = tz.to_datetime(ends_at);
     // `close` is always after `open` (`from_settings`), so it is never 00:00 of the next day: a
     // booking ends on the day it starts.
-    let same_day = end_local.date_naive() == local.date_naive();
+    let same_day = end_local.date() == local.date();
     if start < settings.open || !same_day || end_local.time() > settings.close {
         return Err(SlotError::OutsideHours);
     }
-    Ok((ends_at, local.date_naive()))
+    Ok((ends_at, local.date()))
 }
 
 /// A start whose whole first slot is already over (F12, EM 2026-11-08): it cannot be booked. The
 /// slot under way can (19:00 at 19:08 with 15- or 30-minute slots: the customer is arriving).
-pub fn slot_is_over(starts_at: DateTime<Utc>, now: DateTime<Utc>, slot_minutes: u32) -> bool {
-    starts_at + Duration::minutes(i64::from(slot_minutes)) <= now
+pub fn slot_is_over(starts_at: Timestamp, now: Timestamp, slot_minutes: u32) -> bool {
+    starts_at + SignedDuration::from_mins(i64::from(slot_minutes)) <= now
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use serde_json::json;
 
     #[test]
@@ -266,14 +274,12 @@ mod tests {
         assert!(slot_is_over(at(18, 53), at(19, 8), 15), "ends exactly now");
     }
 
-    fn vn() -> Tz {
-        kernel::BusinessDate::parse_tz("Asia/Ho_Chi_Minh").unwrap_or(chrono_tz::UTC)
+    fn vn() -> TimeZone {
+        kernel::BusinessDate::parse_tz("Asia/Ho_Chi_Minh").unwrap_or(TimeZone::UTC)
     }
 
-    fn at(h: u32, m: u32) -> DateTime<Utc> {
-        vn().with_ymd_and_hms(2026, 11, 6, h, m, 0)
-            .single()
-            .map(|t| t.with_timezone(&Utc))
+    fn at(h: i8, m: i8) -> Timestamp {
+        vn().to_timestamp(jiff::civil::date(2026, 11, 6).at(h, m, 0, 0))
             .unwrap_or_default()
     }
 
@@ -332,16 +338,19 @@ mod tests {
     #[test]
     fn a_booking_must_sit_on_the_grid_inside_opening_hours() {
         let s = CalendarSettings::default();
-        let day = NaiveDate::from_ymd_opt(2026, 11, 6).unwrap_or_default();
-        assert_eq!(place(at(10, 0), 60, vn(), s), Ok((at(11, 0), day)));
-        assert_eq!(place(at(20, 0), 60, vn(), s), Ok((at(21, 0), day)));
-        assert_eq!(place(at(10, 7), 60, vn(), s), Err(SlotError::NotOnSlot));
-        assert_eq!(place(at(8, 45), 60, vn(), s), Err(SlotError::OutsideHours));
-        assert_eq!(place(at(20, 30), 60, vn(), s), Err(SlotError::OutsideHours));
+        let day = jiff::civil::date(2026, 11, 6);
+        assert_eq!(place(at(10, 0), 60, &vn(), s), Ok((at(11, 0), day)));
+        assert_eq!(place(at(20, 0), 60, &vn(), s), Ok((at(21, 0), day)));
+        assert_eq!(place(at(10, 7), 60, &vn(), s), Err(SlotError::NotOnSlot));
+        assert_eq!(place(at(8, 45), 60, &vn(), s), Err(SlotError::OutsideHours));
+        assert_eq!(
+            place(at(20, 30), 60, &vn(), s),
+            Err(SlotError::OutsideHours)
+        );
         // Only the start is on the grid: 09:00 + 70 minutes ends at 10:10.
-        assert_eq!(place(at(9, 0), 70, vn(), s), Ok((at(10, 10), day)));
-        assert_eq!(place(at(19, 45), 70, vn(), s), Ok((at(20, 55), day)));
-        assert_eq!(place(at(20, 0), 70, vn(), s), Err(SlotError::OutsideHours));
+        assert_eq!(place(at(9, 0), 70, &vn(), s), Ok((at(10, 10), day)));
+        assert_eq!(place(at(19, 45), 70, &vn(), s), Ok((at(20, 55), day)));
+        assert_eq!(place(at(20, 0), 70, &vn(), s), Err(SlotError::OutsideHours));
     }
 
     #[test]

@@ -10,7 +10,8 @@ use super::rng::Rng;
 use super::run::{each, retry};
 use super::{Ctx, fail, idempotency};
 use anyhow::Context;
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::{SignedDuration, Span, Timestamp};
 use kernel::AppError;
 use operations::appointments::dto::{
     AppointmentArrive, AppointmentComplete, AppointmentCreate, AppointmentGroupCreate,
@@ -65,7 +66,7 @@ enum Fate {
 
 #[derive(Debug, Clone)]
 struct Booking {
-    day: NaiveDate,
+    day: Date,
     minute: u32,
     customer: Option<usize>,
     /// A newcomer's name and phone instead of a customer.
@@ -74,6 +75,12 @@ struct Booking {
     with_staff: bool,
     note: Option<&'static str>,
     fate: Fate,
+}
+
+/// Days since 1 January of year 1 (that day = 1), as chrono's `num_days_from_ce`: the seed of a
+/// day's bookings stays what it was.
+fn days_from_ce(day: Date) -> i64 {
+    i64::from((day - jiff::civil::date(1, 1, 1)).get_days()) + 1
 }
 
 /// A slot of the calendar's 30-minute grid between 09:00 and 19:00.
@@ -89,7 +96,7 @@ pub async fn write(
     rng: &mut Rng,
 ) -> anyhow::Result<CalendarReport> {
     let window = ctx.window;
-    let bookable = |c: usize, day: NaiveDate| {
+    let bookable = |c: usize, day: Date| {
         let p = &people[c];
         c >= PAPER_CUSTOMERS
             && p.segment != Segment::WalkIn
@@ -97,7 +104,7 @@ pub async fn write(
             && p.first_day <= day
             && day <= p.last_day
     };
-    let pick_customer = |rng: &mut Rng, day: NaiveDate| -> Option<usize> {
+    let pick_customer = |rng: &mut Rng, day: Date| -> Option<usize> {
         let pool: Vec<usize> = (0..people.len()).filter(|&c| bookable(c, day)).collect();
         rng.pick(&pool).copied()
     };
@@ -107,10 +114,10 @@ pub async fn write(
     // cancelled (a fixed cycle, so a short history has each outcome too).
     let mut booked = 0_usize;
     let mut week = window.start;
-    while week + Duration::days(1) < window.today {
+    while week + Span::new().days(1) < window.today {
         let mut list = Vec::new();
         for _ in 0..2 {
-            let day = week + Duration::days(rng.days(6));
+            let day = week + Span::new().days(rng.days(6));
             if day >= window.today {
                 continue;
             }
@@ -137,7 +144,7 @@ pub async fn write(
         }
         list.sort_by_key(|b| (b.day, b.minute));
         days.push(list);
-        week += Duration::days(7);
+        week += Span::new().days(7);
     }
 
     // Today, around the clock of the run.
@@ -174,7 +181,7 @@ pub async fn write(
 
     // The next two weeks.
     for ahead in 1..=14 {
-        let day = window.today + Duration::days(ahead);
+        let day = window.today + Span::new().days(ahead);
         let mut list = Vec::new();
         for k in 0..3 + rng.below(3) {
             let newcomer = rng.chance(20);
@@ -212,7 +219,7 @@ pub async fn write(
             super::SEED
                 ^ list
                     .first()
-                    .map_or(0, |b| u64::try_from(b.day.num_days_from_ce()).unwrap_or(0)),
+                    .map_or(0, |b| u64::try_from(days_from_ce(b.day)).unwrap_or(0)),
         );
         for b in list {
             day_booking(ctx, people, customer_ids, &b, &mut rng, &mut report).await?;
@@ -271,7 +278,7 @@ async fn day_booking(
     };
     // History and today's earlier slots were booked a few days or hours before.
     let booked_at = if past {
-        ctx.at(b.day - Duration::days(1 + rng.days(4)), 10 * 60)?
+        ctx.at(b.day - Span::new().days(1 + rng.days(4)), 10 * 60)?
     } else if b.day == ctx.window.today && b.fate != Fate::Stay && b.fate != Fate::Arrive {
         ctx.at(b.day, 7 * 60)?
     } else {
@@ -299,7 +306,7 @@ async fn day_booking(
             let c = b.customer.context("a completed booking has a customer")?;
             let serving = staff.or_else(|| rng.pick(&technicians).copied());
             let done_at = if past {
-                starts_at + Duration::minutes(70)
+                starts_at + SignedDuration::from_mins(70)
             } else {
                 ctx.now
             };
@@ -315,13 +322,13 @@ async fn day_booking(
                 (
                     Outcome::NoShow,
                     data::NO_SHOW_REASONS,
-                    starts_at + Duration::minutes(40),
+                    starts_at + SignedDuration::from_mins(40),
                 )
             } else {
                 (
                     Outcome::Cancelled,
                     data::CANCEL_REASONS,
-                    booked_at + Duration::hours(5),
+                    booked_at + SignedDuration::from_hours(5),
                 )
             };
             let reason = *rng.pick(reasons).context("reasons")?;
@@ -371,7 +378,7 @@ async fn complete(
     id: Uuid,
     service_id: Uuid,
     staff: Option<Uuid>,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> anyhow::Result<()> {
     let price = ctx.catalog.price(service_id, person.sex)?;
     let variant = (!person.gender_recorded).then_some(match person.sex {
@@ -428,7 +435,7 @@ async fn family(
     customer_ids: &[Uuid],
     rng: &mut Rng,
 ) -> anyhow::Result<usize> {
-    let day = ctx.window.today + Duration::days(2);
+    let day = ctx.window.today + Span::new().days(2);
     let named: Vec<usize> = (PAPER_CUSTOMERS..people.len())
         .filter(|&c| people[c].segment == Segment::Regular && people[c].full_name.is_some())
         .collect();
@@ -465,7 +472,7 @@ async fn book_family(
     ctx: &Ctx<'_>,
     customer_ids: &[Uuid],
     (host, partner): (usize, usize),
-    day: NaiveDate,
+    day: Date,
     staff: Option<Uuid>,
 ) -> Result<(), AppError> {
     let service = |name: &str| {

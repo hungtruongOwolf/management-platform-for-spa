@@ -5,8 +5,8 @@
 use crate::audit::{self, PlatformEntry};
 use crate::auth::OperatorSession;
 use crate::gate_refusal;
-use chrono::{DateTime, Utc};
 use identity::account::TemporaryPassword;
+use jiff::Timestamp;
 use kernel::audit::{Action, AuditEntry, record_platform};
 use kernel::{AppError, FieldError, PhoneE164, TenantId, TenantTx};
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,8 @@ pub struct TenantRow {
     pub name: String,
     pub slug: String,
     pub status: TenantStatus,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
     /// Staff profiles still working.
     pub staff_count: i64,
     /// Customer profiles not anonymised.
@@ -56,7 +57,8 @@ pub struct TenantRow {
     /// Active logins holding `staff.manage`.
     pub owner_count: i64,
     /// Latest entry of the spa's audit trail.
-    pub last_activity_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub last_activity_at: Option<Timestamp>,
     /// The spa's MFA policy (ADR-0020): `true` (the default) = its owners must use a second
     /// factor; `false` = they sign in with the password only.
     pub owner_mfa_required: bool,
@@ -89,12 +91,12 @@ async fn overview(
                 name: r.name,
                 slug: r.slug,
                 status: TenantStatus::parse(&r.status)?,
-                created_at: r.created_at,
+                created_at: r.created_at.to_jiff(),
                 staff_count: r.staff_count,
                 customer_count: r.customer_count,
                 visits_30d: r.visits_30d,
                 owner_count: r.owner_count,
-                last_activity_at: r.last_activity_at,
+                last_activity_at: r.last_activity_at.map(jiff_sqlx::Timestamp::to_jiff),
                 owner_mfa_required: r.owner_mfa_required,
             })
         })
@@ -328,7 +330,7 @@ pub async fn create(
             name: valid.name,
             slug: valid.slug,
             status: TenantStatus::Active,
-            created_at: Utc::now(),
+            created_at: Timestamp::now(),
             staff_count: 0,
             customer_count: 0,
             visits_30d: 0,

@@ -8,13 +8,13 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode, header};
 use catalog::service::seed_menu;
-use chrono::{Duration, TimeZone, Utc};
 use common::{
     Harness, ORIGIN, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use http_body_util::BodyExt;
 use identity::SystemRole;
+use jiff::{SignedDuration, Timestamp};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -53,10 +53,6 @@ fn field_codes(reply: &Reply) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-fn vn() -> chrono_tz::Tz {
-    kernel::BusinessDate::parse_tz("Asia/Ho_Chi_Minh").unwrap_or(chrono_tz::UTC)
 }
 
 /// Percent-encodes a query-string value (UTF-8 bytes; unreserved characters kept).
@@ -357,15 +353,11 @@ async fn search_queries_are_bounded(pool: PgPool) -> TestResult {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn check_in_belongs_to_the_spas_business_day_not_utc(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let today = Utc::now().with_timezone(&vn()).date_naive();
-    let midnight = vn()
-        .from_local_datetime(&today.and_hms_opt(0, 0, 0).unwrap_or_default())
-        .single()
-        .map(|t| t.with_timezone(&Utc))
-        .unwrap_or_default();
-    let visit = |at: chrono::DateTime<Utc>| {
+    let today = common::vn_today();
+    let midnight = common::vn_at(today, 0, 0);
+    let visit = |at: Timestamp| {
         json!({
-            "customer_id": s.ha, "check_in_at": at.to_rfc3339(),
+            "customer_id": s.ha, "check_in_at": at.to_string(),
             "lines": [{"service_id": s.shampoo, "source": "one_off", "staff_id": s.lan}],
             "payments": [{"method": "cash", "amount": 49_000}],
         })
@@ -380,7 +372,7 @@ async fn check_in_belongs_to_the_spas_business_day_not_utc(pool: PgPool) -> Test
         .post(
             &s.manager,
             "/visits",
-            visit(midnight - Duration::seconds(1)),
+            visit(midnight - SignedDuration::from_secs(1)),
         )
         .await;
     assert_eq!(

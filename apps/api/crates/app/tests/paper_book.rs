@@ -6,6 +6,8 @@ mod common;
 use app::paper_book::{ImportOptions, ImportReport, import};
 use catalog::service::seed_menu;
 use common::{OWNER_PHONE, TestResult, call, harness, post_customer, session_for};
+use jiff::Span;
+use jiff::civil::Date;
 use kernel::testing::app_pool;
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -212,11 +214,8 @@ async fn a_file_with_a_mistake_writes_nothing(pool: PgPool) -> TestResult {
 
 const PAID_HEADER: &str = "phone,full_name,gender,package_name,sold_price,starts_on,expires_on,gift_note,service,sessions_purchased,sessions_bonus,sessions_remaining,paid_amount,paid_on,method";
 
-fn days_ago(n: i64) -> chrono::NaiveDate {
-    chrono::Utc::now()
-        .with_timezone(&chrono_tz::Asia::Ho_Chi_Minh)
-        .date_naive()
-        - chrono::Duration::days(n)
+fn days_ago(n: i64) -> Date {
+    common::vn_today() - Span::new().days(n)
 }
 
 async fn run(
@@ -260,10 +259,14 @@ async fn paper_money_is_revenue_on_the_paper_date(pool: PgPool) -> TestResult {
         (2, 1),
         "{report:?}"
     );
-    let sales: Vec<(chrono::NaiveDate, String)> =
-        sqlx::query_as("SELECT business_date, source FROM app.sale")
-            .fetch_all(&h.owner)
-            .await?;
+    let sales: Vec<(Date, String)> = sqlx::query_as::<_, (jiff_sqlx::Date, String)>(
+        "SELECT business_date, source FROM app.sale",
+    )
+    .fetch_all(&h.owner)
+    .await?
+    .into_iter()
+    .map(|(d, source)| (d.to_jiff(), source))
+    .collect();
     assert_eq!(sales, [(paid_on, "paper_book".to_owned())]);
 
     // The paper date's dashboard, ledger and range report carry the money.

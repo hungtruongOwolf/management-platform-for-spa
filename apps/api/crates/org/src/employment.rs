@@ -3,25 +3,26 @@
 //! in month M" question and the tenure ("làm bao lâu") are answered here, from the periods, so a
 //! rehired person's gap is neither unrecorded attendance nor employed time.
 
-use chrono::{Datelike, Duration, NaiveDate};
+use jiff::ToSpan;
+use jiff::civil::Date;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Period {
     pub id: Uuid,
     /// `None` = before the books (a profile created without a start date).
-    pub started_on: Option<NaiveDate>,
+    pub started_on: Option<Date>,
     /// `None` = still working.
-    pub ended_on: Option<NaiveDate>,
+    pub ended_on: Option<Date>,
     pub end_reason: Option<String>,
 }
 
 impl Period {
-    pub fn covers(&self, day: NaiveDate) -> bool {
+    pub fn covers(&self, day: Date) -> bool {
         self.started_on.is_none_or(|s| day >= s) && self.ended_on.is_none_or(|e| day <= e)
     }
 
-    fn overlaps(&self, first: NaiveDate, last: NaiveDate) -> bool {
+    fn overlaps(&self, first: Date, last: Date) -> bool {
         self.started_on.is_none_or(|s| s <= last) && self.ended_on.is_none_or(|e| e >= first)
     }
 }
@@ -57,7 +58,7 @@ impl Employment {
     }
 
     /// A single period, for tests and pure calculators.
-    pub fn between(started_on: Option<NaiveDate>, ended_on: Option<NaiveDate>) -> Self {
+    pub fn between(started_on: Option<Date>, ended_on: Option<Date>) -> Self {
         Self(vec![Period {
             id: Uuid::nil(),
             started_on,
@@ -80,35 +81,35 @@ impl Employment {
     }
 
     /// Start of the first period (`None` = unknown or never employed).
-    pub fn first_started_on(&self) -> Option<NaiveDate> {
+    pub fn first_started_on(&self) -> Option<Date> {
         self.0.first().and_then(|p| p.started_on)
     }
 
-    pub fn on(&self, day: NaiveDate) -> bool {
+    pub fn on(&self, day: Date) -> bool {
         self.0.iter().any(|p| p.covers(day))
     }
 
     /// Worked at least one day of `first..=last`.
-    pub fn overlaps(&self, first: NaiveDate, last: NaiveDate) -> bool {
+    pub fn overlaps(&self, first: Date, last: Date) -> bool {
         self.0.iter().any(|p| p.overlaps(first, last))
     }
 
     /// Days of `first..=last` this person worked.
-    pub fn days_in(&self, first: NaiveDate, last: NaiveDate) -> u32 {
+    pub fn days_in(&self, first: Date, last: Date) -> u32 {
         let mut n = 0;
         let mut d = first;
         while d <= last {
             if self.on(d) {
                 n += 1;
             }
-            d += Duration::days(1);
+            d += 1.day();
         }
         n
     }
 
     /// Tenure up to `today` (included). `None` when a start date is unknown: the UI says so
     /// instead of guessing. Periods starting after `today` count nothing yet.
-    pub fn tenure(&self, today: NaiveDate) -> Option<Tenure> {
+    pub fn tenure(&self, today: Date) -> Option<Tenure> {
         if self.0.is_empty() {
             return Some(Tenure { days: 0, months: 0 });
         }
@@ -119,15 +120,15 @@ impl Employment {
             if end < start {
                 continue;
             }
-            t.days += (end - start).num_days() + 1;
-            t.months += completed_months(start, end + Duration::days(1));
+            t.days += i64::from((end - start).get_days()) + 1;
+            t.months += completed_months(start, end + 1.day());
         }
         Some(t)
     }
 }
 
 /// Whole calendar months from `start` to `end_exclusive` (5 Jan → 5 Feb = 1).
-fn completed_months(start: NaiveDate, end_exclusive: NaiveDate) -> i64 {
+fn completed_months(start: Date, end_exclusive: Date) -> i64 {
     let months = i64::from(end_exclusive.year() - start.year()) * 12
         + i64::from(end_exclusive.month())
         - i64::from(start.month());
@@ -142,7 +143,7 @@ fn completed_months(start: NaiveDate, end_exclusive: NaiveDate) -> i64 {
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 

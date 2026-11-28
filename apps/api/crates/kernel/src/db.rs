@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::ids::TenantId;
 use crate::permission::Actor;
 use crate::tenant::TenantFacts;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool, Postgres, Transaction};
 
 /// A use case never waits on anything outside the database while its transaction is open; a
@@ -38,7 +38,7 @@ pub struct TenantTx {
     /// The instant every audit entry of this transaction carries (ADR-0023): set up front only by
     /// a back-filling actor ([`Actor::at_clock`]); otherwise fixed by the database clock when the
     /// first entry is written, after the use case's writes.
-    pub(crate) clock: Option<DateTime<Utc>>,
+    pub(crate) clock: Option<Timestamp>,
     /// Entries recorded but not written yet ([`crate::audit`]): [`Self::commit`] or
     /// [`Self::write_audit`] writes them.
     pub(crate) audit: Vec<crate::audit::Pending>,
@@ -61,7 +61,7 @@ impl TenantTx {
     /// ([`Actor::at_clock`], `app seed-demo`) stamps the audit entries; a request's never does.
     pub async fn for_actor(pool: &PgPool, actor: &Actor) -> Result<Self, AppError> {
         let mut tx = Self::begin(pool, actor.tenant_id).await?;
-        tx.facts = actor.tenant_facts().copied();
+        tx.facts = actor.tenant_facts().cloned();
         tx.clock = actor.clock();
         Ok(tx)
     }

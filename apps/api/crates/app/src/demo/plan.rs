@@ -6,7 +6,8 @@
 use super::Window;
 use super::people::{PAPER_CUSTOMERS, Person, RESALE_CUSTOMER, Segment};
 use super::rng::Rng;
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
+use jiff::Span;
+use jiff::civil::{Date, Weekday};
 
 /// Something done to a visit right after it is recorded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +27,7 @@ pub enum Script {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Visit {
-    pub day: NaiveDate,
+    pub day: Date,
     /// Local minutes after midnight.
     pub minute: u32,
     pub script: Script,
@@ -40,9 +41,9 @@ const FIRST_MINUTE: u32 = 8 * 60 + 30;
 const LAST_MINUTE: u32 = 20 * 60 + 30;
 
 /// How many visits a past day has: 4–6 on weekdays, 6–8 at the weekend.
-fn visits_on(day: NaiveDate, rng: &mut Rng) -> usize {
+fn visits_on(day: Date, rng: &mut Rng) -> usize {
     match day.weekday() {
-        Weekday::Sat | Weekday::Sun => 6 + rng.below(3),
+        Weekday::Saturday | Weekday::Sunday => 6 + rng.below(3),
         _ => 4 + rng.below(3),
     }
 }
@@ -132,7 +133,7 @@ pub fn schedule(
                 script: Script::Plain,
             });
         }
-        day += Duration::days(1);
+        day += Span::new().days(1);
     }
     for visits in &mut out {
         visits.sort_by_key(|v| (v.day, v.minute));
@@ -209,7 +210,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     fn plan(months: u32) -> (Window, Vec<Person>, Schedule) {
-        let today = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap_or_default();
+        let today = Date::new(2026, 11, 9).ok().unwrap_or_default();
         let w = Window::new(today, months);
         let mut rng = Rng::new(42);
         let people = people(w, 220, &mut rng);
@@ -227,7 +228,7 @@ mod tests {
         }
         assert_eq!(
             per_day.len(),
-            usize::try_from((w.today - w.start).num_days() + 1).unwrap_or(0)
+            usize::try_from((w.today - w.start).get_days() + 1).unwrap_or(0)
         );
         let total: usize = per_day.values().sum();
         assert!((1_900..2_600).contains(&total), "{total}");
@@ -235,7 +236,8 @@ mod tests {
             let days: Vec<usize> = per_day
                 .iter()
                 .filter(|(d, _)| {
-                    **d < w.today && matches!(d.weekday(), Weekday::Sat | Weekday::Sun) == weekend
+                    **d < w.today
+                        && matches!(d.weekday(), Weekday::Saturday | Weekday::Sunday) == weekend
                 })
                 .map(|(_, n)| *n)
                 .collect();
@@ -248,7 +250,7 @@ mod tests {
     fn each_customer_comes_at_most_once_a_day_inside_their_active_days() {
         let (w, people, s) = plan(12);
         for (c, visits) in s.iter().enumerate() {
-            let days: BTreeSet<NaiveDate> = visits.iter().map(|v| v.day).collect();
+            let days: BTreeSet<Date> = visits.iter().map(|v| v.day).collect();
             assert_eq!(days.len(), visits.len(), "customer {c}");
             for v in visits {
                 assert!(people[c].first_day <= v.day && v.day <= people[c].last_day);

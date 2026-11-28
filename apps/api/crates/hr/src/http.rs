@@ -20,8 +20,8 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use chrono::NaiveDate;
 use identity::AuthUser;
+use jiff::civil::Date;
 use kernel::crypto::FieldCipher;
 use kernel::http::{IdempotencyKey, IfMatchOrNew};
 use kernel::idempotency::hash_route;
@@ -111,7 +111,7 @@ fn canonical<T: for<'de> Deserialize<'de>>(body: &Bytes) -> Result<(T, Vec<u8>),
 #[serde(deny_unknown_fields)]
 pub struct AttendanceEntryWrite {
     pub staff_id: Uuid,
-    pub date: NaiveDate,
+    pub date: Date,
     /// `null` clears the day.
     pub status: Option<AttendanceStatus>,
     /// `HH:MM`, only when present.
@@ -180,7 +180,7 @@ pub async fn put_attendance(
 #[serde(deny_unknown_fields)]
 pub struct DailyReviewEntryWrite {
     pub staff_id: Uuid,
-    pub date: NaiveDate,
+    pub date: Date,
     #[serde(default)]
     pub compliments: u32,
     #[serde(default)]
@@ -348,7 +348,7 @@ pub struct AdjustmentCreate {
     pub reason: String,
     /// Default today; its month must be open.
     #[serde(default)]
-    pub occurred_on: Option<NaiveDate>,
+    pub occurred_on: Option<Date>,
     /// `YYYY-MM` of a closed month this entry corrects.
     #[serde(default)]
     pub corrects_month: Option<String>,

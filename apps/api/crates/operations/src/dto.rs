@@ -2,7 +2,8 @@
 //! exactly what the first request returned.
 
 use catalog::PriceVariant;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use sales::dto::{PaymentCreate, PaymentDto};
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -16,7 +17,7 @@ pub struct VisitCreate {
     /// When the service happened (giờ làm), not when it is typed. Defaults to now. At most
     /// 5 minutes ahead of the server and on today's business day; with `visit.backdate` (owner)
     /// up to 366 days back, and the visit, its sale and payments then belong to that day.
-    pub check_in_at: Option<DateTime<Utc>>,
+    pub check_in_at: Option<Timestamp>,
     /// Discount on the one-off lines (D10: `sale.discount` up to the spa's cap,
     /// `sale.discount_unlimited` beyond; reason required).
     pub discount: Option<sales::dto::ServiceDiscountCreate>,
@@ -116,7 +117,7 @@ pub struct VisitUpdate {
     #[schema(value_type = Option<String>)]
     pub note: Option<Option<String>>,
     /// New service time (giờ làm): on the visit's own business day, not in the future.
-    pub check_in_at: Option<DateTime<Utc>>,
+    pub check_in_at: Option<Timestamp>,
     /// Technician corrections, by line id.
     #[serde(default)]
     pub lines: Vec<VisitLineUpdate>,
@@ -142,7 +143,7 @@ pub struct VisitCorrection {
     /// May differ from the old visit's customer (recorded for the wrong person).
     pub customer_id: Uuid,
     /// Service time; absent = the old visit's. Must stay on the old visit's business day.
-    pub check_in_at: Option<DateTime<Utc>>,
+    pub check_in_at: Option<Timestamp>,
     pub discount: Option<sales::dto::ServiceDiscountCreate>,
     /// Absent = keep the old visit's note (copied on the server, never sent to the browser);
     /// null or empty = no note; text = a new note (needs `customer.health_notes.write`).
@@ -245,7 +246,7 @@ pub struct VisitCorrected {
 #[serde(deny_unknown_fields)]
 pub struct VisitListQuery {
     /// Business day `YYYY-MM-DD`; default today.
-    pub date: Option<NaiveDate>,
+    pub date: Option<Date>,
     /// Only the newest N visits of the day (1–500); default all. The front desk asks for one more
     /// than it shows to know whether "Xem tất cả" is needed, keeping a busy day's first paint light.
     pub limit: Option<u32>,
@@ -301,7 +302,7 @@ pub struct VisitLineDto {
 pub struct VisitPackageSaleDto {
     pub sale_id: Uuid,
     pub voided: bool,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     /// Package names, in sale order.
     pub description: String,
     pub customer_package_ids: Vec<Uuid>,
@@ -330,13 +331,15 @@ pub struct VisitDto {
     pub customer_gender: Option<crm::http::GenderDto>,
     /// Business day of the service (`check_in_at`), which may be before `created_at` when the
     /// owner entered it late.
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     /// When the service happened (giờ làm).
-    pub check_in_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub check_in_at: Timestamp,
     pub status: VisitStatusDto,
     /// Set when the visit was voided (US6): it stays in history with the reason.
     pub void_reason: Option<String>,
-    pub voided_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub voided_at: Option<Timestamp>,
     /// Set on a visit recorded by "Sửa lượt": the voided visit it replaces.
     pub corrects_visit_id: Option<Uuid>,
     /// Set on a voided visit that was corrected: the visit that replaced it. The newest version
@@ -375,5 +378,6 @@ pub struct VisitDto {
     pub lines: Vec<VisitLineDto>,
     /// Send back as `If-Match` when correcting.
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
 }

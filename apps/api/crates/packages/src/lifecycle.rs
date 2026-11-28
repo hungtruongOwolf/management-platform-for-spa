@@ -15,7 +15,8 @@ use crate::domain::RefundMethod;
 use crate::http::{CustomerPackageDto, RefundMethodDto};
 use crate::repo::{self, ExtensionInsert, RefundInsert};
 use crate::service;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx, corrections};
@@ -123,7 +124,7 @@ pub async fn cancel_for_sale(
 #[serde(deny_unknown_fields)]
 pub struct PackageExtend {
     /// The new last day of validity: later than the current one and not in the past.
-    pub expires_on: NaiveDate,
+    pub expires_on: Date,
     /// Why (required, 1–500 characters); audited.
     pub reason: Option<String>,
 }
@@ -182,9 +183,9 @@ pub async fn extend(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let field = |code| AppError::Validation(vec![FieldError::new("expires_on", code)]);
-    let Some(current) = package.expires_on else {
+    let Some(current) = package.expires_on.map(jiff_sqlx::Date::to_jiff) else {
         return Err(field("package_has_no_expiry"));
     };
     if input.expires_on <= current {
@@ -272,7 +273,7 @@ pub async fn cancel(
     id: Uuid,
     input: &PackageCancel,
 ) -> Result<(u16, Value), AppError> {
-    cancel_as_of(pool, actor, key, request_hash, id, input, Utc::now()).await
+    cancel_as_of(pool, actor, key, request_hash, id, input, Timestamp::now()).await
 }
 
 /// [`cancel`] with `now` as the server clock: the refund is booked on the business day of `now`
@@ -288,7 +289,7 @@ pub async fn cancel_as_of(
     request_hash: [u8; 32],
     id: Uuid,
     input: &PackageCancel,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::PackageCancelRefund)?;
     let order = parse_cancel(input)?;
@@ -320,7 +321,7 @@ pub async fn cancel_as_of(
         });
     }
     let tenant = kernel::tenant::profile_as_of(&mut tx, now).await?;
-    let today = tenant.business_date.as_naive();
+    let today = tenant.business_date.as_date();
     let before = repo::lock_items(&mut tx, &[id]).await?;
     let remaining_before: i64 = before.iter().map(|i| i64::from(i.sessions_remaining)).sum();
     repo::cancel_package(&mut tx, id, &order.reason, actor.user_id.as_uuid()).await?;

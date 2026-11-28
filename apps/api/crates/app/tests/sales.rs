@@ -9,6 +9,8 @@ use common::{
     post_customer, session_for,
 };
 use identity::SystemRole;
+use jiff::Span;
+use jiff::civil::Date;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -154,11 +156,12 @@ async fn ten_plus_two_at_1_5m_gives_12_sessions_worth_150k_each(pool: PgPool) ->
     assert_eq!(package["gift_note"], "Tặng 1 chai dầu gội");
     let starts = package["starts_on"].as_str().unwrap_or_default();
     let expires = package["expires_on"].as_str().unwrap_or_default();
-    let start = chrono::NaiveDate::parse_from_str(starts, "%Y-%m-%d")?;
+    let start = Date::strptime("%Y-%m-%d", starts)?;
     assert_eq!(
         Some(expires.to_owned()),
         start
-            .checked_add_months(chrono::Months::new(6))
+            .checked_add(Span::new().months(6))
+            .ok()
             .map(|d| d.to_string()),
         "expiry = sale day + 6 months"
     );
@@ -934,11 +937,7 @@ async fn the_day_lists_its_package_sales_without_a_visit(pool: PgPool) -> TestRe
     assert_eq!(rows[2]["beneficiary_name"], Value::Null);
 
     // Another day: none; another spa: none.
-    let yesterday = (chrono::Utc::now()
-        .with_timezone(&chrono_tz::Asia::Ho_Chi_Minh)
-        .date_naive()
-        - chrono::Duration::days(1))
-    .to_string();
+    let yesterday = (common::vn_today() - Span::new().days(1)).to_string();
     let other_day = s.get(&s.manager, &format!("/sales?date={yesterday}")).await;
     assert_eq!(other_day.body, json!([]), "{}", other_day.body);
     identity::provisioning::create_tenant(&s.h.owner, "spa-b", "Spa B", "Cơ sở 1").await?;

@@ -14,7 +14,7 @@ use crate::attendance::{AttendanceStatus, LeaveCode};
 use crate::evaluation::Level;
 use crate::month::Month;
 use crate::rules::{MealAllowanceBasis, PartialMonthLoyalty, PayrollRules};
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use org::Employment;
 use org::profile::PayTerms;
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ pub const LOYALTY_MIN_DAYS: u32 = 15;
 /// One recorded day as the calculator needs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Day {
-    pub date: NaiveDate,
+    pub date: Date,
     pub status: AttendanceStatus,
     pub late_minutes: u32,
 }
@@ -87,7 +87,7 @@ pub struct UpsellLine {
 pub struct MonthInput<'a> {
     pub month: Month,
     /// Days before this one are not counted (unfinished current month); `None` = whole month.
-    pub recorded_until: Option<NaiveDate>,
+    pub recorded_until: Option<Date>,
     /// The person's employment periods: days outside them are neither worked nor missing.
     pub employment: Employment,
     pub pay: Option<PayTerms>,
@@ -223,7 +223,7 @@ impl Payslip {
 /// `recorded_until` (or all days) without a record while employed count as unrecorded.
 pub fn summarize(
     month: Month,
-    recorded_until: Option<NaiveDate>,
+    recorded_until: Option<Date>,
     employment: &Employment,
     days: &[Day],
 ) -> AttendanceTotals {
@@ -242,7 +242,7 @@ pub fn summarize(
             AttendanceStatus::AbsentK => t.absent_k += 1,
         }
     }
-    let recorded: std::collections::HashSet<NaiveDate> = days.iter().map(|d| d.date).collect();
+    let recorded: std::collections::HashSet<Date> = days.iter().map(|d| d.date).collect();
     t.unrecorded = u32::try_from(
         month
             .iter_days()
@@ -476,7 +476,7 @@ pub fn compute(
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 

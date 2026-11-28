@@ -1,19 +1,20 @@
 //! A calendar month (`YYYY-MM`): the unit of attendance sheets, evaluations and payroll.
 
-use chrono::{Datelike, Months, NaiveDate};
+use jiff::ToSpan;
+use jiff::civil::Date;
 use kernel::{AppError, FieldError};
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Month(NaiveDate);
+pub struct Month(Date);
 
 impl Month {
     /// Earliest month the API accepts (well before any spa on the platform).
-    const MIN_YEAR: i32 = 2020;
-    const MAX_YEAR: i32 = 2100;
+    const MIN_YEAR: i16 = 2020;
+    const MAX_YEAR: i16 = 2100;
 
-    pub fn of(day: NaiveDate) -> Self {
-        Self(day.with_day(1).unwrap_or(day))
+    pub fn of(day: Date) -> Self {
+        Self(day.first_of_month())
     }
 
     /// Parses `YYYY-MM`; `field` names the input in the validation error.
@@ -23,40 +24,38 @@ impl Month {
         if y.len() != 4 || m.len() != 2 {
             return Err(invalid());
         }
-        let year: i32 = y.parse().map_err(|_| invalid())?;
-        let month: u32 = m.parse().map_err(|_| invalid())?;
+        let year: i16 = y.parse().map_err(|_| invalid())?;
+        let month: i8 = m.parse().map_err(|_| invalid())?;
         if !(Self::MIN_YEAR..=Self::MAX_YEAR).contains(&year) {
             return Err(invalid());
         }
-        NaiveDate::from_ymd_opt(year, month, 1)
-            .map(Self)
-            .ok_or_else(invalid)
+        Date::new(year, month, 1).map(Self).map_err(|_| invalid())
     }
 
-    pub const fn first_day(self) -> NaiveDate {
+    pub const fn first_day(self) -> Date {
         self.0
     }
 
-    pub fn last_day(self) -> NaiveDate {
-        self.next().0.pred_opt().unwrap_or(self.0)
+    pub fn last_day(self) -> Date {
+        self.0.last_of_month()
     }
 
     pub fn next(self) -> Self {
-        Self(self.0.checked_add_months(Months::new(1)).unwrap_or(self.0))
+        Self(self.0.checked_add(1.month()).unwrap_or(self.0))
     }
 
     pub fn days(self) -> u32 {
-        self.last_day().day()
+        u32::from(self.0.days_in_month().unsigned_abs())
     }
 
-    pub fn contains(self, day: NaiveDate) -> bool {
+    pub fn contains(self, day: Date) -> bool {
         Self::of(day) == self
     }
 
     /// Every day of the month, in order.
-    pub fn iter_days(self) -> impl Iterator<Item = NaiveDate> {
+    pub fn iter_days(self) -> impl Iterator<Item = Date> {
         let last = self.last_day();
-        self.0.iter_days().take_while(move |d| *d <= last)
+        self.0.series(1.day()).take_while(move |d| *d <= last)
     }
 }
 

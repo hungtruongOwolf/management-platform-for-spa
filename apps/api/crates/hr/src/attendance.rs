@@ -8,7 +8,8 @@ use crate::period;
 use crate::repo::{self, AttendanceRow, Cell};
 use crate::rules;
 use crate::scope::RecordScope;
-use chrono::{NaiveDate, NaiveTime, Timelike};
+use jiff::civil::{Date, Time};
+use jiff_sqlx::ToSqlx;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use org::http::EmploymentPeriodDto;
@@ -66,7 +67,7 @@ pub enum LeaveCode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct AttendanceDay {
     pub staff_id: Uuid,
-    pub date: NaiveDate,
+    pub date: Date,
     pub status: AttendanceStatus,
     /// `HH:MM`.
     pub check_in: Option<String>,
@@ -75,8 +76,8 @@ pub struct AttendanceDay {
     pub note: Option<String>,
 }
 
-fn hhmm(t: NaiveTime) -> String {
-    t.format("%H:%M").to_string()
+fn hhmm(t: Time) -> String {
+    t.strftime("%H:%M").to_string()
 }
 
 impl TryFrom<AttendanceRow> for AttendanceDay {
@@ -88,8 +89,8 @@ impl TryFrom<AttendanceRow> for AttendanceDay {
             })?,
             staff_id: r.staff_id,
             date: r.work_date,
-            check_in: r.check_in.map(hhmm),
-            check_out: r.check_out.map(hhmm),
+            check_in: r.check_in.map(|t| hhmm(t.to_jiff())),
+            check_out: r.check_out.map(|t| hhmm(t.to_jiff())),
             late_minutes: u32::try_from(r.late_minutes).unwrap_or(0),
             note: r.note,
         })
@@ -110,26 +111,23 @@ impl AttendanceDay {
 #[derive(Debug, Clone)]
 pub struct Entry {
     pub staff_id: Uuid,
-    pub date: NaiveDate,
+    pub date: Date,
     pub status: Option<AttendanceStatus>,
-    pub check_in: Option<NaiveTime>,
-    pub check_out: Option<NaiveTime>,
+    pub check_in: Option<Time>,
+    pub check_out: Option<Time>,
     pub note: Option<String>,
 }
 
 /// Minutes from the shift start to the check-in, 0 when on time or unknown.
-pub fn late_minutes(shift_start: NaiveTime, check_in: Option<NaiveTime>) -> u32 {
+pub fn late_minutes(shift_start: Time, check_in: Option<Time>) -> u32 {
+    // Whole minutes after the shift start; on time or early is 0.
     check_in.map_or(0, |c| {
-        let (c, s) = (
-            c.num_seconds_from_midnight(),
-            shift_start.num_seconds_from_midnight(),
-        );
-        c.saturating_sub(s) / 60
+        u32::try_from(c.duration_since(shift_start).as_mins()).unwrap_or(0)
     })
 }
 
 /// Validates a batch against today and the roster; returns field errors indexed like the batch.
-pub fn validate(entries: &[Entry], today: NaiveDate, staff: &[Profile]) -> Result<(), AppError> {
+pub fn validate(entries: &[Entry], today: Date, staff: &[Profile]) -> Result<(), AppError> {
     let mut errors = Vec::new();
     if entries.is_empty() || entries.len() > MAX_ENTRIES {
         errors.push(FieldError::new("entries", "count"));
@@ -172,7 +170,7 @@ pub fn validate(entries: &[Entry], today: NaiveDate, staff: &[Profile]) -> Resul
 }
 
 /// The days before which an employed day without a record counts as missing.
-pub fn recorded_until(month: Month, today: NaiveDate) -> Option<NaiveDate> {
+pub fn recorded_until(month: Month, today: Date) -> Option<Date> {
     (month.last_day() >= today).then_some(today)
 }
 
@@ -184,8 +182,8 @@ pub struct StaffSheet {
     /// `HH:MM`, the person's own or the spa default.
     pub shift_start: String,
     /// Start of the latest period (older clients; use `periods`).
-    pub joined_on: Option<NaiveDate>,
-    pub left_on: Option<NaiveDate>,
+    pub joined_on: Option<Date>,
+    pub left_on: Option<Date>,
     /// Employment periods (dates only): days outside them are not workdays.
     pub periods: Vec<EmploymentPeriodDto>,
     pub days: Vec<AttendanceDay>,
@@ -196,7 +194,7 @@ pub struct StaffSheet {
     pub can_record: bool,
     /// Days of the month this person performed a service of a completed visit (a leave code on
     /// such a day gets a warning). Empty on `/me/staff`.
-    pub visit_days: Vec<NaiveDate>,
+    pub visit_days: Vec<Date>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -204,7 +202,7 @@ pub struct AttendanceSheet {
     /// `YYYY-MM`.
     pub month: String,
     pub days_in_month: u32,
-    pub today: NaiveDate,
+    pub today: Date,
     pub closed: bool,
     pub default_shift_start: String,
     pub staff: Vec<StaffSheet>,
@@ -217,8 +215,8 @@ pub struct AttendanceSheet {
 pub fn sheet_of(
     p: &Profile,
     month: Month,
-    today: NaiveDate,
-    default_shift: NaiveTime,
+    today: Date,
+    default_shift: Time,
     days: Vec<AttendanceDay>,
 ) -> StaffSheet {
     let calc_days: Vec<Day> = days.iter().map(AttendanceDay::as_calc).collect();
@@ -385,14 +383,15 @@ pub async fn record(
                     staff_id: e.staff_id,
                     work_date: e.date,
                     status: status.as_str().to_owned(),
-                    check_in: e.check_in,
-                    check_out: e.check_out,
+                    check_in: e.check_in.map(ToSqlx::to_sqlx),
+                    check_out: e.check_out.map(ToSqlx::to_sqlx),
                     late_minutes: i32::try_from(late).unwrap_or(0),
                     note: e.note.clone(),
                 };
                 writes.push(json!({
                     "staff_id": row.staff_id, "work_date": row.work_date, "status": row.status,
-                    "check_in": row.check_in, "check_out": row.check_out,
+                    "check_in": row.check_in.map(jiff_sqlx::Time::to_jiff),
+                    "check_out": row.check_out.map(jiff_sqlx::Time::to_jiff),
                     "late_minutes": row.late_minutes, "note": row.note,
                 }));
                 let day = AttendanceDay::try_from(row)?;
@@ -435,11 +434,11 @@ mod tests {
     use super::*;
     use org::StaffStatus;
 
-    fn t(h: u32, m: u32) -> Option<NaiveTime> {
-        NaiveTime::from_hms_opt(h, m, 0)
+    fn t(h: i8, m: i8) -> Option<Time> {
+        Time::new(h, m, 0, 0).ok()
     }
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 
@@ -476,7 +475,7 @@ mod tests {
 
     #[test]
     fn late_is_minutes_after_the_shift_start() {
-        let nine = NaiveTime::from_hms_opt(9, 0, 0).unwrap_or(NaiveTime::MIN);
+        let nine = jiff::civil::time(9, 0, 0, 0);
         assert_eq!(late_minutes(nine, t(8, 55)), 0);
         assert_eq!(late_minutes(nine, t(9, 0)), 0);
         assert_eq!(late_minutes(nine, t(9, 17)), 17);

@@ -1,7 +1,9 @@
 //! Visit SQL. Tenant-scoped explicitly in every query; RLS is the second layer.
 //! `visit_line` is insert-only except its technician (column-level grant).
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff_sqlx::ToSqlx;
 use kernel::{AppError, TenantTx};
 use uuid::Uuid;
 
@@ -9,8 +11,8 @@ pub struct VisitInsert<'a> {
     pub id: Uuid,
     pub branch_id: Uuid,
     pub customer_id: Uuid,
-    pub business_date: NaiveDate,
-    pub check_in_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub check_in_at: Timestamp,
     pub note_ct: Option<&'a [u8]>,
     pub sale_id: Option<Uuid>,
     pub created_by: Uuid,
@@ -31,8 +33,8 @@ pub async fn insert_visit(tx: &mut TenantTx, v: &VisitInsert<'_>) -> Result<(), 
         tenant,
         v.branch_id,
         v.customer_id,
-        v.business_date,
-        v.check_in_at,
+        v.business_date.to_sqlx(),
+        v.check_in_at.to_sqlx(),
         v.note_ct,
         v.sale_id,
         v.created_by,
@@ -104,19 +106,19 @@ pub struct VisitRow {
     pub customer_id: Uuid,
     pub customer_name: String,
     pub customer_gender: Option<String>,
-    pub business_date: NaiveDate,
-    pub check_in_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub check_in_at: Timestamp,
     pub note_ct: Option<Vec<u8>>,
     pub status: String,
     pub void_reason: Option<String>,
-    pub voided_at: Option<DateTime<Utc>>,
+    pub voided_at: Option<jiff_sqlx::Timestamp>,
     pub sale_id: Option<Uuid>,
     pub discount_reason: Option<String>,
     pub corrects_visit_id: Option<Uuid>,
     pub corrected_by_visit_id: Option<Uuid>,
     pub companions: Vec<String>,
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// "Đã sửa" (ADR-0022 D9); `None` unless asked for (`record.history.read`).
     pub edited: Option<bool>,
 }
@@ -130,7 +132,7 @@ pub struct VisitRow {
 pub async fn visits(
     tx: &mut TenantTx,
     id: Option<Uuid>,
-    day: Option<NaiveDate>,
+    day: Option<Date>,
     limit: Option<i64>,
     with_edited: bool,
 ) -> Result<Vec<VisitRow>, AppError> {
@@ -177,7 +179,7 @@ pub async fn visits(
            LIMIT LEAST(COALESCE($4::int8, 500), 500)"#,
         tenant,
         id,
-        day,
+        day.map(ToSqlx::to_sqlx),
         limit,
         with_edited
     )
@@ -187,8 +189,8 @@ pub async fn visits(
 
 pub struct LockedVisit {
     pub customer_id: Uuid,
-    pub business_date: NaiveDate,
-    pub check_in_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub check_in_at: Timestamp,
     pub status: String,
     pub sale_id: Option<Uuid>,
     pub note_ct: Option<Vec<u8>>,
@@ -227,8 +229,8 @@ pub async fn lock(tx: &mut TenantTx, id: Uuid) -> Result<Option<LockedVisit>, Ap
     };
     Ok(Some(LockedVisit {
         customer_id: row.customer_id,
-        business_date: row.business_date,
-        check_in_at: row.check_in_at,
+        business_date: row.business_date.to_jiff(),
+        check_in_at: row.check_in_at.to_jiff(),
         status: row.status,
         sale_id: row.sale_id,
         note_ct: row.note_ct,
@@ -295,7 +297,7 @@ pub async fn update_visit(
     id: Uuid,
     version: i64,
     note_ct: Option<Option<&[u8]>>,
-    check_in_at: Option<DateTime<Utc>>,
+    check_in_at: Option<Timestamp>,
     companions: Option<&[String]>,
 ) -> Result<bool, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -315,7 +317,7 @@ pub async fn update_visit(
         version,
         set_note,
         note,
-        check_in_at,
+        check_in_at.map(ToSqlx::to_sqlx),
         companions
     )
     .execute(tx.conn())
@@ -473,7 +475,7 @@ pub struct PackageSaleRow {
     pub visit_id: Uuid,
     pub sale_id: Uuid,
     pub status: String,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub description: String,
     pub customer_package_ids: Vec<Uuid>,
     pub total: i64,

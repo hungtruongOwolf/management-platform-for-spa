@@ -1,7 +1,7 @@
 ---
 title: Backend design (R1-1)
-updated: 2026-11-11
-sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, architecture/system.md, architecture/data.md, security/authz-matrix.md]
+updated: 2026-11-28
+sources: [product/specs/front-desk-and-packages.md, product/specs/management-views.md, architecture/system.md, architecture/data.md, security/authz-matrix.md, decisions/ADR-0026-jiff-instead-of-chrono.md]
 ---
 
 # Backend design R1-1
@@ -280,6 +280,12 @@ domain: kiểu dữ liệu & bất biến thuần (Money, PhoneE164, SessionCoun
 - **`Server-Timing`** (`app::server_timing`): mọi response trừ `/auth/*` có `db;dur=<ms>;desc="<n> statements", total;dur=<ms>`. `db` = tổng thời gian các câu sqlx của request (layer tracing riêng nghe event `sqlx::query` DEBUG, filter theo layer nên `RUST_LOG` không ảnh hưởng; task-local theo request). `/auth/*` không có: số câu lệnh phân biệt được SĐT lạ / bị khóa / đúng. Đọc bằng DevTools hoặc `infra/perf/endpoints.mjs`.
 - **Tiện ích domain:** chuẩn hóa SĐT VN → E.164 (`phonenumber`); tạo `search_text` (NFC → lowercase → bỏ dấu → `đ→d`); mã hóa field AES-256-GCM (`aes-gcm`, key qua `secrecy`).
 
+## 5b. Ngày, giờ và múi giờ ([ADR-0026](../decisions/ADR-0026-jiff-instead-of-chrono.md))
+- **Kiểu:** instant `jiff::Timestamp` (cột `timestamptz`), ngày `jiff::civil::Date` (`date`, gồm `business_date`), giờ trên đồng hồ `jiff::civil::Time` (`time`: giờ mở cửa, ca, giờ vào / ra), thời lượng tuyệt đối `jiff::SignedDuration`, bước lịch trên ngày `jiff::Span` (ngày, tháng), múi giờ của spa `jiff::tz::TimeZone` từ tzdb đóng gói trong binary. Không còn `chrono` / `chrono-tz` (cargo-deny RUSTSEC-2026-0543 / -0555).
+- **Ngày nghiệp vụ:** `kernel::BusinessDate::of_instant(ts, &tz)` = ngày của `ts` trên đồng hồ của spa. Múi giờ đọc một lần cùng quyền (`TenantFacts`, A4 ở trên), mang trong `TenantProfile.timezone`; SQL đổi múi giờ trong DB thì dùng `TenantProfile::zone_name()` (`AT TIME ZONE $n`).
+- **Chuyển đổi chỉ ở hai ranh giới:** SQL qua wrapper `jiff_sqlx::{Timestamp, Date, Time}` (`sqlx.toml` mỗi crate map kiểu cột; tham số `.to_sqlx()`, cột nullable của row là `Option<jiff_sqlx::…>`), JSON qua `kernel::time::rfc3339` cho instant (chữ giống hệt trước: `Z`, phần lẻ giây theo nhóm 3 chữ số). Ngày ra `YYYY-MM-DD`, giờ `HH:MM:SS` (DTO giờ mở cửa / ca dùng chuỗi `HH:MM` tự định dạng bằng `strftime`).
+- **Không tính trên giờ địa phương:** đọc đồng hồ địa phương một lần (`tz.to_datetime(ts)`) để lấy ngày / giờ / phút; mọi cộng trừ làm trên instant (`Timestamp ± SignedDuration`: hết hạn phiên, khóa đăng nhập, cuối lịch hẹn, dời nhóm) hoặc trên `civil::Date` (± `Span` ngày / tháng: tháng lương, hạn gói, preset báo cáo, "N ngày trước" theo ngày của spa). Đổi giờ địa phương về instant: `tz.to_timestamp(date.at(h, m, 0, 0))`. `Timestamp + Span` có ngày trở lên panic lúc chạy.
+
 ## 6. Background jobs (in-process, `tokio`)
 | Job | Lịch | Retry |
 |---|---|---|
@@ -308,7 +314,7 @@ Chạy trên máy vận hành, không có route HTTP nào tương ứng. Mật k
 | `app reset-operator-mfa --username U` · `app disable-operator --username U` · `app enable-operator --username U` | Operator mất authenticator / tạm khóa / mở lại | owner |
 | `app openapi` | In contract ra stdout | — |
 
-`seed-demo` đi qua đúng các use case (`crm`, `sales`, `operations`, `packages`, `hr`, `org`, lịch hẹn), nên validation, audit và quy tắc append-only vẫn giữ. Để ghi lịch sử nhiều tháng, `sales::service::create_sale_as_of`, `operations::service::record_as_of` , (2026-11-09) `operations::appointments::service::{book_as_of, close_as_of, complete_as_of}` và (2026-11-10) `operations::service::{void_as_of, correct_as_of}`, `packages::lifecycle::cancel_as_of` nhận đồng hồ làm tham số (`kernel::tenant::profile_as_of`). Quy tắc giữ nguyên, chỉ "hôm nay" là ngày của đồng hồ đó: quản lý chỉ hủy / sửa lượt trong ngày, ngày cũ cần `record.void_closed_day`, hủy gói hoàn tiền chỉ chủ spa; bút toán đảo và dòng hoàn tiền mang `business_date` của đồng hồ, còn `created_at` và audit là giờ thật. Handler HTTP chỉ gọi `create_sale` / `record` / `book` / `close` / `complete` / `void` / `correct` / `cancel`, các hàm này truyền `Utc::now()`: client không có cách nào ghi lùi ngày. Seed chạy song song phần độc lập (mỗi khách một chuỗi theo thời gian, ngày khác nhau của lịch hẹn, tháng khác nhau của chấm công) trên nhiều kết nối pool trong cùng một task (`app::demo::run`), retry lỗi tạm thời với cùng idempotency key; `server_timing::count_statements` đếm câu SQL (= round trip) từng phase.
+`seed-demo` đi qua đúng các use case (`crm`, `sales`, `operations`, `packages`, `hr`, `org`, lịch hẹn), nên validation, audit và quy tắc append-only vẫn giữ. Để ghi lịch sử nhiều tháng, `sales::service::create_sale_as_of`, `operations::service::record_as_of` , (2026-11-09) `operations::appointments::service::{book_as_of, close_as_of, complete_as_of}` và (2026-11-10) `operations::service::{void_as_of, correct_as_of}`, `packages::lifecycle::cancel_as_of` nhận đồng hồ làm tham số (`kernel::tenant::profile_as_of`). Quy tắc giữ nguyên, chỉ "hôm nay" là ngày của đồng hồ đó: quản lý chỉ hủy / sửa lượt trong ngày, ngày cũ cần `record.void_closed_day`, hủy gói hoàn tiền chỉ chủ spa; bút toán đảo và dòng hoàn tiền mang `business_date` của đồng hồ, còn `created_at` và audit là giờ thật. Handler HTTP chỉ gọi `create_sale` / `record` / `book` / `close` / `complete` / `void` / `correct` / `cancel`, các hàm này truyền `Timestamp::now()`: client không có cách nào ghi lùi ngày. Seed chạy song song phần độc lập (mỗi khách một chuỗi theo thời gian, ngày khác nhau của lịch hẹn, tháng khác nhau của chấm công) trên nhiều kết nối pool trong cùng một task (`app::demo::run`), retry lỗi tạm thời với cùng idempotency key; `server_timing::count_statements` đếm câu SQL (= round trip) từng phase.
 
 ## 7. Truy vết acceptance criteria → endpoint
 | Story | AC chính | Endpoint |

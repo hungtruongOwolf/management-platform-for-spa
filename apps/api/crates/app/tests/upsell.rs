@@ -7,12 +7,13 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{Datelike, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
+use jiff::Span;
+use jiff::civil::Date;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -63,9 +64,8 @@ fn key() -> String {
     Uuid::now_v7().to_string()
 }
 
-fn spa_today() -> NaiveDate {
-    let vn = FixedOffset::east_opt(7 * 3600).unwrap_or_else(|| panic!("offset"));
-    Utc::now().with_timezone(&vn).date_naive()
+fn spa_today() -> Date {
+    common::vn_today()
 }
 
 async fn service(h: &Harness, name: &str) -> Setup<String> {
@@ -540,7 +540,7 @@ async fn a_checkout_retry_never_sells_twice(pool: PgPool) -> TestResult {
 async fn a_booking_completes_with_a_package_and_keeps_its_companions(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     // Booked for tomorrow, then moved onto today (a slot already over cannot be booked, F12).
-    let at = format!("{}T09:00:00+07:00", spa_today() + chrono::Duration::days(1));
+    let at = format!("{}T09:00:00+07:00", spa_today() + Span::new().days(1));
     let lonely_group = s
         .post(
             &s.owner,
@@ -1195,9 +1195,9 @@ async fn converting_follows_the_closed_day_and_payroll_rules(pool: PgPool) -> Te
     let v2 = s.one_off_visit(None).await;
     let id2 = str_of(&v2.body["id"]);
     let today = spa_today();
-    let first_of_month = today.with_day(1).unwrap_or(today);
-    let last_month = first_of_month - chrono::Duration::days(1);
-    let back = (today - last_month).num_days();
+    let first_of_month = today.first_of_month();
+    let last_month = first_of_month - Span::new().days(1);
+    let back = i64::from((today - last_month).get_days());
     s.exec(&format!(
         "UPDATE app.visit SET business_date = business_date - {back}, check_in_at = check_in_at - interval '{back} days' WHERE id = '{id2}'"
     ))
@@ -1209,7 +1209,7 @@ async fn converting_follows_the_closed_day_and_payroll_rules(pool: PgPool) -> Te
     s.exec(&format!(
         "INSERT INTO app.payroll_period (tenant_id, period, status, closed_at, closed_by)
          SELECT id, '{}', 'closed', now(), '{owner_id}' FROM app.tenant WHERE slug = 'vpyd'",
-        last_month.with_day(1).unwrap_or(last_month)
+        last_month.first_of_month()
     ))
     .await?;
     let closed = s.convert(&s.owner, &id2, 1, body.clone()).await;
@@ -1234,7 +1234,7 @@ async fn converting_follows_the_closed_day_and_payroll_rules(pool: PgPool) -> Te
     assert_eq!(owner.status, StatusCode::CREATED, "{}", owner.body);
     assert_eq!(
         owner.body["visit"]["business_date"],
-        json!((today - chrono::Duration::days(1)).to_string()),
+        json!((today - Span::new().days(1)).to_string()),
         "the visit keeps its day"
     );
     // The package money changes hands today, like the reversal (Q-E1).

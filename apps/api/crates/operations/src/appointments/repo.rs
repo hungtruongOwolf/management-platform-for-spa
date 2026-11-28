@@ -1,6 +1,8 @@
 //! Appointment SQL. Tenant-scoped explicitly in every query; RLS is the second layer.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff_sqlx::ToSqlx;
 use kernel::{AppError, TenantTx};
 use serde_json::Value;
 use uuid::Uuid;
@@ -23,7 +25,7 @@ pub async fn calendar_settings(
 
 /// Serializes every booking change of one spa's business day until the transaction ends, so the
 /// overlap and capacity checks below cannot both pass for two racing requests.
-pub async fn lock_day(tx: &mut TenantTx, day: NaiveDate) -> Result<(), AppError> {
+pub async fn lock_day(tx: &mut TenantTx, day: Date) -> Result<(), AppError> {
     let key = format!("appointment:{}:{day}", tx.tenant().as_uuid());
     sqlx::query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", key)
         .execute(tx.conn())
@@ -36,8 +38,8 @@ pub async fn lock_day(tx: &mut TenantTx, day: NaiveDate) -> Result<(), AppError>
 pub async fn staff_overlap(
     tx: &mut TenantTx,
     staff: Uuid,
-    from: DateTime<Utc>,
-    to: DateTime<Utc>,
+    from: Timestamp,
+    to: Timestamp,
     except: Option<Uuid>,
 ) -> Result<Option<Uuid>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -50,8 +52,8 @@ pub async fn staff_overlap(
            LIMIT 1"#,
         tenant,
         staff,
-        from,
-        to,
+        from.to_sqlx(),
+        to.to_sqlx(),
         except
     )
     .fetch_optional(tx.conn())
@@ -65,8 +67,8 @@ pub async fn customer_overlap(
     customer: Option<Uuid>,
     guest_phone: Option<&str>,
     group: Option<Uuid>,
-    from: DateTime<Utc>,
-    to: DateTime<Utc>,
+    from: Timestamp,
+    to: Timestamp,
     except: Option<Uuid>,
 ) -> Result<Option<Uuid>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -82,8 +84,8 @@ pub async fn customer_overlap(
         tenant,
         customer,
         guest_phone,
-        from,
-        to,
+        from.to_sqlx(),
+        to.to_sqlx(),
         except,
         group
     )
@@ -117,9 +119,9 @@ pub struct AppointmentInsert<'a> {
     pub customer_id: Option<Uuid>,
     pub guest_name: Option<&'a str>,
     pub guest_phone: Option<&'a str>,
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub starts_at: Timestamp,
+    pub ends_at: Timestamp,
     pub staff_id: Option<Uuid>,
     pub note: Option<&'a str>,
     pub group_id: Option<Uuid>,
@@ -141,9 +143,9 @@ pub async fn insert(tx: &mut TenantTx, a: &AppointmentInsert<'_>) -> Result<(), 
         a.customer_id,
         a.guest_name,
         a.guest_phone,
-        a.business_date,
-        a.starts_at,
-        a.ends_at,
+        a.business_date.to_sqlx(),
+        a.starts_at.to_sqlx(),
+        a.ends_at.to_sqlx(),
         a.staff_id,
         a.note,
         a.created_by,
@@ -187,13 +189,13 @@ pub async fn set_services(
 
 pub struct Locked {
     pub status: String,
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub starts_at: Timestamp,
+    pub ends_at: Timestamp,
     pub customer_id: Option<Uuid>,
     pub guest_phone: Option<String>,
     pub staff_id: Option<Uuid>,
-    pub arrived_at: Option<DateTime<Utc>>,
+    pub arrived_at: Option<jiff_sqlx::Timestamp>,
     pub note: Option<String>,
     pub companions: Vec<String>,
     pub group_id: Option<Uuid>,
@@ -216,9 +218,9 @@ pub async fn lock(tx: &mut TenantTx, id: Uuid) -> Result<Option<Locked>, AppErro
 }
 
 pub struct Reschedule<'a> {
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub starts_at: Timestamp,
+    pub ends_at: Timestamp,
     pub staff_id: Option<Uuid>,
     pub note: Option<&'a str>,
     /// `Some` links a newcomer to a customer record (guest fields cleared).
@@ -245,9 +247,9 @@ pub async fn reschedule(
         tenant,
         id,
         version,
-        r.business_date,
-        r.starts_at,
-        r.ends_at,
+        r.business_date.to_sqlx(),
+        r.starts_at.to_sqlx(),
+        r.ends_at.to_sqlx(),
         r.staff_id,
         r.note,
         r.customer_id,
@@ -378,9 +380,9 @@ pub async fn close(
 pub struct AppointmentRow {
     pub id: Uuid,
     pub status: String,
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub starts_at: Timestamp,
+    pub ends_at: Timestamp,
     pub customer_id: Option<Uuid>,
     pub customer_name: String,
     pub customer_phone: Option<String>,
@@ -389,16 +391,16 @@ pub struct AppointmentRow {
     pub staff_name: Option<String>,
     pub note: Option<String>,
     pub status_reason: Option<String>,
-    pub arrived_at: Option<DateTime<Utc>>,
-    pub closed_at: Option<DateTime<Utc>>,
+    pub arrived_at: Option<jiff_sqlx::Timestamp>,
+    pub closed_at: Option<jiff_sqlx::Timestamp>,
     pub visit_id: Option<Uuid>,
     pub visit_status: Option<String>,
-    pub visit_check_in_at: Option<DateTime<Utc>>,
+    pub visit_check_in_at: Option<jiff_sqlx::Timestamp>,
     pub sale_total: Option<i64>,
     pub group_id: Option<Uuid>,
     pub companions: Vec<String>,
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// "Đã sửa" (ADR-0022 D9); `None` unless asked for (`record.history.read`).
     pub edited: Option<bool>,
 }
@@ -419,8 +421,8 @@ pub struct AppointmentRow {
 pub async fn appointments(
     tx: &mut TenantTx,
     id: Option<Uuid>,
-    from: Option<NaiveDate>,
-    to: Option<NaiveDate>,
+    from: Option<Date>,
+    to: Option<Date>,
     with_edited: bool,
 ) -> Result<Vec<AppointmentRow>, AppError> {
     if with_edited {
@@ -492,8 +494,8 @@ pub async fn appointments(
            ORDER BY a.starts_at, a.id"#,
         tenant,
         id,
-        from,
-        to,
+        from.map(ToSqlx::to_sqlx),
+        to.map(ToSqlx::to_sqlx),
         with_edited
     )
     .fetch_all(tx.conn())
@@ -528,8 +530,8 @@ pub async fn services_of(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Vec<ServiceR
 
 pub struct WalkInRow {
     pub id: Uuid,
-    pub business_date: NaiveDate,
-    pub check_in_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub check_in_at: Timestamp,
     pub customer_id: Uuid,
     pub customer_name: String,
     pub customer_gender: Option<String>,
@@ -542,8 +544,8 @@ pub struct WalkInRow {
 pub async fn walk_ins(
     tx: &mut TenantTx,
     branch: Uuid,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<WalkInRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -587,8 +589,8 @@ pub async fn walk_ins(
            ORDER BY w.check_in_at, w.id"#,
         tenant,
         branch,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -629,12 +631,12 @@ pub async fn visit_lines(tx: &mut TenantTx, ids: &[Uuid]) -> Result<Vec<VisitLin
 pub struct MyAppointmentRow {
     pub id: Uuid,
     pub status: String,
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub starts_at: Timestamp,
+    pub ends_at: Timestamp,
     pub customer_name: String,
     pub visit_status: Option<String>,
-    pub visit_check_in_at: Option<DateTime<Utc>>,
+    pub visit_check_in_at: Option<jiff_sqlx::Timestamp>,
     pub group_size: Option<i64>,
     pub visit_id: Option<Uuid>,
     /// The session note of the booking's completed visit, only when `staff` performed a line of
@@ -648,8 +650,8 @@ pub struct MyAppointmentRow {
 pub async fn my_appointments(
     tx: &mut TenantTx,
     staff: Uuid,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<MyAppointmentRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -675,8 +677,8 @@ pub async fn my_appointments(
            LIMIT 2000"#,
         tenant,
         staff,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -684,8 +686,8 @@ pub async fn my_appointments(
 
 pub struct MyVisitRow {
     pub id: Uuid,
-    pub business_date: NaiveDate,
-    pub check_in_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub check_in_at: Timestamp,
     pub customer_name: String,
     pub walk_in: bool,
     /// The session note: `staff` performed a line of this visit (the query's condition).
@@ -697,8 +699,8 @@ pub struct MyVisitRow {
 pub async fn my_visits(
     tx: &mut TenantTx,
     staff: Uuid,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<MyVisitRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -719,8 +721,8 @@ pub async fn my_visits(
            LIMIT 2000"#,
         tenant,
         staff,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)

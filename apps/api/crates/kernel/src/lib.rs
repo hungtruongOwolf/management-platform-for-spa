@@ -17,6 +17,7 @@ pub mod phone;
 pub mod tenant;
 #[cfg(feature = "testing")]
 pub mod testing;
+pub mod time;
 
 pub use business_date::BusinessDate;
 pub use db::TenantTx;

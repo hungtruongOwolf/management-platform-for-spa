@@ -180,7 +180,7 @@ impl AuthUser {
     /// Guard for 🔒 account-security actions (password, MFA settings): password confirmed within
     /// the re-auth window. Business actions never call it (EM decision 2026-11-05).
     pub fn require_recent_auth(&self) -> Result<(), AppError> {
-        if self.session.recently_authenticated(chrono::Utc::now()) {
+        if self.session.recently_authenticated(jiff::Timestamp::now()) {
             Ok(())
         } else {
             Err(AppError::ReauthRequired)

@@ -19,7 +19,8 @@ use crate::period;
 use crate::repo::{self, DayLineRow, DayUpsellRow};
 use crate::review::{self, DailyReview};
 use crate::rules;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::crypto::FieldCipher;
 use kernel::{Actor, AppError, Feature, FieldError, TenantTx};
 use serde::Serialize;
@@ -46,7 +47,8 @@ pub struct MyDayLine {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct MyDayVisit {
     pub visit_id: Uuid,
-    pub check_in_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub check_in_at: Timestamp,
     pub customer_name: String,
     /// The visit's session note (`null`: none written, or the caller is a former staff member).
     /// Sent only because the person performed a line of this visit.
@@ -69,8 +71,8 @@ pub struct MyDayUpsell {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct MyDayData {
-    pub date: NaiveDate,
-    pub today: NaiveDate,
+    pub date: Date,
+    pub today: Date,
     /// The month's payroll is closed (figures are final).
     pub closed: bool,
     /// `null`: not recorded (yet).
@@ -95,10 +97,10 @@ pub struct MyDay {
 }
 
 /// Parses `YYYY-MM-DD` inside the months the API accepts; bad input is `422 invalid_date`.
-pub fn parse_date(raw: &str) -> Result<NaiveDate, AppError> {
+pub fn parse_date(raw: &str) -> Result<Date, AppError> {
     let invalid = || AppError::Validation(vec![FieldError::new("date", "invalid_date")]);
     let raw = raw.trim();
-    let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| invalid())?;
+    let date = Date::strptime("%Y-%m-%d", raw).map_err(|_| invalid())?;
     let month = raw.get(..7).ok_or_else(invalid)?;
     Month::parse("date", month).map_err(|_| invalid())?;
     Ok(date)
@@ -110,7 +112,7 @@ pub async fn my_day(
     pool: &PgPool,
     cipher: &FieldCipher,
     actor: &Actor,
-    date: Option<NaiveDate>,
+    date: Option<Date>,
 ) -> Result<MyDay, AppError> {
     let scope = me::own_scope(actor)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
@@ -245,7 +247,7 @@ mod tests {
     fn row(visit: u128, name: &str, value: i64, full_value: i64) -> DayLineRow {
         DayLineRow {
             visit_id: Uuid::from_u128(visit),
-            check_in_at: DateTime::<Utc>::UNIX_EPOCH,
+            check_in_at: jiff::Timestamp::UNIX_EPOCH,
             customer_name: "Nguyễn Thị Hoa".into(),
             service_name: name.into(),
             source: "package".into(),
