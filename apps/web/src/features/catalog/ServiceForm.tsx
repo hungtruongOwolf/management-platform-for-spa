@@ -5,6 +5,7 @@ import { useId, useRef } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { fieldMessage, messageFor } from "../../lib/errors";
+import { isSelectListKey } from "../../lib/selectList";
 import { LazyRecordTrace } from "../record-history/lazy";
 import { saveService } from "./api";
 import { CATALOG_FIELDS } from "./messages";
@@ -162,7 +163,7 @@ export function ServiceForm({
         })(e)
       }
       onKeyDown={(e) => {
-        if (e.key === "Escape") onDone();
+        if (e.key === "Escape" && !isSelectListKey(e)) onDone();
       }}
       className="row-form"
     >

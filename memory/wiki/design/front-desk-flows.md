@@ -1,6 +1,6 @@
 ---
 title: Front-desk screen flows (spec R1-1)
-updated: 2026-11-09
+updated: 2026-11-28
 sources: [product/specs/front-desk-and-packages.md, product/specs/appointments.md, design/design-system.md, raw/2026-11-06-em-ui-redesign-direction.md]
 ---
 
@@ -29,7 +29,7 @@ sources: [product/specs/front-desk-and-packages.md, product/specs/appointments.m
 > - **Thanh trên:** Ghi lượt khách | Lịch hẹn · bên phải **một dòng** "🕒 Còn hh:mm:ss để nhập số liệu hôm nay" + nút ⓘ (toggletip: quản lý khóa sau 0 giờ; chủ spa vẫn nhập bù; giờ máy khác giờ spa).
 > - **Hai panel từ 1024px:** trái = tìm khách + khách đang chọn + gói; phải = lượt đang ghi. Dưới 1024px xếp dọc. Ô tìm và **Khách mới** cùng một hàng; phím tắt nằm sau nút "?" (ẩn dưới 640px). Chọn khách xong danh sách kết quả ẩn (gõ lại thì hiện), Enter lần nữa không chọn lại.
 > - **Gói: một trạng thái mỗi dòng.** Đang dùng: "Còn X/Y buổi · HSD" (+ chip "Sắp hết buổi" khi ≤ 2) + **Trừ 1 buổi**. Hết hạn còn buổi: chip "Hết hạn"; có `package.use_expired_override` → Trừ 1 buổi mở form lý do, không có → dòng chữ "Đã hết hạn: cần quản lý cho dùng tiếp." (không nút). **Đã hủy / hết buổi** (kể cả một dịch vụ của combo đã hết) → gom vào disclosure "Gói đã hết / đã hủy (n)", chip "Đã hủy"/"Hết buổi", "Đã dùng X/Y buổi", **không bao giờ có Trừ 1 buổi** (thay dòng cũ: badge "Đã hết buổi" + nút aria-disabled + toast). Không còn gói dùng được → "Gợi ý: tư vấn bán gói mới". Bỏ viền vàng trái và thanh số buổi.
-> - **Giỏ:** dòng dịch vụ (✕ để bỏ, KTV mỗi dòng cùng một lưới); **chọn dịch vụ lẻ là thêm** (bỏ nút "Thêm", như sửa lỗi đặt lịch #44; bước ↑/↓ trên select đóng chờ Enter); Giờ làm / Giảm giá thành hai dòng "nhãn · giá trị · một nút ghost" ("Đổi giờ làm" / "Đổi giờ / nhập bù" cho chủ spa, "Dùng giờ hiện tại"; "Thêm giảm giá" / "Bỏ giảm giá"); thanh toán = 3 chip radio (Tiền mặt · Chuyển khoản · Tiền mặt + CK); ghi chú buổi; **checkout dính đáy**: Phải trả + nút "Lưu lượt khách" rộng hết.
+> - **Giỏ:** dòng dịch vụ (✕ để bỏ, KTV mỗi dòng cùng một lưới); **chọn dịch vụ lẻ là thêm** (bỏ nút "Thêm", như sửa lỗi đặt lịch #44; bước ↑/↓ trên select đóng chờ Enter; từ 2026-11-28 ở Chrome / Safari 27 ↑/↓ mở danh sách và chọn trong danh sách là thêm ngay, xem [design-system § Danh sách mở của select](design-system.md#danh-sách-mở-của-select-customizable-select-2026-11-28)); Giờ làm / Giảm giá thành hai dòng "nhãn · giá trị · một nút ghost" ("Đổi giờ làm" / "Đổi giờ / nhập bù" cho chủ spa, "Dùng giờ hiện tại"; "Thêm giảm giá" / "Bỏ giảm giá"); thanh toán = 3 chip radio (Tiền mặt · Chuyển khoản · Tiền mặt + CK); ghi chú buổi; **checkout dính đáy**: Phải trả + nút "Lưu lượt khách" rộng hết.
 > - **Giỏ từ lịch hẹn:** thanh ngữ cảnh "Đang ghi cho lịch hẹn 15:00 · Nguyễn Thị Lan Anh" (ngày chỉ hiện khi khác hôm nay). "Ghi như khách vãng lai" (gây khó hiểu) chuyển vào menu ⋯ của thanh: **"Bỏ liên kết lịch hẹn"** + giải thích "Lịch hẹn vẫn mở (chưa hoàn tất). Lượt này được ghi riêng, như khách đến không hẹn." Spec lịch hẹn không có luồng nào cần tách; giữ vì hiếm khi cần (mở nhầm lịch) và không mất gì.
 > - Toast lên trên cùng giữa màn (không che checkout). Ảnh trước/sau: scratchpad của agent `redesign-quay/before|after` (1347 sáng/tối, 1024, 390 sáng/tối × trống / chọn khách / giỏ / từ lịch hẹn).
 

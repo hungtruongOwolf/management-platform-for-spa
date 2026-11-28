@@ -746,6 +746,152 @@ textarea::-webkit-resizer {
   font-weight: 500;
 }
 
+/* --- Select list: the open list of every <select> (customizable select) -----------------------
+ * EM 2026-11-28: the browser's own list "khá là khác biệt so với UI của toàn trang". Where the
+ * browser has the customizable select, styles.css opts every single select in (appearance:
+ * base-select) and its list becomes a page element styled like the app's own menus: the surface
+ * of RowMenu's `.row-menu` (border, 14px corners, shadow-2, 6px padding), 44px rows like
+ * `.menu-item`, the checked row like the palette's chosen row (primary on primary-soft) plus the
+ * sprite's tick. Semantics, keyboard, form submission and `selectOption` stay the browser's. The
+ * list sits in the top layer, anchored to its select (never narrower, flips above when there is
+ * more room there), so it works inside <dialog> sheets. Firefox keeps the native list.
+ */
+@supports (appearance: base-select) {
+  /* The closed control stays the field it was: base-select makes it a flex box (text at the top)
+   * with the browser's own ▼; our chevron (styles.css) stays, the text sits centred on one line,
+   * clipped at the content box like the native control. */
+  :where(select:not([multiple], [size])) {
+    align-items: center;
+    overflow: clip;
+    overflow-clip-margin: content-box;
+    white-space: nowrap;
+  }
+  /* A select under its label is a block (rule above "Fields under their label"): as a flex box. */
+  :where(label:not(.flex, .inline-flex, .sr-only))
+    > :where(select:not([multiple], [size])) {
+    display: flex;
+  }
+  select:not([multiple], [size])::picker-icon {
+    display: none;
+  }
+
+  /* The list: RowMenu's surface. As wide as its select, and like `.row-menu` never under 200px; a
+   * narrow select's list may grow to 20rem for its longest row, never wider than the screen less
+   * 16px. Without that room on the right it opens leftwards from the select's right edge (the
+   * browser's fallback positions). At most ~8 rows tall, then it scrolls inside; less when the
+   * room above / below the select is smaller (without calc-size(), the browser's `stretch` alone). */
+  select:not([multiple], [size])::picker(select) {
+    min-inline-size: max(anchor-size(self-inline), min(200px, 100vw - 16px));
+    max-inline-size: min(max(anchor-size(self-inline), 20rem), 100vw - 16px);
+    max-block-size: calc-size(stretch, min(size, 24rem));
+    margin-block: 4px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-2);
+    color: var(--text);
+    overscroll-behavior: contain;
+    scrollbar-color: var(--border-strong) transparent;
+    scrollbar-width: thin;
+    /* Closing: a quick fade back (the transition of the state it goes to). */
+    opacity: 0;
+    scale: 0.98;
+    translate: 0 -8px;
+    transition:
+      opacity var(--dur-fast) var(--ease-out),
+      scale var(--dur-fast) var(--ease-out),
+      translate var(--dur-fast) var(--ease-out),
+      display var(--dur-fast) allow-discrete,
+      overlay var(--dur-fast) allow-discrete;
+  }
+  /* Opening: the menus' pop-in (opacity, 8px drop, .98 scale) over --dur-base. */
+  select:not([multiple], [size]):open::picker(select) {
+    opacity: 1;
+    scale: none;
+    translate: none;
+    transition-duration: var(--dur-base);
+  }
+  @starting-style {
+    select:not([multiple], [size]):open::picker(select) {
+      opacity: 0;
+      scale: 0.98;
+      translate: 0 -8px;
+    }
+  }
+  /* tokens.css's reduced-motion rule reaches only real elements: the list fades, nothing moves. */
+  @media (prefers-reduced-motion: reduce) {
+    select:not([multiple], [size])::picker(select),
+    select:not([multiple], [size]):open::picker(select) {
+      scale: none;
+      translate: none;
+    }
+  }
+
+  /* One row per option, like `.menu-item`: 44px (a touch target on phones too), 10px corners,
+   * long labels wrap instead of widening the list past the screen. */
+  :where(select:not([multiple], [size])) option {
+    min-block-size: var(--size-control);
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--radius-control);
+    color: var(--text);
+    font-size: var(--fs-field);
+    font-weight: 400;
+    line-height: 22px;
+    white-space: normal;
+    cursor: pointer;
+  }
+  :where(select:not([multiple], [size])) option:enabled:not(:checked):is(:hover, :active) {
+    background: var(--surface-2);
+  }
+  /* The keyboard's row: the hover fill under the app's inset ring (styles.css, rows sit edge to
+   * edge); the current value keeps its own fill (below). */
+  :where(select:not([multiple], [size])) option:focus-visible {
+    background: var(--surface-2);
+  }
+  /* The current value: the palette's chosen row (primary on primary-soft), bold, with a tick. */
+  :where(select:not([multiple], [size])) option:checked {
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 600;
+  }
+  :where(select:not([multiple], [size])) option::checkmark {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    order: 1;
+    margin-inline-start: auto;
+    background-color: currentColor;
+    content: "";
+    mask: var(--texture-check) center / contain no-repeat;
+  }
+  /* Not offered (a past time, a prize with no slot left): muted but readable (≥ 4.5:1). */
+  :where(select:not([multiple], [size])) option:disabled {
+    color: var(--text-muted);
+    cursor: not-allowed;
+  }
+  /* A group: its label like the palette's group labels (13px 600 muted, 8px above, 4px below),
+   * its rows as above. The label is the browser's own box, inset by half its font size; the group
+   * moves in by the rest of the rows' 10px and its rows move back, so label and rows share one
+   * text edge. */
+  :where(select:not([multiple], [size])) optgroup {
+    padding-block-start: 8px;
+    padding-inline-start: calc(10px - var(--fs-sm) / 2);
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    line-height: 18px;
+    white-space: normal;
+  }
+  :where(select:not([multiple], [size])) optgroup > option {
+    margin-inline-start: calc(var(--fs-sm) / 2 - 10px);
+  }
+  :where(select:not([multiple], [size])) optgroup > option:first-of-type {
+    margin-block-start: 4px;
+  }
+}
+
 /* --- Health note callout (customers/HealthNote.tsx) ------------------------------------------ */
 .health-note {
   display: grid;

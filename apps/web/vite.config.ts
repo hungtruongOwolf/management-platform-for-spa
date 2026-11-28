@@ -57,7 +57,7 @@ export default defineConfig({
             },
             {
               name: "common",
-              test: /(react-query[\\/]build[\\/]modern[\\/](useQuery|useMutation)|query-core[\\/]build[\\/]modern[\\/]mutationObserver)\.js$|packages[\\/]ui[\\/]src[\\/](format[\\/]money|index)\.ts$|src[\\/]lib[\\/]errors\.ts$/,
+              test: /(react-query[\\/]build[\\/]modern[\\/](useQuery|useMutation)|query-core[\\/]build[\\/]modern[\\/]mutationObserver)\.js$|packages[\\/]ui[\\/]src[\\/](format[\\/]money|index)\.ts$|src[\\/]lib[\\/](errors|selectList)\.ts$/,
               includeDependenciesRecursively: false,
             },
           ],

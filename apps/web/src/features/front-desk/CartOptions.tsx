@@ -24,6 +24,7 @@ import { DateField } from "../../components/DateField";
 import { TimeField } from "../../components/TimeField";
 import { addMessages, messageFor } from "../../lib/errors";
 import { serviceLabel } from "../../lib/names";
+import { isSelectListKey } from "../../lib/selectList";
 import { categoriesQuery, servicesQuery } from "../catalog/api";
 import { customerQuery } from "../customers/api";
 import { parseAmount } from "../sales/api";
@@ -565,6 +566,12 @@ export function AddOneOff({
             viaKeys.current = false;
           }}
           onKeyDown={(e) => {
+            // Keys inside the open list (customizable select) choose like a click: Enter there
+            // picks and adds the row, it does not only mark it pending.
+            if (isSelectListKey(e)) {
+              viaKeys.current = false;
+              return;
+            }
             if (e.key === "Enter") {
               if (pending) {
                 e.preventDefault();

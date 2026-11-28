@@ -6,6 +6,7 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { Icon } from "../../app/Icon";
 import { z } from "zod";
 import { fieldMessage, messageFor } from "../../lib/errors";
+import { isSelectListKey } from "../../lib/selectList";
 import { LazyRecordTrace } from "../record-history/lazy";
 import { savePlan } from "./api";
 import { CATALOG_FIELDS } from "./messages";
@@ -129,7 +130,7 @@ export function PlanForm({
         })(e)
       }
       onKeyDown={(e) => {
-        if (e.key === "Escape") onDone();
+        if (e.key === "Escape" && !isSelectListKey(e)) onDone();
       }}
       className="row-form"
     >
