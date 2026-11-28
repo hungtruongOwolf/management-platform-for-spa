@@ -112,6 +112,9 @@ fn the_scan_sees_a_forgotten_attribute() -> Result<(), Box<dyn std::error::Error
     let found = unformatted_instants(&file)?;
     std::fs::remove_dir_all(&dir)?;
     assert_eq!(found.len(), 1, "{found:?}");
-    assert!(found[0].ends_with("pub missed: Option<Timestamp>,"), "{found:?}");
+    assert!(
+        found[0].ends_with("pub missed: Option<Timestamp>,"),
+        "{found:?}"
+    );
     Ok(())
 }
