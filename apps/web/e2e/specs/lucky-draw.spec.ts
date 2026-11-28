@@ -67,17 +67,37 @@ async function spinByApi(page: Page, drawId: string, prizeName: string): Promise
 const winner = (page: Page) => page.getByRole("dialog", { name: "Chúc mừng" });
 const disk = (page: Page) => page.getByRole("img", { name: "Vòng quay tám cánh sen" }).locator(".ld-wheel-disk");
 const angleOf = (page: Page) => disk(page).evaluate((el) => getComputedStyle(el).transform);
+/** The page's worst vertical overflow over `ms` of a turn, read every frame. */
+const overflowWhileTurning = (page: Page, ms: number) =>
+  page.evaluate(
+    (ms) =>
+      new Promise<number>((resolve) => {
+        const se = document.scrollingElement ?? document.documentElement;
+        let worst = se.scrollHeight - innerHeight;
+        const t0 = performance.now();
+        const tick = () => {
+          worst = Math.max(worst, se.scrollHeight - innerHeight);
+          if (performance.now() - t0 < ms) requestAnimationFrame(tick);
+          else resolve(worst);
+        };
+        requestAnimationFrame(tick);
+      }),
+    ms,
+  );
 
 /**
  * Presses `press` (the stage's "Quay" or the popup's "Quay tiếp") and checks, in the real browser,
  * that the wheel's disk turns while the popup waits; then waits for spin number `seq`'s popup and
  * returns the winner's name. `probeMs`: when to sample the turn (shorter for the gentle spin). A
- * spin lasts 6 s (angles.ts `SPIN_MS`), so the popup gets 15 s.
+ * spin lasts 6 s (angles.ts `SPIN_MS`), so the popup gets 15 s. `fits`: the page fits the screen,
+ * and must keep fitting every frame of the turn (EM "giật giật": the turned square disk once pushed
+ * a scrollbar in and out, and the whole page jumped sideways).
  */
-async function spinOnce(page: Page, press: Locator, seq: number, probeMs = 700): Promise<string> {
+async function spinOnce(page: Page, press: Locator, seq: number, probeMs = 700, fits = false): Promise<string> {
   const before = await angleOf(page);
   await press.click();
-  await page.waitForTimeout(probeMs);
+  if (fits) expect(await overflowWhileTurning(page, probeMs), "page overflow while the wheel turns").toBeLessThanOrEqual(0);
+  else await page.waitForTimeout(probeMs);
   const a = await angleOf(page);
   await page.waitForTimeout(probeMs / 2);
   const b = await angleOf(page);
@@ -152,13 +172,16 @@ test.describe("vòng quay may mắn", () => {
       expect(fit.pageScroll, `page scroll on "${tab}"`).toBeLessThanOrEqual(0);
       expect(fit.wheelOfHeight).toBeGreaterThanOrEqual(0.6);
     }
-    await page.setViewportSize({ width: 1280, height: 900 });
     await page.emulateMedia({ colorScheme: "dark" });
     await expectAccessible(page, "lucky-draw-ready-dark");
     await page.emulateMedia({ colorScheme: "light" });
 
     // US4: every press turns the wheel (EM: the spin is the content); the winner pops up once it stops.
-    const first = await spinOnce(page, stage(page).getByRole("button", { name: "Quay" }), 1);
+    // At the EM's window (1920 × 912), where the wheel is as tall as the stage and its turned square
+    // disk reached past the page's end: nothing may move but the wheel (EM "giật giật").
+    await page.setViewportSize({ width: 1920, height: 912 });
+    const first = await spinOnce(page, stage(page).getByRole("button", { name: "Quay" }), 1, 1000, true);
+    await page.setViewportSize({ width: 1280, height: 900 });
     expect(WOMEN).toContain(first);
     await expect(winner(page).getByRole("button", { name: "Quay tiếp" })).toBeFocused();
     // Not under the wheel: only the popup shows the winner.

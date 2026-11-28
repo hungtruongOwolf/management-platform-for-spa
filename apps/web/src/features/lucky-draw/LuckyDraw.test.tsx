@@ -1,10 +1,11 @@
+import { focusManager } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
 import { navFor } from "../../app/nav";
-import { GENTLE, SPIN_MS } from "./angles";
+import { GENTLE, SPIN, SPIN_MS } from "./angles";
 import { D1, detail, person, prize, result } from "./fixtures";
 import { OWNER, fakeApi } from "./testServer";
 
@@ -16,6 +17,13 @@ function diskOf(stage: HTMLElement): HTMLElement {
   const disk = stage.querySelector<HTMLElement>(".ld-wheel-disk");
   if (!disk) throw new Error("no wheel disk");
   return disk;
+}
+
+/** The motion blur on the disk. */
+function blurOf(stage: HTMLElement): HTMLElement {
+  const blur = stage.querySelector<HTMLElement>(".ld-wheel-blur");
+  if (!blur) throw new Error("no wheel blur");
+  return blur;
 }
 
 /** The table row holding `el`. */
@@ -109,9 +117,11 @@ describe("spin (US4)", () => {
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
-    // The wheel turns at the press: 9 turns in 6 s (EM 2026-11-28: "tầm 6s thôi").
+    // The wheel turns at the press: 5 turns in 6 s (EM 2026-11-28: "tầm 6s thôi"), with the motion
+    // blur fading over the same 6 s.
     const disk = diskOf(stage);
-    expect(disk.style.getPropertyValue("transition")).toContain(`${String(SPIN_MS)}ms`);
+    expect(disk.style.getPropertyValue("transition")).toContain(`${String(SPIN_MS)}ms ${SPIN.ease}`);
+    expect(blurOf(stage).style.getPropertyValue("animation")).toBe(`ld-wheel-blur ${String(SPIN_MS)}ms linear both`);
     expect(disk.style.getPropertyPriority("transition")).toBe("important");
     expect(disk.style.transform).not.toBe("rotate(0deg)");
     expect(within(stage).getByRole("button", { name: "Quay" })).toHaveAttribute("aria-busy", "true");
@@ -186,6 +196,36 @@ describe("spin (US4)", () => {
     expect(screen.getByRole("dialog", { name: "Chúc mừng" })).toHaveTextContent("Nguyễn Thị Lan");
   });
 
+  it("holds the program on screen while the wheel turns: a refetch mid-spin gives nothing away", async () => {
+    const api = fakeApi(OWNER, [DRAW]);
+    at(`/vong-quay/${D1}`);
+    const stage = await screen.findByRole("region", { name: "Vòng quay" });
+    vi.useFakeTimers();
+    fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(api.calls.some((c) => c.path.endsWith("/spins"))).toBe(true);
+    // The window regains focus mid-spin with the program stale: TanStack Query refetches it, and
+    // the server already holds the result.
+    const gets = api.calls.filter((c) => c.method === "GET" && c.path === `/api/v1/lucky-draws/${D1}`).length;
+    vi.setSystemTime(Date.now() + 60_000);
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await act(() => vi.advanceTimersByTimeAsync(100));
+    expect(api.calls.filter((c) => c.method === "GET" && c.path === `/api/v1/lucky-draws/${D1}`).length).toBe(gets + 1);
+    // Still the program as it was at the press: the prize, its slots, no winner.
+    expect(within(stage).getByText("Cổ vai gáy")).toBeInTheDocument();
+    expect(stage).toHaveTextContent("Còn 1/1 suất");
+    expect(screen.getByRole("tab", { name: "Trúng thưởng 0" })).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS));
+    expect(screen.getByRole("dialog", { name: "Chúc mừng" })).toHaveTextContent("Nguyễn Thị Lan");
+    expect(screen.getByRole("tab", { name: "Trúng thưởng 1" })).toBeInTheDocument();
+    act(() => {
+      focusManager.setFocused(undefined);
+    });
+  });
+
   it("with reduced motion the wheel still turns, gentler, and the winner shows once it stops", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: query.includes("reduce"),
@@ -201,7 +241,8 @@ describe("spin (US4)", () => {
     const disk = diskOf(stage);
     expect(disk.style.getPropertyValue("transition")).toContain(`${String(SPIN_MS)}ms ${GENTLE.ease}`);
     expect(disk.style.getPropertyPriority("transition")).toBe("important");
-    // Gentler: 3 turns (and part of one), not the 9 of the full spin.
+    // Gentler: 3 turns (and part of one), not the 5 of the full spin; no motion blur.
+    expect(blurOf(stage).style.getPropertyValue("animation")).toBe("");
     const deg = Number(/^rotate\((\d+(?:\.\d+)?)deg\)$/.exec(disk.style.transform)?.[1]);
     expect(deg).toBeGreaterThanOrEqual(GENTLE.turns * 360);
     expect(deg).toBeLessThan((GENTLE.turns + 1) * 360);

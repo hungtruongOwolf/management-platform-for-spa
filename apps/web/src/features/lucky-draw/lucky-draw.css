@@ -363,6 +363,11 @@
     width: min(100%, 420px);
     aspect-ratio: 466 / 481;
     isolation: isolate;
+    /* The disk is a square: turned 45° its corners reach ~20% past the wheel's box (the round art is
+     * inside it). Unclipped, that overflow added a scrollbar to a page that fits the screen exactly,
+     * twice per turn: the whole page relaid out and jumped sideways while the wheel spun (EM
+     * 2026-11-28 "giật giật"; 55 layouts and 61 layout shifts in one spin). */
+    overflow: clip;
     user-select: none;
   }
   .ld-wheel-disk,
@@ -386,6 +391,27 @@
     max-width: none;
     height: 100%;
     border-radius: 50%;
+  }
+  /* The rotational motion blur (scripts/wheel-blur.py) on the disk, turning with it: shown while the
+   * wheel is fast, faded as it brakes (Wheel.tsx starts `ld-wheel-blur` with the turn). Opacity only,
+   * on its own layer: the compositor runs it, like the turn. */
+  .ld-wheel-disk > .ld-wheel-blur {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    will-change: opacity;
+  }
+  /* Follows the speed of `SPIN` (angles.ts): full while it holds ~10–12° a frame (0–1.8 s), gone by
+   * ~3.5 s, where it is under 3° a frame and the eye can follow the lotus motifs. */
+  @keyframes ld-wheel-blur {
+    0%,
+    30% {
+      opacity: 1;
+    }
+    58%,
+    100% {
+      opacity: 0;
+    }
   }
   .ld-wheel-frame {
     inset: 0;
