@@ -1,5 +1,4 @@
 import { useId, type ReactNode, type RefObject } from "react";
-import { Select, type SelectOption } from "../../components/Select";
 import { ELIGIBLE_LABEL, prizeBlock, wins } from "./draw";
 import { spinError } from "./messages";
 import type { LuckyDrawDetail, Prize } from "./types";
@@ -21,7 +20,7 @@ export function EligibleChip({ prize }: { prize: Pick<Prize, "eligible"> }) {
  * screen it takes the stage's full height and the prize + button sit beside it (lucky-draw.css,
  * container queries on the stage); on a phone everything stacks. The winner is announced by the
  * popup only; a screen reader hears "X trúng Y" from the status line. The same block fills the
- * presentation, with the app's own select for the prize (`pick`) and the winners (`children`).
+ * presentation, with a select for the prize (`pick`) and the winners (`children`).
  */
 export function Stage({
   draw,
@@ -55,25 +54,32 @@ export function Stage({
         : "Không còn giải nào quay được: thêm suất hoặc thêm người phù hợp.";
   const label = draw.results.length > 0 ? "Quay tiếp" : "Quay";
   const shown = spin.shownId === null ? undefined : wins(draw).find((w) => w.result.id === spin.shownId);
-  const choices: SelectOption<string>[] = draw.prizes.map((p) => {
-    const block = prizeBlock(p);
-    return block ? { value: p.id, label: p.name, disabled: true, reason: block } : { value: p.id, label: p.name };
-  });
 
   return (
     <section className="ld-stage chrome" aria-label="Vòng quay">
       <div className="ld-stage-grid">
         <div className="ld-stage-prize">
           {pick ? (
-            <Select
-              label="Giải đang quay"
-              className="ld-stage-pick"
-              value={prize?.id ?? null}
-              options={choices}
-              placeholder="Không còn giải quay được"
-              disabled={spin.busy}
-              onChange={pick}
-            />
+            <label className="ld-stage-pick">
+              <span>Giải đang quay</span>
+              <select
+                value={prize?.id ?? ""}
+                disabled={spin.busy}
+                onChange={(e) => {
+                  pick(e.target.value);
+                }}
+              >
+                {prize === null && <option value="">Không còn giải quay được</option>}
+                {draw.prizes.map((p) => {
+                  const block = prizeBlock(p);
+                  return (
+                    <option key={p.id} value={p.id} disabled={block !== null}>
+                      {block ? `${p.name} (${block})` : p.name}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
           ) : (
             <>
               <p className="ld-stage-label">{prize ? "Giải đang quay" : "Chưa có giải để quay"}</p>

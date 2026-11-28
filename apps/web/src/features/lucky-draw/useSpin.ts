@@ -33,8 +33,8 @@ interface Running {
 }
 
 /**
- * One program's spins (US4). Pressing "Quay" starts the wheel's turn at once (+6 turns in 4.1 s to a
- * sector drawn at the press, like the EM's prototype; reduced motion: 2 gentler turns) and asks the
+ * One program's spins (US4). Pressing "Quay" starts the wheel's turn at once (18 turns in 12.3 s to a
+ * sector drawn at the press, `SPIN` in angles.ts; reduced motion: 4 gentler turns) and asks the
  * server, which picks the winner and saves the result. The spin lands only when **both** the wheel
  * has stopped and the answer is in: then the program in the cache changes, so the winner, the counts
  * and the lists all appear together (AC4.3), and `onRevealed` opens the winner's popup. An answer

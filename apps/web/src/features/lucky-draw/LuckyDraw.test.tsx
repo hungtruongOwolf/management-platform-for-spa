@@ -518,7 +518,7 @@ describe("program (US1, US7)", () => {
     const open = await screen.findByRole("button", { name: "Trình chiếu" });
     await user.click(open);
     const show = await screen.findByRole("dialog", { name: "Tri ân 20/11" });
-    expect(within(show).getByRole("combobox", { name: "Giải đang quay" })).toHaveTextContent("Cổ vai gáy");
+    expect(within(show).getByRole("combobox", { name: "Giải đang quay" })).toHaveValue("q1");
     expect(within(show).getByRole("button", { name: "Quay" })).toBeInTheDocument();
     await user.click(within(show).getByRole("button", { name: "Thoát trình chiếu" }));
     await waitFor(() => {
