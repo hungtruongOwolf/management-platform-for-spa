@@ -12,8 +12,11 @@
    * big as that height allows, the side column (tabs) a fixed width. Lists scroll inside their panel;
    * the page itself never scrolls there. Narrower: one column, stage then side card, page scrolls.
    */
+  /* The page's own width, and the container its layout queries (a container cannot query
+   * itself, so it is the shell's content box around the page). */
   .shell-content:has(.ld-page) {
     max-width: none;
+    container: ld-page / inline-size;
   }
   @media (min-width: 768px) {
     .shell-content:has(.ld-page) {
@@ -25,7 +28,6 @@
     min-width: 0;
     align-content: start;
     gap: 16px;
-    container: ld-page / inline-size;
   }
   .ld-grid {
     display: grid;
@@ -79,6 +81,9 @@
     min-height: 0;
     grid-area: wheel;
     place-items: center;
+    /* A size container has no content size: it must take its grid area's. */
+    align-self: stretch;
+    justify-self: stretch;
   }
   .ld-stage-actions {
     display: grid;
@@ -94,6 +99,8 @@
     min-width: 0;
     min-height: 0;
     grid-area: extra;
+    grid-template-rows: minmax(0, 1fr);
+    align-self: stretch;
   }
   .ld-stage-skeleton {
     min-height: 560px;
@@ -159,19 +166,24 @@
     height: min(40rem, 82svh);
     border-radius: var(--radius-lg);
   }
+  /* Three equal tabs that always fit the column: a long label wraps onto two lines, never off
+   * the edge. */
   .ld-tabs {
+    display: grid;
     flex-shrink: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     padding: 4px 8px 0;
-    overflow-x: auto;
-    scrollbar-width: none;
   }
   .ld-tabs > [role="tab"] {
-    display: inline-flex;
-    flex-shrink: 0;
+    display: flex;
+    min-height: 52px;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    padding: 0 12px;
-    white-space: nowrap;
+    justify-content: center;
+    gap: 2px 6px;
+    padding: 4px 6px;
+    line-height: 20px;
+    text-align: center;
   }
   .ld-tab-count {
     padding: 0 6px;
@@ -199,20 +211,27 @@
     display: none;
   }
   .ld-scroll {
+    /* The containing block of the visually hidden texts inside (absolute): otherwise they hang
+     * below the list and stretch the page (design-system "the page scrolls as one"). */
+    position: relative;
     min-height: 0;
     flex: 1;
     padding: 12px 16px 16px;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  /* Four equal chips that always fit the column: the count drops under its label when narrow. */
   .ld-filter {
-    max-width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .ld-filter > button {
-    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0 4px;
+    padding: 2px 4px;
+    line-height: 18px;
+    text-align: center;
   }
   .ld-filter + .search-field {
     flex: none;
@@ -256,7 +275,9 @@
         "wheel actions"
         "wheel extra"
         "wheel .";
-      grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+      /* The wheel's column is as wide as its full height allows (cq units of the stage), the rest
+       * goes to the prize and the button. */
+      grid-template-columns: min(100cqw - 13rem - 24px, 100cqh * 466 / 481) minmax(13rem, 1fr);
       grid-template-rows: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
       column-gap: 24px;
     }
@@ -637,7 +658,9 @@
         "wheel prize"
         "wheel actions"
         "wheel extra";
-      grid-template-columns: minmax(0, 1fr) clamp(20rem, 30%, 30rem);
+      /* Even gutters: the wheel as large as the screen's height allows, from the left edge; the
+       * prize, the button and the winners take the rest. */
+      grid-template-columns: min(100cqw - 20rem - 24px, 100cqh * 466 / 481) minmax(20rem, 1fr);
       grid-template-rows: auto auto minmax(0, 1fr);
       align-items: start;
       column-gap: 24px;
