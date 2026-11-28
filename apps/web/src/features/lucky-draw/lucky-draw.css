@@ -168,32 +168,31 @@
     min-height: 0;
     flex-direction: column;
     overflow: hidden;
+    container: ld-side / inline-size;
   }
   .ld-side-skeleton {
     height: min(40rem, 82svh);
     border-radius: var(--radius-lg);
   }
-  /* Three tabs that always fit the column: they share the width by their labels, and only when it
-   * is too narrow does a label wrap onto two lines (never off the edge). */
+  /* Three tabs on one line, never wrapped (EM: polish): compact labels (--fs-sm) with the count as
+   * a small badge, sharing the column's width. The column is wide enough for them on every desktop
+   * (≥ 25rem, below); a narrower card (phones) puts each count under its label (further below). */
   .ld-tabs {
     display: flex;
     flex-shrink: 0;
-    padding: 4px 8px 0;
+    padding: 0 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
   .ld-tabs > [role="tab"] {
-    display: flex;
-    min-width: 0;
-    flex: 1 1 auto;
-    min-height: 52px;
+    display: inline-flex;
+    flex: 1 0 auto;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 4px 6px;
-    line-height: 20px;
-    text-align: center;
-  }
-  .ld-tab-label {
-    min-width: 0;
+    gap: 4px;
+    padding: 0 6px;
+    font-size: var(--fs-sm);
+    white-space: nowrap;
   }
   /* The tab's two buttons share one row. */
   .ld-panel-head .button-row > .btn {
@@ -201,7 +200,7 @@
     padding-inline: 10px;
   }
   .ld-tab-count {
-    padding: 0 6px;
+    padding: 0 5px;
     border-radius: var(--radius-pill);
     background: var(--surface-2);
     color: var(--text-muted);
@@ -235,21 +234,48 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  /* Four equal chips that always fit the column: the count drops under its label when narrow. */
+  /* Four chips sized to their content, each on one line (never wrapped), sharing the row's
+   * width; a card narrower than they need (a 360px phone) scrolls the row sideways. */
   .ld-filter {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
   .ld-filter > button {
-    flex-wrap: wrap;
+    flex: 1 0 auto;
     justify-content: center;
-    gap: 0 4px;
-    padding: 2px 4px;
-    line-height: 18px;
-    text-align: center;
+    gap: 4px;
+    padding: 0 8px;
+    font-size: var(--fs-label);
+    white-space: nowrap;
   }
   .ld-filter + .search-field {
     flex: none;
+  }
+  /* A side card narrower than the desktop's 25rem (phones; the query reads its content box, inside
+   * the border): three equal tabs, each label on one line with its count under it; the chips a
+   * little tighter, so the four still fit a 390px phone (a 360px one scrolls them sideways). */
+  @container ld-side (max-width: 24rem) {
+    .ld-tabs {
+      gap: 0;
+    }
+    .ld-tabs > [role="tab"] {
+      min-width: 0;
+      min-height: 56px;
+      flex: 1 1 0;
+      flex-direction: column;
+      gap: 2px;
+      padding: 4px 2px;
+    }
+    .ld-filter > button {
+      gap: 3px;
+      padding: 0 6px;
+      font-size: var(--fs-sm);
+    }
+    .ld-filter .ld-chip-count {
+      padding: 0 4px;
+    }
   }
 
   /* Wide screens: the page fits the viewport, the stage is a size container for its wheel. */
@@ -262,7 +288,8 @@
     }
     .ld-grid {
       min-height: 0;
-      grid-template-columns: minmax(0, 1fr) clamp(22rem, 32%, 28rem);
+      /* 25rem: the three tabs and the four filter chips each fit on one line. */
+      grid-template-columns: minmax(0, 1fr) clamp(25rem, 34%, 28rem);
     }
     .ld-side,
     .ld-side-skeleton {
@@ -273,6 +300,7 @@
     }
     .ld-stage {
       min-height: 0;
+      padding: 16px;
       container: ld-stage / size;
     }
     .ld-stage-grid {
@@ -286,9 +314,11 @@
       width: min(100cqw, 100cqh * 466 / 481);
     }
   }
-  /* A stage wider than tall: the wheel takes its full height, the prize and the button beside it. */
-  @container ld-stage (min-aspect-ratio: 5 / 4) {
-    .ld-stage-grid {
+  /* A stage at least as wide as tall: the wheel takes its full height, the prize and the button
+   * beside it (from a square on, that gives a bigger wheel than stacking them above and below).
+   * The page's stage only: the presentation has its own (below). */
+  @container ld-stage (min-aspect-ratio: 1 / 1) {
+    .ld-grid .ld-stage-grid {
       grid-template-areas:
         "wheel ."
         "wheel prize"
@@ -296,10 +326,10 @@
         "wheel extra"
         "wheel .";
       /* The wheel's column is as wide as its full height allows (cq units of the stage), the rest
-       * goes to the prize and the button. */
-      grid-template-columns: min(100cqw - 13rem - 24px, 100cqh * 466 / 481) minmax(13rem, 1fr);
+       * (at least 10rem) goes to the prize and the button. */
+      grid-template-columns: min(100cqw - 10rem - 20px, 100cqh * 466 / 481) minmax(10rem, 1fr);
       grid-template-rows: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
-      column-gap: 24px;
+      column-gap: 20px;
     }
   }
 
@@ -477,7 +507,7 @@
     gap: 4px 6px;
   }
   .ld-chip-count {
-    padding: 0 8px;
+    padding: 0 5px;
     border-radius: var(--radius-pill);
     background: var(--surface-2);
     font-size: var(--fs-xs);
