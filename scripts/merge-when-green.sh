@@ -21,8 +21,17 @@ for _ in $(seq 1 40); do
 done
 [ -n "$(gh pr checks "$pr" 2>/dev/null || true)" ] || { echo "PR #$pr: no checks appeared after 10 min"; exit 1; }
 
-gh pr checks "$pr" --watch --interval 30 >/dev/null 2>&1 || true
-results=$(gh pr checks "$pr" | awk -F'\t' '{print $1": "$2}')
+# `gh pr checks` exits 8 while a check is pending and 1 when one failed. Read straight into
+# `results=$(…)`, that killed the script under `set -e -o pipefail` without a word (2026-11-28), so
+# read the table whatever the exit code. `--watch` can also return early (no TTY, a network blip):
+# keep waiting while anything is still pending, up to an hour.
+read_checks() { { gh pr checks "$pr" 2>/dev/null || true; } | awk -F'\t' '{print $1": "$2}'; }
+for _ in $(seq 1 120); do
+  gh pr checks "$pr" --watch --interval 30 >/dev/null 2>&1 || true
+  results=$(read_checks)
+  echo "$results" | grep -qE ': pending$' || break
+  sleep 30
+done
 echo "$results"
 if echo "$results" | grep -qvE ': (pass|skipping)$'; then
   echo "PR #$pr: not all checks passed — not merging"
