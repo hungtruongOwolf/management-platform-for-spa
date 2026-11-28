@@ -7,12 +7,13 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{Datelike, Duration, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
+use jiff::Span;
+use jiff::civil::Date;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -44,9 +45,8 @@ fn first_error(reply: &Reply) -> (StatusCode, Option<&str>, Option<&str>) {
     )
 }
 
-fn spa_today() -> NaiveDate {
-    let vn = FixedOffset::east_opt(7 * 3600).unwrap_or_else(|| panic!("offset"));
-    Utc::now().with_timezone(&vn).date_naive()
+fn spa_today() -> Date {
+    common::vn_today()
 }
 
 async fn spa(pool: PgPool) -> Setup<Spa> {
@@ -382,7 +382,7 @@ async fn a_date_of_birth_is_optional_and_plausible(pool: PgPool) -> TestResult {
         .await;
     assert_eq!(shown.body["birth_date"], "1990-03-14");
 
-    let tomorrow = today + Duration::days(1);
+    let tomorrow = today + Span::new().days(1);
     let future = s
         .customer(json!({"full_name": "A", "birth_date": tomorrow}))
         .await;
@@ -403,7 +403,7 @@ async fn a_date_of_birth_is_optional_and_plausible(pool: PgPool) -> TestResult {
         "{}",
         born_today.body
     );
-    let ancient = NaiveDate::from_ymd_opt(today.year() - 121, 1, 1).unwrap_or(today);
+    let ancient = Date::new(today.year() - 121, 1, 1).unwrap_or(today);
     let old = s
         .customer(json!({"full_name": "B", "birth_date": ancient}))
         .await;
@@ -481,11 +481,11 @@ async fn ledger_and_timelines_name_the_beneficiary_and_show_extensions(pool: PgP
 
     let package = &gift.body["customer_packages"][0];
     let package_id = str_of(&package["id"]);
-    let expires: NaiveDate = package["expires_on"]
+    let expires: Date = package["expires_on"]
         .as_str()
         .and_then(|d| d.parse().ok())
         .unwrap_or_else(|| panic!("expiry in {package}"));
-    let later = expires + Duration::days(90);
+    let later = expires + Span::new().days(90);
     let etag = format!("\"{}\"", package["version"]);
     let key = Uuid::now_v7().to_string();
     let extended = call_with_headers(

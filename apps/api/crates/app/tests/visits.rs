@@ -9,6 +9,8 @@ use common::{
     harness, post_customer, session_for,
 };
 use identity::SystemRole;
+use jiff::SignedDuration;
+use jiff::Timestamp;
 use kernel::idempotency::hash_request;
 use kernel::testing::app_pool;
 use kernel::{Actor, AppError, Permission, TenantId, UserId};
@@ -858,8 +860,7 @@ async fn technician_must_be_working_and_package_must_be_the_customers(pool: PgPo
 async fn check_in_must_be_now_or_earlier_today(pool: PgPool) -> TestResult {
     let d = desk(pool).await?;
     let mut future = d.deduct(&d.ha, None);
-    future["check_in_at"] =
-        json!((chrono::Utc::now() + chrono::Duration::minutes(30)).to_rfc3339());
+    future["check_in_at"] = json!((Timestamp::now() + SignedDuration::from_mins(30)).to_string());
     assert_eq!(
         code(&d.record(future).await),
         (
@@ -868,7 +869,7 @@ async fn check_in_must_be_now_or_earlier_today(pool: PgPool) -> TestResult {
         )
     );
     let mut old = d.deduct(&d.ha, None);
-    old["check_in_at"] = json!((chrono::Utc::now() - chrono::Duration::days(2)).to_rfc3339());
+    old["check_in_at"] = json!((Timestamp::now() - SignedDuration::from_hours(48)).to_string());
     assert_eq!(
         code(&d.record(old).await),
         (
@@ -879,13 +880,10 @@ async fn check_in_must_be_now_or_earlier_today(pool: PgPool) -> TestResult {
     let mut earlier = d.deduct(&d.ha, None);
     // A minute ago, but never before today's midnight (in the first minute of the day "a minute
     // ago" is yesterday, refused as `check_in_not_today`).
-    let today = chrono::Utc::now()
-        .with_timezone(&chrono_tz::Asia::Ho_Chi_Minh)
-        .date_naive();
-    let midnight = chrono::DateTime::parse_from_rfc3339(&format!("{today}T00:00:00+07:00"))?
-        .with_timezone(&chrono::Utc);
-    let at = (chrono::Utc::now() - chrono::Duration::minutes(1)).max(midnight);
-    earlier["check_in_at"] = json!(at.to_rfc3339());
+    let today = common::vn_today();
+    let midnight = parse_instant(&format!("{today}T00:00:00+07:00"))?;
+    let at = (Timestamp::now() - SignedDuration::from_mins(1)).max(midnight);
+    earlier["check_in_at"] = json!(at.to_string());
     let ok = d.record(earlier).await;
     assert_eq!(ok.status, StatusCode::CREATED, "{}", ok.body);
     Ok(())
@@ -1221,4 +1219,9 @@ async fn day_list_can_be_limited_to_the_newest_visits(pool: PgPool) -> TestResul
         );
     }
     Ok(())
+}
+
+/// An RFC 3339 instant from a reply.
+fn parse_instant(s: &str) -> Result<Timestamp, jiff::Error> {
+    s.parse()
 }

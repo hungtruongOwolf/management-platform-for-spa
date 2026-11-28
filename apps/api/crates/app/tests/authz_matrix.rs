@@ -15,6 +15,7 @@ use common::{
 };
 use identity::SystemRole::{self, Manager, Owner, Technician};
 use identity::provisioning::create_tenant;
+use jiff::Span;
 use kernel::Permission as P;
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -1133,9 +1134,7 @@ fn pay_body(_: &Fixture) -> Option<Value> {
 }
 /// Yesterday in the spa's time zone (UTC+7): recorded days are never in the future.
 fn yesterday() -> String {
-    (chrono::Utc::now() + chrono::Duration::hours(7) - chrono::Duration::days(1))
-        .date_naive()
-        .to_string()
+    (common::vn_today() - Span::new().days(1)).to_string()
 }
 fn attendance_body(f: &Fixture) -> Option<Value> {
     Some(
@@ -1167,9 +1166,9 @@ fn adjustment_body(f: &Fixture) -> Option<Value> {
     Some(json!({"staff_id": f.staff, "kind": "bonus", "amount": 100_000, "reason": "Khách khen"}))
 }
 fn last_month() -> String {
-    let today = (chrono::Utc::now() + chrono::Duration::hours(7)).date_naive();
-    let first = today - chrono::Duration::days(i64::from(chrono::Datelike::day(&today)));
-    first.format("%Y-%m").to_string()
+    let today = common::vn_today();
+    let first = today - Span::new().days(today.day());
+    first.strftime("%Y-%m").to_string()
 }
 fn payroll_close_body(_: &Fixture) -> Option<Value> {
     Some(json!({"month": last_month()}))
@@ -1190,8 +1189,7 @@ fn visit_body(f: &Fixture) -> Option<Value> {
 }
 /// Tomorrow 10:00 in the spa (always inside the default 09:00–21:00 hours, whenever the test runs).
 fn tomorrow_at_ten() -> String {
-    let vn = chrono::FixedOffset::east_opt(7 * 3600).unwrap_or_else(|| panic!("offset"));
-    let day = chrono::Utc::now().with_timezone(&vn).date_naive() + chrono::Duration::days(1);
+    let day = common::vn_today() + Span::new().days(1);
     format!("{day}T10:00:00+07:00")
 }
 fn appointment_body(f: &Fixture) -> Option<Value> {

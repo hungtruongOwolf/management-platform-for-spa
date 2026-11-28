@@ -5,14 +5,14 @@
 mod common;
 
 use axum::http::{StatusCode, header};
-use chrono::{Duration, NaiveDate, Utc};
-use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
+use jiff::Span;
+use jiff::civil::Date;
 use kernel::testing::app_pool;
 use kernel::{Actor, Permission, TenantId, UserId};
 use reporting::notes_dto::{NoteKind, NotesQuery};
@@ -50,8 +50,8 @@ struct Spa {
     visit: Uuid,
 }
 
-fn today() -> NaiveDate {
-    Utc::now().with_timezone(&Ho_Chi_Minh).date_naive()
+fn today() -> Date {
+    common::vn_today()
 }
 
 fn id(reply: &Reply) -> Uuid {
@@ -186,7 +186,7 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .bind(tenant)
     .bind(lan)
-    .bind(day)
+    .bind(jiff_sqlx::Date::from(day))
     .bind(manager_user)
     .execute(&h.owner)
     .await?;
@@ -194,14 +194,14 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
         "INSERT INTO app.staff_daily_review (tenant_id, staff_id, work_date, compliments, complaints, note, recorded_by)
          VALUES ($1, $2, $3, 1, 0, 'Khách khen tay nghề', $4)",
     )
-    .bind(tenant).bind(lan).bind(day).bind(manager_user)
+    .bind(tenant).bind(lan).bind(jiff_sqlx::Date::from(day)).bind(manager_user)
     .execute(&h.owner)
     .await?;
     sqlx::query(
         "INSERT INTO app.staff_adjustment (id, tenant_id, staff_id, work_date, kind, amount, reason, created_by)
          VALUES ($1, $2, $3, $4, 'bonus', 100000, 'Bán được gói lớn', $5)",
     )
-    .bind(Uuid::now_v7()).bind(tenant).bind(lan).bind(day).bind(manager_user)
+    .bind(Uuid::now_v7()).bind(tenant).bind(lan).bind(jiff_sqlx::Date::from(day)).bind(manager_user)
     .execute(&h.owner)
     .await?;
     sqlx::query(
@@ -210,7 +210,7 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .bind(tenant)
     .bind(mai)
-    .bind(day)
+    .bind(jiff_sqlx::Date::from(day))
     .execute(&h.owner)
     .await?;
     // The other new kinds, also straight to their tables.
@@ -226,7 +226,7 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .bind(Uuid::now_v7())
     .bind(tenant)
-    .bind(day)
+    .bind(jiff_sqlx::Date::from(day))
     .bind(owner_user)
     .bind(customer)
     .execute(&h.owner)
@@ -240,7 +240,7 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     .bind(Uuid::now_v7())
     .bind(tenant)
     .bind(customer)
-    .bind(day)
+    .bind(jiff_sqlx::Date::from(day))
     .bind(BOOKING_NOTE)
     .bind(manager_user)
     .execute(&h.owner)
@@ -260,7 +260,7 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .bind(Uuid::now_v7())
     .bind(tenant)
-    .bind(day)
+    .bind(jiff_sqlx::Date::from(day))
     .bind(manager_user)
     .bind(customer)
     .bind(CANCEL_REASON)
@@ -276,7 +276,7 @@ async fn spa(pool: PgPool) -> Setup<Spa> {
     )
     .bind(tenant)
     .bind(lan)
-    .bind(day)
+    .bind(jiff_sqlx::Date::from(day))
     .bind(manager_user)
     .execute(&h.owner)
     .await?;
@@ -424,7 +424,7 @@ async fn each_role_reads_exactly_the_notes_it_may(pool: PgPool) -> TestResult {
     assert_eq!(of("no_show")["author_name"], "Quản lý Hà");
     assert_eq!(
         of("no_show")["about_date"],
-        (today() + Duration::days(2)).to_string()
+        (today() + Span::new().days(2)).to_string()
     );
     // Who wrote it and about whom.
     let follow = owner.body["items"]
@@ -449,7 +449,7 @@ async fn each_role_reads_exactly_the_notes_it_may(pool: PgPool) -> TestResult {
     assert_eq!(owner.body["to"], today().to_string());
     assert_eq!(
         owner.body["from"],
-        (today() - Duration::days(29)).to_string()
+        (today() - Span::new().days(29)).to_string()
     );
     // The default no-store from the middleware.
     assert_eq!(
@@ -692,7 +692,7 @@ async fn a_manager_does_not_read_notes_about_their_own_profile(pool: PgPool) -> 
     )
     .bind(s.tenant)
     .bind(own)
-    .bind(day)
+    .bind(jiff_sqlx::Date::from(day))
     .bind(owner_user)
     .execute(&s.h.owner)
     .await?;
@@ -703,7 +703,7 @@ async fn a_manager_does_not_read_notes_about_their_own_profile(pool: PgPool) -> 
     .bind(Uuid::now_v7())
     .bind(s.tenant)
     .bind(own)
-    .bind(day)
+    .bind(jiff_sqlx::Date::from(day))
     .bind(owner_user)
     .execute(&s.h.owner)
     .await?;
@@ -805,7 +805,7 @@ async fn filters_search_and_pages_with_a_cursor(pool: PgPool) -> TestResult {
         StatusCode::UNPROCESSABLE_ENTITY
     );
     // Date range: nothing was written yesterday; ranges are bounded.
-    let yesterday = (today() - Duration::days(1)).to_string();
+    let yesterday = (today() - Span::new().days(1)).to_string();
     let none = s
         .notes(&s.owner, &format!("?from={yesterday}&to={yesterday}"))
         .await;

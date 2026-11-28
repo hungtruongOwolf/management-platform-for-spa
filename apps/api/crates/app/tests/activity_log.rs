@@ -5,14 +5,14 @@
 mod common;
 
 use axum::http::StatusCode;
-use chrono::{DateTime, Duration, NaiveDate, Utc};
-use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
+use jiff::civil::Date;
+use jiff::{SignedDuration, Span, Timestamp};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::collections::BTreeSet;
@@ -32,8 +32,8 @@ const VOID_REASON: &str = "Khách đổi ý";
 
 type Setup<T> = Result<T, Box<dyn std::error::Error>>;
 
-fn today() -> NaiveDate {
-    Utc::now().with_timezone(&Ho_Chi_Minh).date_naive()
+fn today() -> Date {
+    common::vn_today()
 }
 
 fn id(reply: &Reply) -> Uuid {
@@ -251,7 +251,7 @@ async fn plant(
     action: &str,
     entity_type: &str,
     entity: Uuid,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Setup<Uuid> {
     let id = Uuid::now_v7();
     sqlx::query(
@@ -265,7 +265,7 @@ async fn plant(
     .bind(action)
     .bind(entity_type)
     .bind(entity)
-    .bind(at)
+    .bind(jiff_sqlx::Timestamp::from(at))
     .execute(owner)
     .await?;
     Ok(id)
@@ -277,7 +277,7 @@ async fn plant_after(
     action: &str,
     entity_type: &str,
     entity: Uuid,
-    at: DateTime<Utc>,
+    at: Timestamp,
     after: Value,
 ) -> Setup<Uuid> {
     let id = Uuid::now_v7();
@@ -291,7 +291,7 @@ async fn plant_after(
     .bind(action)
     .bind(entity_type)
     .bind(entity)
-    .bind(at)
+    .bind(jiff_sqlx::Timestamp::from(at))
     .bind(after)
     .execute(&s.h.owner)
     .await?;
@@ -624,7 +624,7 @@ async fn a_correction_or_conversion_reads_as_one_line(pool: PgPool) -> TestResul
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn pages_never_split_an_action(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let instant = Utc::now() - Duration::hours(2);
+    let instant = Timestamp::now() - SignedDuration::from_hours(2);
     let mut visits = BTreeSet::new();
     for i in 0..9 {
         let (visit, sale) = (Uuid::now_v7(), Uuid::now_v7());
@@ -673,7 +673,7 @@ async fn pages_never_split_an_action(pool: PgPool) -> TestResult {
         "sale.create",
         "sale",
         sale,
-        instant - Duration::seconds(1),
+        instant - SignedDuration::from_secs(1),
         json!({"visit_id": visit, "total": 1}),
     )
     .await?;
@@ -814,7 +814,7 @@ async fn another_spas_entries_never_appear(pool: PgPool) -> TestResult {
         "customer.update",
         "customer",
         s.customer,
-        Utc::now(),
+        Timestamp::now(),
     )
     .await?;
     let other_page = call(&s.h.app, "GET", "/audit-log?limit=100", Some(&other), None).await;
@@ -839,7 +839,7 @@ async fn each_group_reads_as_a_structured_sentence(pool: PgPool) -> TestResult {
         "account.locked_by_platform",
         "user",
         s.manager_user,
-        Utc::now(),
+        Timestamp::now(),
     )
     .await?;
     let page = log(&s, &s.owner, "?limit=100").await;
@@ -965,7 +965,7 @@ async fn filters_by_person_group_and_range(pool: PgPool) -> TestResult {
     )
     .await;
     assert_eq!(forgot.status, StatusCode::ACCEPTED, "{}", forgot.body);
-    let ten_days_ago = Utc::now() - Duration::days(10);
+    let ten_days_ago = Timestamp::now() - jiff::SignedDuration::from_hours(24 * 10);
     plant(
         &s.h.owner,
         s.tenant,
@@ -1028,22 +1028,19 @@ async fn filters_by_person_group_and_range(pool: PgPool) -> TestResult {
     // The default range is the last 7 days; a wider one reaches the planted entry.
     let default = log(&s, &s.owner, "?limit=100").await;
     assert_eq!(default.body["to"], json!(today()));
-    assert_eq!(default.body["from"], json!(today() - Duration::days(6)));
+    assert_eq!(default.body["from"], json!(today() - Span::new().days(6)));
     assert!(!actions(&default).contains("customer.follow_up"));
     let wide = log(
         &s,
         &s.owner,
-        &format!("?limit=100&from={}", today() - Duration::days(30)),
+        &format!("?limit=100&from={}", today() - Span::new().days(30)),
     )
     .await;
     assert!(actions(&wide).contains("customer.follow_up"));
     let only_then = log(
         &s,
         &s.owner,
-        &format!(
-            "?from={0}&to={0}",
-            (ten_days_ago.with_timezone(&Ho_Chi_Minh)).date_naive()
-        ),
+        &format!("?from={0}&to={0}", common::vn_day(ten_days_ago)),
     )
     .await;
     assert_eq!(
@@ -1053,12 +1050,12 @@ async fn filters_by_person_group_and_range(pool: PgPool) -> TestResult {
 
     for (query, field, code) in [
         (
-            format!("?from={}&to={}", today(), today() - Duration::days(1)),
+            format!("?from={}&to={}", today(), today() - Span::new().days(1)),
             "from",
             "after_to",
         ),
         (
-            format!("?from={}", today() - Duration::days(366)),
+            format!("?from={}", today() - Span::new().days(366)),
             "to",
             "range_too_long",
         ),
@@ -1094,7 +1091,7 @@ async fn filters_by_person_group_and_range(pool: PgPool) -> TestResult {
 async fn pages_never_skip_or_repeat_inside_one_instant(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     // Seven entries written by one transaction share an instant.
-    let instant = Utc::now() - Duration::hours(1);
+    let instant = Timestamp::now() - SignedDuration::from_hours(1);
     for _ in 0..7 {
         plant(
             &s.h.owner,
@@ -1151,7 +1148,7 @@ async fn a_legacy_action_reads_as_other_and_a_gone_subject_as_nameless(pool: PgP
         "visit.legacy_mark",
         "visit",
         Uuid::now_v7(),
-        Utc::now(),
+        Timestamp::now(),
     )
     .await?;
     sqlx::query("UPDATE app.customer SET full_name = NULL, phone_e164 = NULL, anonymized_at = now() WHERE id = $1")

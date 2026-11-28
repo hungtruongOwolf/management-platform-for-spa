@@ -10,13 +10,13 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::Utc;
-use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
+use jiff::Span;
+use jiff::civil::Date;
 use kernel::testing::app_pool;
 use kernel::{Actor, AppError, Permission as P, TenantId, UserId};
 use serde_json::{Value, json};
@@ -57,8 +57,8 @@ fn id_of(reply: &Reply) -> String {
     reply.body["id"].as_str().unwrap_or_default().to_owned()
 }
 
-fn today() -> chrono::NaiveDate {
-    Utc::now().with_timezone(&Ho_Chi_Minh).date_naive()
+fn today() -> Date {
+    common::vn_today()
 }
 
 async fn desk(pool: PgPool) -> Setup<Desk> {
@@ -640,7 +640,7 @@ async fn a_cart_of_packages_keeps_one_note_per_package(pool: PgPool) -> TestResu
         .collect();
     assert_eq!(found_kinds, ["package_note"], "{}", found.body);
     // A different day shows none of it.
-    let yesterday = today() - chrono::Duration::days(1);
+    let yesterday = today() - Span::new().days(1);
     let other = d
         .get(
             &d.manager,

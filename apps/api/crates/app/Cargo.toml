@@ -12,8 +12,8 @@ workspace = true
 anyhow = "1.0.104"
 axum = "0.8.9"
 catalog = { version = "0.1.0", path = "../catalog" }
-chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
-chrono-tz = "0.10.4"
+jiff = { version = "1.0.3", default-features = false, features = ["std", "serde"] }
+jiff-sqlx = { version = "1.0.0", features = ["postgres"] }
 crm = { version = "0.1.0", path = "../crm" }
 dotenvy = "0.15.7"
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }

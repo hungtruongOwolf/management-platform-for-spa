@@ -471,3 +471,32 @@ pub async fn step_up(h: &Harness, op: &str) -> Result<Reply, Box<dyn std::error:
     )
     .await)
 }
+
+// ------------------------------------------------------------------------- the spa's clock
+
+/// Asia/Ho_Chi_Minh, the zone of every test spa, from the zone database compiled into the binary.
+pub fn vietnam() -> jiff::tz::TimeZone {
+    jiff::tz::TimeZone::get("Asia/Ho_Chi_Minh").unwrap_or(jiff::tz::TimeZone::UTC)
+}
+
+/// The calendar day `at` falls on in Vietnam.
+pub fn vn_day(at: jiff::Timestamp) -> jiff::civil::Date {
+    vietnam().to_datetime(at).date()
+}
+
+/// The spa's business day now.
+pub fn vn_today() -> jiff::civil::Date {
+    vn_day(jiff::Timestamp::now())
+}
+
+/// `hour:minute` on `day` in Vietnam, as an instant.
+pub fn vn_at(day: jiff::civil::Date, hour: i8, minute: i8) -> jiff::Timestamp {
+    jiff::civil::Time::new(hour, minute, 0, 0)
+        .and_then(|t| vietnam().to_timestamp(day.to_datetime(t)))
+        .unwrap_or_default()
+}
+
+/// An instant as the API writes it (RFC 3339, `Z`, fraction in groups of three digits).
+pub fn rfc3339(at: jiff::Timestamp) -> String {
+    kernel::time::rfc3339::format(at)
+}

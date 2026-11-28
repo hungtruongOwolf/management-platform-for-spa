@@ -12,8 +12,9 @@ use super::rng::Rng;
 use super::run::retry;
 use super::{Ctx, fail, idempotency};
 use anyhow::{Context, anyhow};
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use crm::follow_up::{Channel, FollowUpInput, Outcome};
+use jiff::civil::Date;
+use jiff::{SignedDuration, Span, Timestamp};
 use operations::dto::{
     VisitCreate, VisitLineCreate, VisitLineSourceDto, VisitLineUpdate, VisitPackageSaleCreate,
     VisitUpdate,
@@ -39,8 +40,8 @@ pub struct Package {
     pub id: Uuid,
     pub customer: usize,
     pub items: Vec<Item>,
-    pub starts_on: NaiveDate,
-    pub expires_on: Option<NaiveDate>,
+    pub starts_on: Date,
+    pub expires_on: Option<Date>,
     pub sold_price: i64,
     pub sessions_total: u32,
     pub from_sale: bool,
@@ -48,7 +49,7 @@ pub struct Package {
     /// Sessions the history leaves untouched (a paper-book package that stays "expiring soon").
     pub keep: u32,
     /// The last day a visit took one of its sessions: a later cancellation must come after it.
-    pub last_used: Option<NaiveDate>,
+    pub last_used: Option<Date>,
 }
 
 impl Package {
@@ -56,7 +57,7 @@ impl Package {
         self.items.iter().map(|i| i.remaining).sum()
     }
 
-    pub fn usable_on(&self, day: NaiveDate) -> bool {
+    pub fn usable_on(&self, day: Date) -> bool {
         !self.cancelled
             && self.starts_on <= day
             && self.expires_on.is_none_or(|e| e >= day)
@@ -68,8 +69,8 @@ impl Package {
 struct PackageJson {
     id: Uuid,
     sold_price: i64,
-    expires_on: Option<NaiveDate>,
-    starts_on: NaiveDate,
+    expires_on: Option<Date>,
+    starts_on: Date,
     sale_id: Option<Uuid>,
     items: Vec<ItemJson>,
 }
@@ -226,14 +227,14 @@ impl<'a> Chain<'a> {
         Ok((self.packages, self.tally))
     }
 
-    fn technician(&mut self, day: NaiveDate) -> Uuid {
+    fn technician(&mut self, day: Date) -> Uuid {
         let on = self.ctx.attendance.technicians_on(&self.ctx.roster, day);
         let m = on[self.rng.below(on.len())];
         self.ctx.staff.ids[m]
     }
 
     /// Another technician at work that day than `than`, if any.
-    fn other_technician(&mut self, day: NaiveDate, than: Uuid) -> Option<Uuid> {
+    fn other_technician(&mut self, day: Date, than: Uuid) -> Option<Uuid> {
         let others: Vec<Uuid> = self
             .ctx
             .attendance
@@ -249,7 +250,7 @@ impl<'a> Chain<'a> {
         self.person.sex
     }
 
-    fn one_off(&mut self, day: NaiveDate, names: &[&str]) -> anyhow::Result<Line> {
+    fn one_off(&mut self, day: Date, names: &[&str]) -> anyhow::Result<Line> {
         let name = *self.rng.pick(names).context("services")?;
         let service_id = self.ctx.catalog.service(name)?;
         let staff = self.technician(day);
@@ -270,10 +271,10 @@ impl<'a> Chain<'a> {
     }
 
     /// A session of the usable package that expires first.
-    fn package_line(&mut self, day: NaiveDate) -> Option<Line> {
+    fn package_line(&mut self, day: Date) -> Option<Line> {
         let p = (0..self.packages.len())
             .filter(|&p| self.packages[p].usable_on(day))
-            .min_by_key(|&p| (self.packages[p].expires_on.unwrap_or(NaiveDate::MAX), p))?;
+            .min_by_key(|&p| (self.packages[p].expires_on.unwrap_or(Date::MAX), p))?;
         let items: Vec<(Uuid, Uuid)> = self.packages[p]
             .items
             .iter()
@@ -336,7 +337,7 @@ impl<'a> Chain<'a> {
     }
 
     /// Sells a package at the desk (`POST /sales`) at `at`; returns the sale id.
-    async fn sell(&mut self, plan: usize, at: DateTime<Utc>, closer: Uuid) -> anyhow::Result<Uuid> {
+    async fn sell(&mut self, plan: usize, at: Timestamp, closer: Uuid) -> anyhow::Result<Uuid> {
         let (plan_id, price, discount) = self.package_price(plan);
         let total = price - discount.map_or(0, |(a, _)| a);
         let input = SaleCreate {
@@ -387,7 +388,7 @@ impl<'a> Chain<'a> {
         if v.script == Script::WrongSaleVoided {
             let first = self.packages.len();
             let sale = self
-                .sell(0, at - Duration::minutes(4), ctx.manager_staff())
+                .sell(0, at - SignedDuration::from_mins(4), ctx.manager_staff())
                 .await?;
             let (key, hash) = idempotency();
             retry(|| {
@@ -406,7 +407,7 @@ impl<'a> Chain<'a> {
                 p.cancelled = true;
             }
             self.tally.voided_sales += 1;
-            self.sell(2, at - Duration::minutes(3), ctx.manager_staff())
+            self.sell(2, at - SignedDuration::from_mins(3), ctx.manager_staff())
                 .await?;
         }
 
@@ -449,7 +450,8 @@ impl<'a> Chain<'a> {
                 } else {
                     staff
                 };
-                self.sell(plan, at - Duration::minutes(5), closer).await?;
+                self.sell(plan, at - SignedDuration::from_mins(5), closer)
+                    .await?;
                 if let Some(line) = self.package_line(v.day) {
                     lines.push(line);
                 }
@@ -613,7 +615,7 @@ impl<'a> Chain<'a> {
             .collect()
     }
 
-    fn consume(&mut self, lines: &[Line], day: NaiveDate) {
+    fn consume(&mut self, lines: &[Line], day: Date) {
         for l in lines {
             if let Source::Item { package, item } = l.source {
                 let package = &mut self.packages[package];
@@ -639,7 +641,7 @@ impl<'a> Chain<'a> {
     }
 
     /// The packages sold inside a visit on `day`, read back with that day's session taken.
-    async fn fetch_upsold(&mut self, body: &Value, day: NaiveDate) -> anyhow::Result<()> {
+    async fn fetch_upsold(&mut self, body: &Value, day: Date) -> anyhow::Result<()> {
         let ctx = self.ctx;
         let ids: Vec<Uuid> = body["package_sales"]
             .as_array()
@@ -683,7 +685,7 @@ impl<'a> Chain<'a> {
     }
 
     /// Today's session of an expired package, used with the manager's override.
-    fn expired_line(&mut self, day: NaiveDate) -> Option<Line> {
+    fn expired_line(&mut self, day: Date) -> Option<Line> {
         let (p, item, service_id) = self.packages.iter().enumerate().find_map(|(p, pkg)| {
             let expired = pkg.expires_on.is_some_and(|e| e < day) && !pkg.cancelled;
             let item = pkg.items.iter().find(|i| i.remaining > 0)?;
@@ -704,11 +706,11 @@ impl<'a> Chain<'a> {
     /// the customer had was not typed in.
     async fn correct(
         &mut self,
-        day: NaiveDate,
+        day: Date,
         visit: Uuid,
         version: i64,
         lines: &[Line],
-        at: DateTime<Utc>,
+        at: Timestamp,
     ) -> anyhow::Result<()> {
         let ctx = self.ctx;
         let mut fixed: Vec<Line> = lines.to_vec();
@@ -772,7 +774,7 @@ impl<'a> Chain<'a> {
     /// "Sửa lượt" without money: the first line was done by another technician.
     async fn edit(
         &mut self,
-        day: NaiveDate,
+        day: Date,
         visit: Uuid,
         version: i64,
         body: &Value,
@@ -815,7 +817,7 @@ impl<'a> Chain<'a> {
         }
         let ctx = self.ctx;
         let today = ctx.window.today;
-        let mut contacted = today - Duration::days(18 + self.rng.days(10));
+        let mut contacted = today - Span::new().days(18 + self.rng.days(10));
         for _ in 0..1 + self.rng.below(2) {
             let outcome = *self
                 .rng
@@ -827,7 +829,7 @@ impl<'a> Chain<'a> {
                 ])
                 .context("outcomes")?;
             let next = contacted
-                + Duration::days(match outcome {
+                + Span::new().days(match outcome {
                     Outcome::NoAnswer => 3,
                     Outcome::WillCome => 7,
                     Outcome::NotInterested => 90,
@@ -851,7 +853,7 @@ impl<'a> Chain<'a> {
             let manager = ctx.clock().acting(
                 &ctx.manager,
                 contacted,
-                14 * 60 + contacted.ordinal() * 7 % 120,
+                14 * 60 + u32::from(contacted.day_of_year().unsigned_abs()) * 7 % 120,
             );
             retry(|| {
                 crm::follow_up::record(ctx.app, &manager, key, hash, self.customer, &input, |f| {
@@ -861,7 +863,7 @@ impl<'a> Chain<'a> {
             .await
             .map_err(fail("record a follow-up"))?;
             self.tally.follow_ups += 1;
-            contacted = (contacted + Duration::days(4 + self.rng.days(6))).min(today);
+            contacted = (contacted + Span::new().days(4 + self.rng.days(6))).min(today);
         }
         Ok(())
     }

@@ -8,13 +8,15 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{Datelike, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
+use jiff::civil::Date;
+use jiff::{Span, Timestamp};
+use jiff_sqlx::ToSqlx;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::hash_request;
 use kernel::testing::app_pool;
@@ -56,9 +58,8 @@ fn key() -> String {
     Uuid::now_v7().to_string()
 }
 
-fn spa_today() -> NaiveDate {
-    let vn = FixedOffset::east_opt(7 * 3600).unwrap_or_else(|| panic!("offset"));
-    Utc::now().with_timezone(&vn).date_naive()
+fn spa_today() -> Date {
+    common::vn_today()
 }
 
 async fn service(h: &Harness, name: &str) -> Setup<String> {
@@ -521,7 +522,7 @@ async fn a_visit_keeps_only_its_own_story(pool: PgPool) -> TestResult {
         .post(
             &s.owner,
             &format!("/customer-packages/{package}/extend"),
-            json!({"expires_on": spa_today() + chrono::Duration::days(400), "reason": "Khách nằm viện"}),
+            json!({"expires_on": spa_today() + Span::new().days(400), "reason": "Khách nằm viện"}),
             Some(version),
         )
         .await;
@@ -1054,7 +1055,7 @@ async fn ghi_boi_comes_from_the_creating_action(pool: PgPool) -> TestResult {
         .post(
             &s.owner,
             &format!("/customer-packages/{paper}/extend"),
-            json!({"expires_on": spa_today() + chrono::Duration::days(90), "reason": "Gia hạn"}),
+            json!({"expires_on": spa_today() + Span::new().days(90), "reason": "Gia hạn"}),
             Some(version),
         )
         .await;
@@ -1098,10 +1099,7 @@ const SECOND_MANAGER_PHONE: &str = "0912000444";
 
 /// `+7` business day `days` from today at `hm` (spa time).
 fn at(days: i64, hm: &str) -> String {
-    format!(
-        "{}T{hm}:00+07:00",
-        spa_today() + chrono::Duration::days(days)
-    )
+    format!("{}T{hm}:00+07:00", spa_today() + Span::new().days(days))
 }
 
 impl Spa {
@@ -1204,7 +1202,7 @@ fn lines(history: &Value) -> Vec<(String, Vec<String>)> {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_bookings_history_and_its_list_mark(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let day = (spa_today() + chrono::Duration::days(1)).to_string();
+    let day = (spa_today() + Span::new().days(1)).to_string();
     let booked = s
         .post(
             &s.manager,
@@ -1374,8 +1372,8 @@ async fn a_staff_day_cell_keeps_its_own_day_and_the_callers_books(pool: PgPool) 
     .await?;
     let thu = s.link(SECOND_MANAGER_PHONE, "Quản lý Thu").await?;
     let boss = s.link(OWNER_PHONE, "Chủ Spa").await?;
-    let d1 = spa_today() - chrono::Duration::days(1);
-    let d2 = spa_today() - chrono::Duration::days(2);
+    let d1 = spa_today() - Span::new().days(1);
+    let d2 = spa_today() - Span::new().days(2);
     let (d1s, d2s) = (d1.to_string(), d2.to_string());
     let present = |staff: &str, day: &str, check_in: &str, note: Option<&str>| {
         json!({"staff_id": staff, "date": day, "status": "present", "check_in": check_in,
@@ -1540,7 +1538,7 @@ async fn a_staff_day_cell_keeps_its_own_day_and_the_callers_books(pool: PgPool) 
         StatusCode::OK
     );
     // A month the person did not work: not in the books.
-    let first = spa_today().with_day(1).unwrap_or_else(spa_today);
+    let first = spa_today().first_of_month();
     let newcomer = call(
         &s.h.app,
         "POST",
@@ -1551,7 +1549,7 @@ async fn a_staff_day_cell_keeps_its_own_day_and_the_callers_books(pool: PgPool) 
     .await;
     assert_eq!(newcomer.status, StatusCode::CREATED, "{}", newcomer.body);
     let hang = str_of(&newcomer.body["id"]);
-    let before = (first - chrono::Duration::days(1)).to_string();
+    let before = (first - Span::new().days(1)).to_string();
     assert_eq!(
         s.staff_day(&s.owner, &hang, &before, "attendance")
             .await
@@ -2346,7 +2344,7 @@ async fn a_request_reads_when_it_wrote_not_when_it_arrived(pool: PgPool) -> Test
     let id = str_of(&visit.body["id"]);
     let line = str_of(&visit.body["lines"][0]["id"]);
 
-    let arrived = Utc::now();
+    let arrived = Timestamp::now();
     let moved = s
         .patch(
             &s.owner,
@@ -2386,14 +2384,14 @@ async fn a_request_reads_when_it_wrote_not_when_it_arrived(pool: PgPool) -> Test
         ["visit.create", "visit.update", "visit.correct"],
         "{story}"
     );
-    let stamped: Vec<chrono::DateTime<Utc>> = sqlx::query_scalar(
+    let stamped: Vec<jiff_sqlx::Timestamp> = sqlx::query_scalar(
         "SELECT at FROM app.audit_log WHERE action = 'visit.correct' AND entity_id = $1",
     )
     .bind(Uuid::parse_str(&id)?)
     .fetch_all(&s.h.owner)
     .await?;
     assert!(
-        stamped.iter().all(|at| *at > arrived),
+        stamped.iter().all(|at| *at > arrived.to_sqlx()),
         "{stamped:?} vs {arrived}"
     );
     Ok(())
