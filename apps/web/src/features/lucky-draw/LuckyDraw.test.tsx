@@ -382,7 +382,8 @@ describe("participants (US2)", () => {
     });
     const posts = api.calls.filter((c) => c.method === "POST");
     expect(posts.map((c) => (c.body as { participants: unknown[] }).participants.length)).toEqual([500, 500, 100]);
-    // All 1.100 in the panel, which scrolls inside (no "Hiện thêm" any more, EM 2026-11-28).
+    // All 1.100 in the panel, which scrolls inside (no "Hiện thêm" any more, EM 2026-11-28); jsdom
+    // has no IntersectionObserver, so useGrowing draws every row (its steps: useGrowing.test.tsx).
     expect(within(screen.getByRole("list", { name: "Danh sách người tham gia" })).getAllByRole("listitem")).toHaveLength(1100);
   });
 

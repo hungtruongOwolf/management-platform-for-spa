@@ -53,66 +53,66 @@ export function PrizesPanel({
         )}
       </div>
       <div className="ld-scroll" role="region" aria-label="Các giải thưởng" tabIndex={0}>
-      {draw.prizes.length === 0 ? (
-        <p className="empty-note">Chưa có giải thưởng. Bấm “Thêm giải thưởng”: tên giải, dành cho ai, số suất.</p>
-      ) : (
-        <ul className="ld-prizes" aria-label="Chọn giải để quay">
-          {draw.prizes.map((prize) => {
-            const block = prizeBlock(prize);
-            const drawn = prizeDrawn(draw, prize.id);
-            return (
-              <li key={prize.id} className="ld-prize">
-                <button
-                  type="button"
-                  className="ld-prize-pick"
-                  aria-pressed={current?.id === prize.id}
-                  aria-disabled={block !== null || locked || undefined}
-                  data-blocked={block !== null || undefined}
-                  onClick={() => {
-                    if (block === null && !locked) onPick(prize.id);
-                  }}
-                >
-                  <span className="ld-prize-head">
-                    <span className="ld-prize-name">{prize.name}</span>
-                    {current?.id === prize.id && <Icon name="check" className="ld-prize-check size-4" />}
-                  </span>
-                  {prize.description && <span className="ld-prize-desc">{prize.description}</span>}
-                  <span className="ld-prize-meta">
-                    <EligibleChip prize={prize} />
-                    <span className="tabular">
-                      Còn {prize.remaining}/{prize.quantity} suất
+        {draw.prizes.length === 0 ? (
+          <p className="empty-note">Chưa có giải thưởng. Bấm “Thêm giải thưởng”: tên giải, dành cho ai, số suất.</p>
+        ) : (
+          <ul className="ld-prizes" aria-label="Chọn giải để quay">
+            {draw.prizes.map((prize) => {
+              const block = prizeBlock(prize);
+              const drawn = prizeDrawn(draw, prize.id);
+              return (
+                <li key={prize.id} className="ld-prize">
+                  <button
+                    type="button"
+                    className="ld-prize-pick"
+                    aria-pressed={current?.id === prize.id}
+                    aria-disabled={block !== null || locked || undefined}
+                    data-blocked={block !== null || undefined}
+                    onClick={() => {
+                      if (block === null && !locked) onPick(prize.id);
+                    }}
+                  >
+                    <span className="ld-prize-head">
+                      <span className="ld-prize-name">{prize.name}</span>
+                      {current?.id === prize.id && <Icon name="check" className="ld-prize-check size-4" />}
                     </span>
-                    {block && <span className="badge badge-muted">{block}</span>}
-                  </span>
-                </button>
-                <RowMenu
-                  label={`Thao tác với giải ${prize.name}`}
-                  items={[
-                    {
-                      label: "Sửa giải",
-                      onSelect: () => {
-                        setOpen({ kind: "edit", prize });
+                    {prize.description && <span className="ld-prize-desc">{prize.description}</span>}
+                    <span className="ld-prize-meta">
+                      <EligibleChip prize={prize} />
+                      <span className="tabular">
+                        Còn {prize.remaining}/{prize.quantity} suất
+                      </span>
+                      {block && <span className="badge badge-muted">{block}</span>}
+                    </span>
+                  </button>
+                  <RowMenu
+                    label={`Thao tác với giải ${prize.name}`}
+                    items={[
+                      {
+                        label: "Sửa giải",
+                        onSelect: () => {
+                          setOpen({ kind: "edit", prize });
+                        },
                       },
-                    },
-                    ...(drawn
-                      ? []
-                      : [
-                          {
-                            label: "Xóa giải",
-                            danger: true,
-                            onSelect: () => {
-                              remove.reset();
-                              setOpen({ kind: "delete", prize });
+                      ...(drawn
+                        ? []
+                        : [
+                            {
+                              label: "Xóa giải",
+                              danger: true,
+                              onSelect: () => {
+                                remove.reset();
+                                setOpen({ kind: "delete", prize });
+                              },
                             },
-                          },
-                        ]),
-                  ]}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                          ]),
+                    ]}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
       {open?.kind === "add" && <PrizeSheet drawId={draw.id} drawn={false} onClose={close} />}
       {open?.kind === "edit" && (

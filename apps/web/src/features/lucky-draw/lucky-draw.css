@@ -254,8 +254,10 @@
 
   /* Wide screens: the page fits the viewport, the stage is a size container for its wheel. */
   @container ld-page (min-width: 880px) {
+    /* The screen under the top bar, less the shell's 28px above and below (set above); never
+     * under 30rem: on a very short window the page scrolls rather than crush the lists. */
     .ld-page {
-      height: calc(100dvh - var(--topbar-h) - 56px);
+      height: max(30rem, calc(100dvh - var(--topbar-h) - 56px));
       grid-template-rows: auto minmax(0, 1fr);
     }
     .ld-grid {
