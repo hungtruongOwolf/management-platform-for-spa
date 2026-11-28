@@ -77,13 +77,13 @@ struct Booking {
     fate: Fate,
 }
 
-/// A slot of the calendar's 30-minute grid between 09:00 and 19:00.
-
 /// Days since 1 January of year 1 (that day = 1), as chrono's `num_days_from_ce`: the seed of a
 /// day's bookings stays what it was.
 fn days_from_ce(day: Date) -> i64 {
     i64::from((day - jiff::civil::date(1, 1, 1)).get_days()) + 1
 }
+
+/// A slot of the calendar's 30-minute grid between 09:00 and 19:00.
 fn slot(rng: &mut Rng) -> u32 {
     9 * 60 + 30 * u32::try_from(rng.below(21)).unwrap_or(0)
 }
