@@ -2,7 +2,8 @@
 //! transaction as the action, append-only. `detail` never carries a password, hash, secret or a
 //! full phone number.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use kernel::AppError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -77,7 +78,7 @@ pub fn masked_query(q: &str, by_phone: bool) -> String {
 #[into_params(parameter_in = Query)]
 pub struct AuditQuery {
     /// Only entries strictly older than this instant (the previous page's `next_before`).
-    pub before: Option<DateTime<Utc>>,
+    pub before: Option<Timestamp>,
     /// 1–100, default 50.
     pub limit: Option<i64>,
 }
@@ -103,8 +104,8 @@ impl AuditQuery {
 fn page<T>(
     mut rows: Vec<T>,
     limit: i64,
-    at: impl Fn(&T) -> DateTime<Utc>,
-) -> (Vec<T>, Option<DateTime<Utc>>) {
+    at: impl Fn(&T) -> Timestamp,
+) -> (Vec<T>, Option<Timestamp>) {
     let limit = usize::try_from(limit).unwrap_or(usize::MAX);
     let Some(first_left_out) = rows.get(limit).map(&at) else {
         return (rows, None);
@@ -120,7 +121,8 @@ fn page<T>(
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PlatformAuditItem {
     pub id: Uuid,
-    pub at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub at: Timestamp,
     pub operator_id: Uuid,
     pub operator_username: String,
     pub action: String,
@@ -136,7 +138,8 @@ pub struct PlatformAuditItem {
 pub struct PlatformAuditPage {
     pub items: Vec<PlatformAuditItem>,
     /// Pass as `before` for the next (older) page; absent on the last page.
-    pub next_before: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub next_before: Option<Timestamp>,
 }
 
 /// `GET /admin/audit`: newest first.
@@ -150,7 +153,7 @@ pub async fn list(pool: &PgPool, query: &AuditQuery) -> Result<PlatformAuditPage
            WHERE $1::timestamptz IS NULL OR a.at < $1
            ORDER BY a.at DESC, a.id DESC
            LIMIT $2"#,
-        query.before,
+        query.before.map(ToSqlx::to_sqlx),
         limit + 1
     )
     .fetch_all(pool)
@@ -159,7 +162,7 @@ pub async fn list(pool: &PgPool, query: &AuditQuery) -> Result<PlatformAuditPage
         .into_iter()
         .map(|r| PlatformAuditItem {
             id: r.id,
-            at: r.at,
+            at: r.at.to_jiff(),
             operator_id: r.operator_id,
             operator_username: r.username,
             action: r.action,
@@ -181,7 +184,8 @@ pub async fn list(pool: &PgPool, query: &AuditQuery) -> Result<PlatformAuditPage
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpaAuditItem {
     pub id: Uuid,
-    pub at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub at: Timestamp,
     pub action: String,
     pub entity_type: String,
     /// `user` | `platform_admin` | `system`.
@@ -193,7 +197,8 @@ pub struct SpaAuditItem {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpaAuditPage {
     pub items: Vec<SpaAuditItem>,
-    pub next_before: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub next_before: Option<Timestamp>,
 }
 
 /// `GET /admin/tenants/{id}/audit`: read in the spa's own RLS scope; the read itself is audited
@@ -218,7 +223,7 @@ pub async fn of_tenant(
            ORDER BY a.at DESC, a.id DESC
            LIMIT $3"#,
         tenant,
-        query.before,
+        query.before.map(ToSqlx::to_sqlx),
         limit + 1
     )
     .fetch_all(tx.conn())
@@ -227,7 +232,7 @@ pub async fn of_tenant(
         .into_iter()
         .map(|r| SpaAuditItem {
             id: r.id,
-            at: r.at,
+            at: r.at.to_jiff(),
             action: r.action,
             entity_type: r.entity_type,
             actor_kind: r.actor_kind,
@@ -274,7 +279,7 @@ mod tests {
 
     #[test]
     fn a_page_never_splits_one_instant() {
-        let t = |s: i64| DateTime::from_timestamp(s, 0).unwrap_or_default();
+        let t = |s: i64| Timestamp::from_second(s).unwrap_or_default();
         // Newest first; three entries share the instant 7 (one transaction).
         let rows = vec![t(9), t(8), t(7), t(7), t(7), t(6)];
         let (items, next) = page(rows.clone(), 3, |r| *r);
