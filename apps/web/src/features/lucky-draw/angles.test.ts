@@ -1,31 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { SECTORS, angleOf, randomSector, restAngle, stopAngle } from "./angles";
+import { GENTLE, SECTORS, SPIN, randomSector, stopAngle } from "./angles";
 
 describe("wheel angles", () => {
-  it("stops a few turns on, at the middle of the sector", () => {
+  it("stops after the given turns, at the middle of the sector, as the prototype", () => {
     for (const from of [0, 37, 359.5, 1234]) {
-      for (let sector = 0; sector < SECTORS; sector += 1) {
-        const end = stopAngle(from, sector);
-        expect(end - from).toBeGreaterThanOrEqual(3 * 360);
-        expect(end - from).toBeLessThan(4 * 360);
-        expect(((end % 360) + 360) % 360).toBeCloseTo(sector * 45 + 22.5);
+      for (const turns of [SPIN.turns, GENTLE.turns]) {
+        for (let sector = 0; sector < SECTORS; sector += 1) {
+          const end = stopAngle(from, sector, turns);
+          expect(end - from).toBeGreaterThanOrEqual(turns * 360);
+          expect(end - from).toBeLessThan((turns + 1) * 360);
+          expect(((end % 360) + 360) % 360).toBeCloseTo(sector * 45 + 22.5);
+        }
       }
     }
   });
 
-  it("goes back to where it rested, forwards", () => {
-    expect(restAngle(100, 40)).toBe(400);
-    expect(restAngle(40, 40)).toBe(40);
-    expect(restAngle(730, 10) % 360).toBe(10);
-  });
-
-  it("reads a rotation back from a computed transform", () => {
-    const rad = (deg: number) => (deg * Math.PI) / 180;
-    const matrix = (deg: number) => `matrix(${String(Math.cos(rad(deg)))}, ${String(Math.sin(rad(deg)))}, 0, 0, 0, 0)`;
-    expect(angleOf(matrix(90))).toBeCloseTo(90);
-    expect(angleOf(matrix(-45))).toBeCloseTo(315);
-    expect(angleOf("none")).toBeNull();
-    expect(angleOf("")).toBeNull();
+  it("reduced motion is gentler but still turns", () => {
+    expect(GENTLE.turns).toBeGreaterThanOrEqual(2);
+    expect(GENTLE.ms).toBeLessThan(SPIN.ms);
+    expect(SPIN).toEqual({ turns: 6, ms: 4100, ease: "cubic-bezier(0.14, 0.72, 0.12, 1)" });
   });
 
   it("draws a sector from the crypto source", () => {

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Icon } from "../../app/Icon";
 import { PageHeader } from "../../app/PageHeader";
 import { RowMenu } from "../../components/RowMenu";
@@ -15,9 +15,10 @@ import { PrizesCard } from "./PrizesCard";
 import { ConfirmSheet, NameSheet } from "./sheets";
 import { Stage } from "./Stage";
 import { SummaryBody, SummarySheet } from "./Summary";
-import type { LuckyDrawDetail } from "./types";
+import type { LuckyDrawDetail, SpinOutcome } from "./types";
 import { useDrawWrite } from "./useDrawWrite";
 import { useSpin } from "./useSpin";
+import { WinnerDialog } from "./WinnerDialog";
 import { WinnersCard } from "./WinnersCard";
 import "./lucky-draw.css";
 
@@ -74,17 +75,21 @@ function Program({ draw }: { draw: LuckyDrawDetail }) {
   const close = () => {
     setOpen(null);
   };
-  const presentingRef = useRef(presenting);
-  useEffect(() => {
-    presentingRef.current = presenting;
-  }, [presenting]);
-  // The spin that gives out the last slot opens the summary once the wheel stops (AC6.1); the
-  // presentation shows it on its own stage.
-  const onFinished = useCallback(() => {
-    if (!presentingRef.current) setOpen("summary");
+  /** The result whose popup is open: each spin that lands announces its winner (EM). */
+  const [winner, setWinner] = useState<string | null>(null);
+  const spinButton = useRef<HTMLButtonElement>(null);
+  const onRevealed = useCallback((outcome: SpinOutcome) => {
+    setWinner(outcome.result.id);
   }, []);
-  const spin = useSpin(draw.id, onFinished);
+  const spin = useSpin(draw.id, onRevealed);
   const prize = currentPrize(draw.prizes, picked);
+  const backToSpin = () => {
+    requestAnimationFrame(() => spinButton.current?.focus());
+  };
+  const closeWinner = () => {
+    setWinner(null);
+    backToSpin();
+  };
 
   const rename = useDrawWrite(draw.id, (name: string) => renameDraw(draw, name), close);
   const forfeit = useDrawWrite(draw.id, (resultId: string) => forfeitResult(draw.id, resultId), close);
@@ -164,12 +169,13 @@ function Program({ draw }: { draw: LuckyDrawDetail }) {
         {presenting ? (
           <div className="ld-stage chrome" aria-hidden="true" />
         ) : (
-          <Stage draw={draw} prize={prize} spin={spin} onForfeit={askForfeit} />
+          <Stage draw={draw} prize={prize} spin={spin} buttonRef={spinButton} />
         )}
         <div className="ld-side">
           <PrizesCard draw={draw} current={prize} locked={spin.busy} onPick={setPicked} />
           <WinnersCard
             draw={draw}
+            fresh={spin.shownId}
             onForfeit={askForfeit}
             onSummary={() => {
               setOpen("summary");
@@ -180,7 +186,30 @@ function Program({ draw }: { draw: LuckyDrawDetail }) {
       <ParticipantsCard draw={draw} />
 
       {presenting && (
-        <Presentation draw={draw} prize={prize} spin={spin} onPick={setPicked} onForfeit={askForfeit} onClose={stopPresenting} />
+        <Presentation draw={draw} prize={prize} spin={spin} buttonRef={spinButton} onPick={setPicked} onClose={stopPresenting} />
+      )}
+      {winner !== null && (
+        // After the presentation in the tree: shown later, it sits above it in the top layer.
+        <WinnerDialog
+          draw={draw}
+          resultId={winner}
+          next={prize}
+          big={presenting}
+          onNext={() => {
+            setWinner(null);
+            backToSpin();
+            if (prize) spin.start(prize.id);
+          }}
+          onSummary={() => {
+            setWinner(null);
+            setOpen("summary");
+          }}
+          onForfeit={(resultId) => {
+            setWinner(null);
+            askForfeit(resultId);
+          }}
+          onClose={closeWinner}
+        />
       )}
       {open === "summary" && <SummarySheet draw={draw} onClose={close} />}
       {open === "rename" && (

@@ -24,8 +24,8 @@ const WEIGHTS = {
   "front-desk.spec.ts": 6,
   "head.spec.ts": 1,
   "layout.spec.ts": 160,
-  // Estimated (2026-11-28): one long run (5 spins, two with the 4 s wheel), 9 axe runs, one sign-in.
-  "lucky-draw.spec.ts": 35,
+  // Estimated (2026-11-28, popup): one long run (5 spins of 2.5–4.1 s, each with its popup), 13 axe runs, one sign-in.
+  "lucky-draw.spec.ts": 50,
   "management.spec.ts": 16,
   "notes.spec.ts": 7,
   "onboarding.spec.ts": 6,

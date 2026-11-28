@@ -79,6 +79,8 @@ export interface FakeApi {
   draws: Map<string, Stored>;
   /** Answer the next matching request yourself (return undefined to let the fake handle it). */
   intercept: (fn: (call: Call) => Response | Promise<Response> | undefined) => void;
+  /** Milliseconds the fake waits before answering a call (a slow server); 0 by default. */
+  slow: (fn: (call: Call) => number) => void;
 }
 
 export function fakeApi(me: unknown = OWNER, initial: LuckyDrawDetail[] = []): FakeApi {
@@ -103,6 +105,7 @@ export function fakeApi(me: unknown = OWNER, initial: LuckyDrawDetail[] = []): F
   const id = (p: string) => `${p === "d" ? "0193a5b0" : "00000000"}-0000-7000-8000-${String((next += 1)).padStart(12, "0")}`;
   const replays = new Map<string, Response>();
   let interceptor: ((call: Call) => Response | Promise<Response> | undefined) | undefined;
+  let latency: (call: Call) => number = () => 0;
 
   const handle = (call: Call): Response => {
     const { method, path } = call;
@@ -214,6 +217,11 @@ export function fakeApi(me: unknown = OWNER, initial: LuckyDrawDetail[] = []): F
       body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
     };
     calls.push(call);
+    const wait = latency(call);
+    if (wait > 0)
+      await new Promise((resolve) => {
+        setTimeout(resolve, wait);
+      });
     const custom = interceptor?.(call);
     if (custom) {
       interceptor = undefined;
@@ -226,6 +234,9 @@ export function fakeApi(me: unknown = OWNER, initial: LuckyDrawDetail[] = []): F
     draws,
     intercept: (fn) => {
       interceptor = fn;
+    },
+    slow: (fn) => {
+      latency = fn;
     },
   };
 }

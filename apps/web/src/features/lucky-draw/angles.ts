@@ -1,37 +1,33 @@
 /**
- * Geometry of the wheel. Where it stops is decoration only: the server has already picked the
- * winner (AC4.2); the sector is drawn here so the stop looks different every time.
+ * Geometry and timing of the wheel. Where it stops is decoration only: the server picks the winner
+ * (AC4.2, ADR-0025), so the sector is drawn here, at the press, like the EM's prototype.
  */
 export const SECTORS = 8;
-/** The slow-down after the server answered (architecture/lucky-draw.md §4: ~4 s). */
-export const LAND_MS = 4000;
-/** Back to where it started after a failed spin (AC4.6). */
-export const RETURN_MS = 700;
-/** Full turns of the slow-down before it settles on the sector. */
-const TURNS = 3;
+
+export interface Turn {
+  /** Full turns before the wheel settles on the sector. */
+  turns: number;
+  ms: number;
+  ease: string;
+}
+
+/** One eased turn from the press to the stop, as the prototype: +6 turns in 4.1 s. */
+export const SPIN: Turn = { turns: 6, ms: 4100, ease: "cubic-bezier(0.14, 0.72, 0.12, 1)" };
+/**
+ * `prefers-reduced-motion`: still a spin the room can see (EM: the spin is the content of a draw),
+ * gentler: two turns, a shorter and softer ease-in-out.
+ */
+export const GENTLE: Turn = { turns: 2, ms: 2500, ease: "cubic-bezier(0.33, 0, 0.2, 1)" };
 
 /** A uniform sector (8 divides 2³², so the modulo has no bias). */
 export function randomSector(): number {
   return (crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) % SECTORS;
 }
 
-/** The angle the slow-down ends on: a few turns past `from`, at the middle of `sector`. */
-export function stopAngle(from: number, sector: number): number {
+/** The angle a spin ends on: `turns` full turns past `from`, then on to the middle of `sector`. */
+export function stopAngle(from: number, sector: number, turns: number): number {
   const step = 360 / SECTORS;
   const target = sector * step + step / 2;
-  const base = from + TURNS * 360;
+  const base = from + turns * 360;
   return base + ((((target - base) % 360) + 360) % 360);
-}
-
-/** The first angle at or after `from` that shows the wheel as it was at `home`. */
-export function restAngle(from: number, home: number): number {
-  return from + ((((home - from) % 360) + 360) % 360);
-}
-
-/** Degrees of a computed `transform` (`matrix(a, b, …)` of a rotation); `null` without one. */
-export function angleOf(transform: string): number | null {
-  const m = /^matrix\(([^,]+),([^,]+)/.exec(transform.replace(/\s/g, ""));
-  if (!m) return null;
-  const deg = (Math.atan2(Number(m[2]), Number(m[1])) * 180) / Math.PI;
-  return Number.isFinite(deg) ? (deg + 360) % 360 : null;
 }
