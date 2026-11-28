@@ -126,8 +126,10 @@ Số "hôm nay" phụ thuộc giờ chạy (chạy trước 9:00 thì không có
 - Kiểm tra sau deploy 0052: `GET /api/v1/record-history/visit/<uuid>` không cookie → 401 (bản cũ → 404); chủ spa `GET /api/v1/audit-log` → `403 feature.disabled`.
 - **0053 (giờ audit = lúc ghi, [ADR-0023](../decisions/ADR-0023-audit-instant-is-write-time.md)):** chỉ `ALTER COLUMN … SET DEFAULT clock_timestamp()` trên `audit_log.at` (catalog, khóa rất ngắn, không rewrite). Không phụ thuộc thứ tự với deploy: binary cũ và mới đều truyền `at` cho dòng Rust; default chỉ dùng cho writer SQL (áp mẫu vai trò, tài khoản của operator). Kiểm sau migrate: `SELECT column_default FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'audit_log' AND column_name = 'at'` → `clock_timestamp()`.
 
+- **0055 (vòng quay may mắn, [architecture/lucky-draw](../architecture/lucky-draw.md)):** 4 bảng mới + permission `lucky_draw.manage` cho owner mọi spa và mẫu owner. Migrate rồi deploy trong cùng phiên. Trong khoảng hở binary cũ chạy bình thường; chỉ việc sửa vai trò spa ở console có thể trả `422 unknown_permission`, nên **operator không sửa vai trò** cho tới khi binary mới lên. Kiểm sau migrate: `_sqlx_migrations` max 55; `role_permission` có `lucky_draw.manage` cho mỗi role owner hệ thống; 4 bảng `lucky_draw*` có RLS; `invariant_violations()` (qua `app_rw`) 13 dòng, mọi dòng 0. Kiểm sau deploy: `GET /api/v1/lucky-draws` không cookie → 401 (bản cũ → 404); `/vong-quay` 200.
+
 ## Kiểm tra sau deploy
-Thay `<staging>` bằng origin trong `APP_PUBLIC_ORIGIN`:
+Thay `<staging>` bằng origin trong `APP_PUBLIC_ORIGIN` (trên máy dev, `.env.staging` có cùng origin trong `PERF_ORIGIN`):
 - `npx vercel ls` phải có deployment **mới** (cột Age vài phút) và output deploy có `Aliased`. Lệnh deploy từng thoát 0 mà không tạo deployment (2026-11-09; 2026-11-12 in `{"status":"error","message":"Not authorized"}` rồi thoát 0, chạy lại thì được), khi đó các URL dưới vẫn 200 vì đang chạy bản cũ; gọi thêm một route chỉ bản mới có (không cookie → 401, bản cũ → 404).
 - `curl -s <staging>/api/v1/health` → 200.
 - `curl -s -o /dev/null -w '%{http_code}' <staging>/api/v1/me` → 401; `<staging>/api/v1/admin/me` → 401; `<staging>/admin` → 200.
