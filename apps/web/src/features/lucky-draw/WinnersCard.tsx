@@ -75,7 +75,7 @@ export function WinnersCard({
                 // Top right of a phone card, not a row of its own.
                 card: "aside",
                 cell: (w) =>
-                  w.result.forfeited_at === null && (
+                  w.result.forfeited_at === null ? (
                     <RowMenu
                       label={`Thao tác với lượt ${String(w.result.seq)}, ${w.person?.name ?? ""}`}
                       items={[
@@ -87,6 +87,8 @@ export function WinnersCard({
                         },
                       ]}
                     />
+                  ) : (
+                    <span aria-hidden="true" className="ld-menu-space" />
                   ),
               },
             ]}

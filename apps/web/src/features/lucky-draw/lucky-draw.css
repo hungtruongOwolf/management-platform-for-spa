@@ -317,6 +317,12 @@
     align-items: center;
     gap: 4px 8px;
   }
+  /* Holds a row without ⋯ at the height of one with it. */
+  .ld-menu-space {
+    display: block;
+    width: var(--size-control);
+    height: var(--size-control);
+  }
   .ld-row-absent {
     color: var(--text-muted);
   }

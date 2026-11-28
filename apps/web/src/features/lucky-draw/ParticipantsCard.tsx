@@ -140,7 +140,7 @@ export function ParticipantsCard({ draw }: { draw: LuckyDrawDetail }) {
                   card: "aside",
                   width: "3.5rem",
                   cell: (p) =>
-                    p.result_id === null && (
+                    p.result_id === null ? (
                       <RowMenu
                         label={`Thao tác với ${p.name}`}
                         items={[
@@ -160,6 +160,9 @@ export function ParticipantsCard({ draw }: { draw: LuckyDrawDetail }) {
                           },
                         ]}
                       />
+                    ) : (
+                      // Every row as tall as one with ⋯ (a list of mixed heights reads uneven).
+                      <span aria-hidden="true" className="ld-menu-space" />
                     ),
                 },
               ]}
