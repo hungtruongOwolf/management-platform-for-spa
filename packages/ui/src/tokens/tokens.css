@@ -144,6 +144,8 @@
   --fs-nav: 16px; /* sidebar nav labels: --sidebar-w is measured at this size */
   --fs-search: 18px; /* the customer search on /quay and /khach-hang, read from a distance */
   --fs-nav-group: 11px; /* uppercase gold nav group labels: navigation chrome only */
+  --fs-display: 36px; /* the winner's name in the lucky draw popup (design/lucky-draw.md) */
+  --fs-display-tv: 56px; /* the same name on the presentation, read across a room */
 
   /*
    * Gradients, scrims and lifted shadows: tokens too, so no component writes a raw colour or a

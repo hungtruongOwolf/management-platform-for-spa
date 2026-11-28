@@ -1,5 +1,5 @@
-import { useId, type ReactNode } from "react";
-import { ELIGIBLE_LABEL, GENDER_LABEL, prizeBlock, wins } from "./draw";
+import { useId, type ReactNode, type RefObject } from "react";
+import { ELIGIBLE_LABEL, prizeBlock, wins } from "./draw";
 import { spinError } from "./messages";
 import type { LuckyDrawDetail, Prize } from "./types";
 import type { Spin } from "./useSpin";
@@ -15,26 +15,29 @@ export function EligibleChip({ prize }: { prize: Pick<Prize, "eligible"> }) {
 }
 
 /**
- * The stage (spec lucky-draw §5): the wheel on the maroon of the app's chrome, the prize being drawn,
- * "Quay", and the result once the wheel has stopped. The same block fills the presentation, with a
+ * The stage (spec lucky-draw §5): the wheel on the maroon of the app's chrome, the prize being drawn
+ * above it, "Quay" under it and one status line. The winner is announced by the popup only (EM:
+ * "pop up thông báo người chiến thắng … đừng có hiện người thắng ngay dưới vòng quay"); a screen
+ * reader hears "X trúng Y" from the status line. The same block fills the presentation, with a
  * picker for the prize (`pick`).
  */
 export function Stage({
   draw,
   prize,
   spin,
-  onForfeit,
   pick,
+  buttonRef,
   children,
 }: {
   draw: LuckyDrawDetail;
   /** The prize "Quay" draws for, `null` when none can be drawn. */
   prize: Prize | null;
   spin: Spin;
-  onForfeit: (resultId: string) => void;
   /** Presentation: choose the prize on the stage itself. */
   pick?: (prizeId: string) => void;
-  /** Under the result (the presentation's summary). */
+  /** Where focus goes back when the winner's popup closes. */
+  buttonRef?: RefObject<HTMLButtonElement | null>;
+  /** Under the button (the presentation's summary). */
   children?: ReactNode;
 }) {
   const id = useId();
@@ -48,7 +51,6 @@ export function Stage({
         : "Không còn giải nào quay được: thêm suất hoặc thêm người phù hợp.";
   const label = draw.results.length > 0 ? "Quay tiếp" : "Quay";
   const shown = spin.shownId === null ? undefined : wins(draw).find((w) => w.result.id === spin.shownId);
-  const canSpin = prize !== null && !spin.busy;
 
   return (
     <section className="ld-stage chrome" aria-label="Vòng quay">
@@ -90,70 +92,46 @@ export function Stage({
         )}
       </div>
 
-      <Wheel phase={spin.phase} sector={spin.sector} angleRef={spin.angleRef} still={spin.still} onSettled={spin.settle} />
+      <Wheel spin={spin.turn} angleRef={spin.angleRef} onStopped={spin.stopped} />
 
       <div className="ld-stage-actions">
         <button
+          ref={buttonRef}
           type="button"
           className="btn btn-primary btn-lg"
           aria-busy={spin.busy || undefined}
           aria-disabled={prize === null || undefined}
           aria-describedby={hint ? `${id}-hint` : undefined}
           onClick={() => {
-            if (canSpin) spin.start(prize.id);
+            if (prize && !spin.busy) spin.start(prize.id);
           }}
         >
           {label}
         </button>
-        {hint && (
-          <p id={`${id}-hint`} className="ld-stage-hint">
-            {hint}
-          </p>
-        )}
-      </div>
-
-      <div className="ld-result">
-        {spin.busy && (
-          <p className="ld-result-wait" aria-hidden="true">
-            Đang quay…
-          </p>
-        )}
-        {/* Read out once the wheel has stopped (spec §7). */}
-        <div aria-live="polite" aria-atomic="true">
-          {!spin.busy && spin.error !== null && (
+        <div className="ld-stage-status" aria-live="polite" aria-atomic="true">
+          {spin.busy ? (
+            <p className="ld-stage-hint" aria-hidden="true">
+              Đang quay…
+            </p>
+          ) : spin.error ? (
             <p role="alert" className="alert">
               {spinError(spin.error)}
             </p>
+          ) : (
+            shown && (
+              <p className="sr-only">
+                {shown.person?.name ?? ""} trúng {shown.prize?.name ?? ""}
+              </p>
+            )
           )}
-          {!spin.busy && shown && (
-            <div className="ld-result-win">
-              <p className="ld-result-label">
-                {shown.result.forfeited_at === null ? `Người trúng · lượt ${String(shown.result.seq)}` : "Vắng mặt, đã trả giải"}
-              </p>
-              <p className="ld-result-name">
-                {shown.person?.name ?? ""}
-                {shown.person && <span className="sr-only">, {GENDER_LABEL[shown.person.gender]}</span>}
-              </p>
-              <p className="ld-result-prize">{shown.prize?.name ?? ""}</p>
-              {shown.result.forfeited_at === null && (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    onForfeit(shown.result.id);
-                  }}
-                >
-                  Vắng mặt, trả giải
-                </button>
-              )}
-            </div>
+          {hint && !spin.busy && (
+            <p id={`${id}-hint`} className="ld-stage-hint">
+              {hint}
+            </p>
           )}
         </div>
-        {!spin.busy && !shown && spin.error === null && !empty && (
-          <p className="ld-result-idle">Người trúng hiện ở đây khi vòng quay dừng.</p>
-        )}
-        {children}
       </div>
+      {children}
     </section>
   );
 }

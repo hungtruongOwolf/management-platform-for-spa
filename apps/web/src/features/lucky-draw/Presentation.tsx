@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId } from "react";
+import { useEffect, useEffectEvent, useId, type RefObject } from "react";
 import { useModalDialog } from "../../components/useModalDialog";
 import { Stage } from "./Stage";
 import { SummaryBody } from "./Summary";
@@ -14,15 +14,15 @@ export function Presentation({
   draw,
   prize,
   spin,
+  buttonRef,
   onPick,
-  onForfeit,
   onClose,
 }: {
   draw: LuckyDrawDetail;
   prize: Prize | null;
   spin: Spin;
+  buttonRef: RefObject<HTMLButtonElement | null>;
   onPick: (prizeId: string) => void;
-  onForfeit: (resultId: string) => void;
   onClose: () => void;
 }) {
   const ref = useModalDialog(true);
@@ -60,7 +60,7 @@ export function Presentation({
           Thoát trình chiếu
         </button>
       </div>
-      <Stage draw={draw} prize={prize} spin={spin} pick={onPick} onForfeit={onForfeit}>
+      <Stage draw={draw} prize={prize} spin={spin} pick={onPick} buttonRef={buttonRef}>
         {draw.finished && !spin.busy && (
           <div className="ld-present-summary">
             <h3 className="ld-summary-heading">Tổng kết chương trình</h3>
