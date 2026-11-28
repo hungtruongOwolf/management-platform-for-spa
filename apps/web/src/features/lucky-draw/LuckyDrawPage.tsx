@@ -9,17 +9,15 @@ import { ErrorState } from "../reports/ui";
 import { LIST_KEY, deleteDraw, drawKey, drawQuery, forfeitResult, renameDraw } from "./api";
 import { currentPrize, wins } from "./draw";
 import "./messages";
-import { ParticipantsCard } from "./ParticipantsCard";
 import { Presentation } from "./Presentation";
-import { PrizesCard } from "./PrizesCard";
 import { ConfirmSheet, NameSheet } from "./sheets";
 import { Stage } from "./Stage";
-import { SummaryBody, SummarySheet } from "./Summary";
+import { SidePanels } from "./SidePanels";
+import { SummarySheet } from "./Summary";
 import type { LuckyDrawDetail, SpinOutcome } from "./types";
 import { useDrawWrite } from "./useDrawWrite";
 import { useSpin } from "./useSpin";
 import { WinnerDialog } from "./WinnerDialog";
-import { WinnersCard } from "./WinnersCard";
 import "./lucky-draw.css";
 
 // The list ships in this chunk too: the router imports one module for both screens.
@@ -156,34 +154,26 @@ function Program({ draw }: { draw: LuckyDrawDetail }) {
         />
       </PageHeader>
 
-      {draw.finished && (
-        <section className="card panel" aria-labelledby="ld-summary-title">
-          <h2 id="ld-summary-title" className="panel-title">
-            Tổng kết chương trình
-          </h2>
-          <SummaryBody draw={draw} />
-        </section>
-      )}
-
+      {/* No summary card on top any more: the same winners are in the "Trúng thưởng" tab (EM
+          2026-11-28: "xuất hiện 2 lần người trúng thưởng"); "Xem tổng kết" opens the sheet. */}
       <div className="ld-grid">
         {presenting ? (
           <div className="ld-stage chrome" aria-hidden="true" />
         ) : (
           <Stage draw={draw} prize={prize} spin={spin} buttonRef={spinButton} />
         )}
-        <div className="ld-side">
-          <PrizesCard draw={draw} current={prize} locked={spin.busy} onPick={setPicked} />
-          <WinnersCard
-            draw={draw}
-            fresh={spin.shownId}
-            onForfeit={askForfeit}
-            onSummary={() => {
-              setOpen("summary");
-            }}
-          />
-        </div>
+        <SidePanels
+          draw={draw}
+          current={prize}
+          locked={spin.busy}
+          fresh={spin.shownId}
+          onPick={setPicked}
+          onForfeit={askForfeit}
+          onSummary={() => {
+            setOpen("summary");
+          }}
+        />
       </div>
-      <ParticipantsCard draw={draw} />
 
       {presenting && (
         <Presentation draw={draw} prize={prize} spin={spin} buttonRef={spinButton} onPick={setPicked} onClose={stopPresenting} />
@@ -247,7 +237,7 @@ function Program({ draw }: { draw: LuckyDrawDetail }) {
   );
 }
 
-/** The program's shape while it loads (rulebook §9): header, stage, two cards, the list. */
+/** The program's shape while it loads (rulebook §9): header, the stage, the side column. */
 function ProgramSkeleton() {
   return (
     <div className="ld-page" role="status" aria-label="Đang tải chương trình">
@@ -257,12 +247,8 @@ function ProgramSkeleton() {
       </div>
       <div className="ld-grid">
         <div className="skeleton ld-stage-skeleton" />
-        <div className="ld-side">
-          <div className="skeleton h-56" />
-          <div className="skeleton h-40" />
-        </div>
+        <div className="skeleton ld-side-skeleton" />
       </div>
-      <div className="skeleton h-64" />
     </div>
   );
 }
