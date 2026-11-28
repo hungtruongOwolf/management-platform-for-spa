@@ -74,7 +74,8 @@ export function SidePanels({
               onKeyDown(e, i);
             }}
           >
-            {TAB_LABEL[tab]} <span className="ld-tab-count tabular">{counts[tab].toLocaleString("vi-VN")}</span>
+            <span className="ld-tab-label">{TAB_LABEL[tab]}</span>{" "}
+            <span className="ld-tab-count tabular">{counts[tab].toLocaleString("vi-VN")}</span>
           </button>
         ))}
       </div>
