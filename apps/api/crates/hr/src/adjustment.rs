@@ -9,7 +9,8 @@ use crate::month::Month;
 use crate::period;
 use crate::repo::{self, AdjustmentInsert, AdjustmentRow};
 use crate::scope::RecordScope;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
@@ -49,7 +50,7 @@ impl AdjustmentKind {
 pub struct Adjustment {
     pub id: Uuid,
     pub staff_id: Uuid,
-    pub occurred_on: NaiveDate,
+    pub occurred_on: Date,
     pub kind: AdjustmentKind,
     /// Đồng; `None` = points only.
     pub amount: Option<i64>,
@@ -58,7 +59,8 @@ pub struct Adjustment {
     /// `YYYY-MM` of the closed month this entry corrects.
     pub corrects_month: Option<String>,
     pub by_name: String,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
     /// Whether the caller may remove or edit it (decision C scope, month open). Always false on
     /// `/me/staff`.
     pub can_edit: bool,
@@ -77,7 +79,9 @@ impl TryFrom<AdjustmentRow> for Adjustment {
             amount: r.amount,
             points: r.points.and_then(|p| u32::try_from(p).ok()),
             reason: r.reason,
-            corrects_month: r.corrects_period.map(|d| Month::of(d).to_string()),
+            corrects_month: r
+                .corrects_period
+                .map(|d| Month::of(d.to_jiff()).to_string()),
             by_name: r.by_name,
             created_at: r.created_at,
             can_edit: false,
@@ -93,7 +97,7 @@ pub struct AdjustmentInput {
     pub points: Option<u32>,
     pub reason: String,
     /// Default today.
-    pub occurred_on: Option<NaiveDate>,
+    pub occurred_on: Option<Date>,
     pub corrects_month: Option<Month>,
 }
 
@@ -147,11 +151,11 @@ pub async fn log(
 }
 
 struct Clean {
-    occurred_on: NaiveDate,
+    occurred_on: Date,
     reason: String,
 }
 
-fn validate(input: &AdjustmentInput, today: NaiveDate) -> Result<Clean, AppError> {
+fn validate(input: &AdjustmentInput, today: Date) -> Result<Clean, AppError> {
     let mut errors = Vec::new();
     if input.amount.is_none() && input.points.is_none() {
         errors.push(FieldError::new("amount", "amount_or_points_required"));
@@ -367,7 +371,7 @@ pub async fn remove(pool: &PgPool, actor: &Actor, id: Uuid) -> Result<(), AppErr
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 

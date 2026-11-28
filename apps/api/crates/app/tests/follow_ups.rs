@@ -5,14 +5,14 @@
 mod common;
 
 use axum::http::StatusCode;
-use chrono::{DateTime, Datelike, Duration, Months, NaiveDate, TimeZone, Utc};
-use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
+use jiff::civil::Date;
+use jiff::{Span, Timestamp};
 use kernel::idempotency::hash_request;
 use kernel::testing::app_pool;
 use kernel::{Actor, TenantId, UserId};
@@ -44,16 +44,12 @@ struct Spa {
     plan: Uuid,
 }
 
-fn today() -> NaiveDate {
-    Utc::now().with_timezone(&Ho_Chi_Minh).date_naive()
+fn today() -> Date {
+    common::vn_today()
 }
 
-fn ict(day: NaiveDate, hour: u32, minute: u32) -> DateTime<Utc> {
-    Ho_Chi_Minh
-        .from_local_datetime(&day.and_hms_opt(hour, minute, 0).unwrap_or_default())
-        .single()
-        .map(|t| t.with_timezone(&Utc))
-        .unwrap_or_default()
+fn ict(day: Date, hour: i8, minute: i8) -> Timestamp {
+    common::vn_at(day, hour, minute)
 }
 
 fn id(reply: &Reply) -> Uuid {
@@ -188,7 +184,7 @@ impl Spa {
     }
 
     /// Sells the plan at `at` (use case with an explicit clock) and returns the sale.
-    async fn sell_at(&self, customer: Uuid, at: DateTime<Utc>) -> Setup<Value> {
+    async fn sell_at(&self, customer: Uuid, at: Timestamp) -> Setup<Value> {
         let body = json!({
             "customer_id": customer, "closer_staff_id": self.staff,
             "lines": [{"package_plan_id": self.plan}],
@@ -216,7 +212,7 @@ impl Spa {
         service: Uuid,
         staff: Uuid,
         one_off: bool,
-        at: Option<DateTime<Utc>>,
+        at: Option<Timestamp>,
     ) -> Setup<Value> {
         let (source, payments) = if one_off {
             ("one_off", json!([{"method": "cash", "amount": PRICE}]))
@@ -253,8 +249,8 @@ impl Spa {
     async fn import(
         &self,
         customer: Uuid,
-        starts_on: NaiveDate,
-        expires_on: Option<NaiveDate>,
+        starts_on: Date,
+        expires_on: Option<Date>,
         remaining: u32,
     ) -> String {
         let reply = self
@@ -316,7 +312,7 @@ async fn a_follow_up_is_recorded_once_by_the_session_user(pool: PgPool) -> TestR
     assert_eq!(first.body["contacted_on"], json!(day));
     assert_eq!(
         first.body["next_follow_up_on"],
-        json!(day + Duration::days(3)),
+        json!(day + Span::new().days(3)),
         "no answer → retry in 3 days"
     );
     assert_eq!(first.body["by_name"], "Quản lý Hoa");
@@ -361,44 +357,44 @@ async fn a_follow_up_is_recorded_once_by_the_session_user(pool: PgPool) -> TestR
             &s.owner,
             &path,
             json!({"channel": "phone", "outcome": "no_answer",
-                   "next_follow_up_on": day + Duration::days(10)}),
+                   "next_follow_up_on": day + Span::new().days(10)}),
         )
         .await;
     assert_eq!(planned.status, StatusCode::CREATED, "{}", planned.body);
     assert_eq!(
         planned.body["next_follow_up_on"],
-        json!(day + Duration::days(10))
+        json!(day + Span::new().days(10))
     );
     let will_come = s
         .follow_up(ha, json!({"channel": "in_person", "outcome": "will_come"}))
         .await;
     assert_eq!(
         will_come.body["next_follow_up_on"],
-        json!(day + Duration::days(7)),
+        json!(day + Span::new().days(7)),
         "will come → check in a week"
     );
     let list = s.get(&s.manager, &path).await;
     assert_eq!(
         list.body["suggested_next_on_by_outcome"],
-        json!({"will_come": day + Duration::days(7), "not_interested": null,
-               "no_answer": day + Duration::days(3), "other": null})
+        json!({"will_come": day + Span::new().days(7), "not_interested": null,
+               "no_answer": day + Span::new().days(3), "other": null})
     );
     assert_eq!(list.body["today"], json!(day));
     assert_eq!(list.body["not_interested_pause_days"], 90);
 
     for (bad, field, code) in [
         (
-            json!({"channel": "phone", "outcome": "other", "contacted_on": day + Duration::days(1)}),
+            json!({"channel": "phone", "outcome": "other", "contacted_on": day + Span::new().days(1)}),
             "contacted_on",
             "in_future",
         ),
         (
-            json!({"channel": "phone", "outcome": "other", "contacted_on": day - Duration::days(31)}),
+            json!({"channel": "phone", "outcome": "other", "contacted_on": day - Span::new().days(31)}),
             "contacted_on",
             "too_old",
         ),
         (
-            json!({"channel": "phone", "outcome": "other", "next_follow_up_on": day - Duration::days(1)}),
+            json!({"channel": "phone", "outcome": "other", "next_follow_up_on": day - Span::new().days(1)}),
             "next_follow_up_on",
             "before_contact",
         ),
@@ -479,7 +475,7 @@ async fn an_explicit_no_date_is_never_replaced_by_the_suggestion(pool: PgPool) -
         .await;
     assert_eq!(
         omitted.body["next_follow_up_on"],
-        json!(day + Duration::days(3))
+        json!(day + Span::new().days(3))
     );
     Ok(())
 }
@@ -535,7 +531,7 @@ async fn follow_ups_are_append_only_and_isolated_by_rls(pool: PgPool) -> TestRes
 async fn inactive_covers_one_off_and_package_customers(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     let day = today();
-    let back = |n: i64| day - Duration::days(n);
+    let back = |n: i64| day - Span::new().days(n);
 
     let one_off = s.customer("Phạm Thị Lẻ", "0905111001").await;
     s.visit(
@@ -664,9 +660,9 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
     ] {
         let c = s.customer(name, phone).await;
         let at = if name.starts_with('D') {
-            ict(day - Duration::days(10), 10, 0)
+            ict(day - Span::new().days(10), 10, 0)
         } else {
-            ict(day - Duration::days(12), 10, 0)
+            ict(day - Span::new().days(12), 10, 0)
         };
         s.visit(c, s.service, s.staff, true, Some(at)).await?;
         ids.push(c);
@@ -678,14 +674,14 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
     );
     ok(s.follow_up(
         ids[1],
-        json!({"channel": "phone", "outcome": "will_come", "contacted_on": day - Duration::days(2),
+        json!({"channel": "phone", "outcome": "will_come", "contacted_on": day - Span::new().days(2),
                "next_follow_up_on": day}),
     )
     .await);
     // D was called on day −12, then came on day −10: that call belongs to the last absence.
     ok(s.follow_up(
         ids[3],
-        json!({"channel": "phone", "outcome": "not_interested", "contacted_on": day - Duration::days(12)}),
+        json!({"channel": "phone", "outcome": "not_interested", "contacted_on": day - Span::new().days(12)}),
     )
     .await);
     ok(s.follow_up(
@@ -701,7 +697,7 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
         s.service,
         s.staff,
         true,
-        Some(ict(day - Duration::days(100), 10, 0)),
+        Some(ict(day - Span::new().days(100), 10, 0)),
     )
     .await?;
     sqlx::query(
@@ -712,7 +708,7 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
     .bind(Uuid::now_v7())
     .bind(s.tenant)
     .bind(f)
-    .bind(day - Duration::days(95))
+    .bind(jiff_sqlx::Date::from(day - Span::new().days(95)))
     .execute(&s.h.owner)
     .await?;
 
@@ -756,7 +752,7 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
         a["last_follow_up"],
         json!({"on": day, "channel": "phone", "outcome": "no_answer", "by": "Quản lý Hoa"})
     );
-    assert_eq!(a["next_follow_up_on"], json!(day + Duration::days(3)));
+    assert_eq!(a["next_follow_up_on"], json!(day + Span::new().days(3)));
     let d = all.body["items"]
         .as_array()
         .and_then(|a| {
@@ -774,11 +770,11 @@ async fn the_follow_up_filter_tells_who_to_call_today(pool: PgPool) -> TestResul
             .map(|r| r["due_on"].clone())
             .unwrap_or(Value::Null)
     };
-    assert_eq!(due_on("A hẹn gọi lại"), json!(day + Duration::days(3)));
-    assert_eq!(due_on("E không muốn"), json!(day + Duration::days(90)));
+    assert_eq!(due_on("A hẹn gọi lại"), json!(day + Span::new().days(3)));
+    assert_eq!(due_on("E không muốn"), json!(day + Span::new().days(90)));
     assert_eq!(
         due_on("F hết thời gian nghỉ"),
-        json!(day - Duration::days(5))
+        json!(day - Span::new().days(5))
     );
     assert_eq!(due_on("C chưa gọi"), Value::Null);
 
@@ -916,7 +912,7 @@ async fn history_filters_by_text_kind_and_day(pool: PgPool) -> TestResult {
         s.service,
         s.staff,
         true,
-        Some(ict(day - Duration::days(2), 10, 0)),
+        Some(ict(day - Span::new().days(2), 10, 0)),
     )
     .await?;
     s.visit(ha, s.neck, s.staff_b, true, None).await?;
@@ -973,7 +969,7 @@ async fn history_filters_by_text_kind_and_day(pool: PgPool) -> TestResult {
 
     let purchases = s.get(&s.manager, &format!("{base}?kind=purchase")).await;
     assert_eq!(kinds(&purchases), ["purchase"]);
-    let d2 = day - Duration::days(2);
+    let d2 = day - Span::new().days(2);
     let that_day = s
         .get(&s.manager, &format!("{base}?from={d2}&to={d2}"))
         .await;
@@ -1005,20 +1001,22 @@ async fn packages_without_expiry_never_expire(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     let day = today();
     let old = s.customer("Khách gói cũ", "0905111001").await;
-    let unlimited = s.import(old, day - Duration::days(3 * 365), None, 5).await;
+    let unlimited = s
+        .import(old, day - Span::new().days(3 * 365), None, 5)
+        .await;
     let soon = s.customer("Khách sắp hết hạn", "0905111002").await;
     s.import(
         soon,
-        day - Duration::days(30),
-        Some(day + Duration::days(5)),
+        day - Span::new().days(30),
+        Some(day + Span::new().days(5)),
         5,
     )
     .await;
     let gone = s.customer("Khách hết hạn", "0905111003").await;
     s.import(
         gone,
-        day - Duration::days(400),
-        Some(day - Duration::days(1)),
+        day - Span::new().days(400),
+        Some(day - Span::new().days(1)),
         5,
     )
     .await;
@@ -1090,8 +1088,8 @@ async fn packages_without_expiry_never_expire(pool: PgPool) -> TestResult {
 
 // ------------------------------------------------------------------------- range presets
 
-fn first_of_month(d: NaiveDate) -> NaiveDate {
-    d.with_day(1).unwrap_or(d)
+fn first_of_month(d: Date) -> Date {
+    d.first_of_month()
 }
 
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
@@ -1100,22 +1098,28 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
     let day = today();
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
     s.visit(ha, s.service, s.staff, true, None).await?;
-    let long_ago = day - Duration::days(300);
+    let long_ago = day - Span::new().days(300);
     s.visit(ha, s.neck, s.staff, true, Some(ict(long_ago, 10, 0)))
         .await?;
 
-    let jan = |y: i32| NaiveDate::from_ymd_opt(y, 1, 1).unwrap_or_default();
+    let jan = |y: i16| Date::new(y, 1, 1).ok().unwrap_or_default();
     let last_month_start = first_of_month(day)
-        .checked_sub_months(Months::new(1))
+        .checked_sub(Span::new().months(1))
         .unwrap_or_default();
     let twelve = first_of_month(day)
-        .checked_sub_months(Months::new(11))
+        .checked_sub(Span::new().months(11))
         .unwrap_or_default();
     for (preset, from, to, granularity, buckets) in [
-        ("last_7_days", day - Duration::days(6), day, "day", Some(7)),
+        (
+            "last_7_days",
+            day - Span::new().days(6),
+            day,
+            "day",
+            Some(7),
+        ),
         (
             "last_30_days",
-            day - Duration::days(29),
+            day - Span::new().days(29),
             day,
             "day",
             Some(30),
@@ -1124,7 +1128,7 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         (
             "last_month",
             last_month_start,
-            first_of_month(day).pred_opt().unwrap_or_default(),
+            first_of_month(day).yesterday().ok().unwrap_or_default(),
             "day",
             None,
         ),
@@ -1213,7 +1217,7 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         )
         .await;
     assert_eq!(by_week.body["granularity"], "week");
-    let from = day - Duration::days(700);
+    let from = day - Span::new().days(700);
     let months = s
         .get(
             &s.owner,
@@ -1225,7 +1229,7 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         format!("/reports/range?from={from}&to={day}&granularity=day"),
         format!(
             "/reports/range?from={}&to={day}&granularity=year",
-            day - Duration::days(1830)
+            day - Span::new().days(1830)
         ),
         format!("/reports/range?preset=this_month&from={day}"),
         "/reports/range?preset=forever".to_owned(),
@@ -1252,7 +1256,7 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
     );
     let four_years = format!(
         "/reports/range?from={}&to={day}&granularity=month",
-        day - Duration::days(4 * 365)
+        day - Span::new().days(4 * 365)
     );
     assert_eq!(s.get(&s.owner, &four_years).await.status, StatusCode::OK);
     for path in [
@@ -1261,7 +1265,7 @@ async fn range_presets_cover_week_month_year_and_years(pool: PgPool) -> TestResu
         four_years,
         format!(
             "/reports/range?from={}&to={day}&granularity=year",
-            day - Duration::days(732)
+            day - Span::new().days(732)
         ),
     ] {
         let r = s.get(&s.manager, &path).await;

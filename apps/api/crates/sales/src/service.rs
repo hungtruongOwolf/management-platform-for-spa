@@ -14,7 +14,8 @@ use crate::dto::{
     SaleStatusDto, SaleUpdate,
 };
 use crate::repo::{self, PackageLineInsert, PaymentInsert, SaleInsert, ServiceLineInsert};
-use chrono::{DateTime, Months, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry, REDACTED};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
@@ -262,15 +263,14 @@ fn money_err(_: kernel::money::MoneyError) -> AppError {
     AppError::Validation(vec![FieldError::new("total", "out_of_range")])
 }
 
-fn expiry(
-    starts_on: NaiveDate,
-    validity_months: Option<i32>,
-) -> Result<Option<NaiveDate>, AppError> {
+fn expiry(starts_on: Date, validity_months: Option<i32>) -> Result<Option<Date>, AppError> {
     validity_months
         .map(|m| {
+            // Calendar months; the 31st of a shorter month falls back to its last day.
             u32::try_from(m)
                 .ok()
-                .and_then(|m| starts_on.checked_add_months(Months::new(m)))
+                .and_then(|m| jiff::Span::new().try_months(m).ok())
+                .and_then(|months| starts_on.checked_add(months).ok())
                 .ok_or_else(|| AppError::Internal(format!("validity of {m} months")))
         })
         .transpose()
@@ -293,7 +293,16 @@ pub async fn create_sale(
     request_hash: [u8; 32],
     input: &SaleCreate,
 ) -> Result<(u16, Value), AppError> {
-    create_sale_as_of(pool, cipher, actor, key, request_hash, input, Utc::now()).await
+    create_sale_as_of(
+        pool,
+        cipher,
+        actor,
+        key,
+        request_hash,
+        input,
+        Timestamp::now(),
+    )
+    .await
 }
 
 /// [`create_sale`] on the business day of `now` instead of the server clock, with every other
@@ -306,7 +315,7 @@ pub async fn create_sale_as_of(
     key: Uuid,
     request_hash: [u8; 32],
     input: &SaleCreate,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::PackageSell)?;
     let order = parse(input)?;
@@ -323,7 +332,7 @@ pub async fn create_sale_as_of(
         return Ok((status, body));
     }
     let tenant = kernel::tenant::profile_as_of(&mut tx, now).await?;
-    let today = tenant.business_date.as_naive();
+    let today = tenant.business_date.as_date();
     let priced = price_package_sale(
         &mut tx,
         actor,
@@ -449,7 +458,7 @@ pub async fn create_checkout(
         return Ok((status, body));
     }
     let tenant = kernel::tenant::profile(&mut tx).await?;
-    let today = tenant.business_date.as_naive();
+    let today = tenant.business_date.as_date();
     let mut priced = Vec::with_capacity(orders.len());
     for (k, order) in orders.iter().enumerate() {
         priced.push(
@@ -608,7 +617,7 @@ pub async fn price_package_sale(
 /// Where and when a sale is booked.
 #[derive(Debug, Clone, Copy)]
 pub struct SaleAt {
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub branch_id: Uuid,
     /// The visit it was made in, if any (`sale.visit_id`).
     pub visit_id: Option<Uuid>,
@@ -801,7 +810,7 @@ async fn insert_payments(
 pub(crate) async fn load(
     tx: &mut TenantTx,
     id: Uuid,
-    today: NaiveDate,
+    today: Date,
     notes: Option<&FieldCipher>,
 ) -> Result<Option<SaleDto>, AppError> {
     Ok(load_many(tx, &[id], today, notes).await?.pop())
@@ -812,7 +821,7 @@ pub(crate) async fn load(
 async fn load_many(
     tx: &mut TenantTx,
     ids: &[Uuid],
-    today: NaiveDate,
+    today: Date,
     notes: Option<&FieldCipher>,
 ) -> Result<Vec<SaleDto>, AppError> {
     if ids.is_empty() {
@@ -875,7 +884,7 @@ async fn load_many(
                 SaleStatusDto::Open
             },
             void_reason: s.void_reason,
-            voided_at: s.voided_at,
+            voided_at: s.voided_at.map(jiff_sqlx::Timestamp::to_jiff),
             closer_staff_id: s.closer_staff_id,
             closer_name: s.closer_name,
             visit_id: s.visit_id,
@@ -902,7 +911,7 @@ pub async fn for_day(
     pool: &PgPool,
     cipher: &FieldCipher,
     actor: &Actor,
-    day: Option<NaiveDate>,
+    day: Option<Date>,
 ) -> Result<Vec<DaySaleDto>, AppError> {
     actor.require(Permission::SaleRead)?;
     actor.require(Permission::CustomerRead)?;
@@ -910,7 +919,7 @@ pub async fn for_day(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let heads = repo::day_sales(&mut tx, day.unwrap_or(today), DAY_SALES_MAX).await?;
     let ids: Vec<Uuid> = heads.iter().map(|h| h.id).collect();
     let sales = load_many(&mut tx, &ids, today, note_reader(actor, cipher)).await?;
@@ -943,7 +952,7 @@ pub async fn get_sale(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let sale = load(&mut tx, id, today, note_reader(actor, cipher)).await?;
     tx.commit().await?;
     sale.ok_or(AppError::NotFound)
@@ -982,7 +991,7 @@ pub async fn update_note(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     kernel::corrections::authorize_closed_day(actor, sale.business_date, today)?;
     let version = version?;
     let input =
@@ -1042,7 +1051,7 @@ fn payment_dto(
     method: &str,
     amount: i64,
     reference: Option<String>,
-    paid_at: DateTime<Utc>,
+    paid_at: Timestamp,
 ) -> Result<PaymentDto, AppError> {
     let method = match PaymentMethod::parse(method) {
         Some(PaymentMethod::Cash) => PaymentMethodDto::Cash,
@@ -1165,7 +1174,7 @@ pub fn discount_amount(subtotal: Money, ask: DiscountAsk) -> Result<Money, AppEr
 #[derive(Debug, Clone, Copy)]
 pub struct ServiceSale<'a> {
     pub customer_id: Uuid,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     pub branch_id: Uuid,
     /// The visit whose lines this sale charges (`sale.visit_id`).
     pub visit_id: Option<Uuid>,
@@ -1582,7 +1591,7 @@ mod tests {
             method,
             amount,
             reference: None,
-            paid_at: DateTime::<Utc>::UNIX_EPOCH,
+            paid_at: Timestamp::UNIX_EPOCH,
         }
     }
 

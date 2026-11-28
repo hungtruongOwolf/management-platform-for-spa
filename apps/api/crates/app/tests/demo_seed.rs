@@ -10,8 +10,9 @@ use app::demo::{
     seed, summary,
 };
 use axum::http::StatusCode;
-use chrono::Datelike;
 use common::{PASSWORD, TestResult, call, harness, session_for};
+use jiff::Span;
+use jiff::civil::Date;
 use serde_json::Value;
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
@@ -50,10 +51,8 @@ fn list(reply: &Value) -> Vec<Value> {
     reply.as_array().cloned().unwrap_or_default()
 }
 
-fn spa_today() -> chrono::NaiveDate {
-    chrono::Utc::now()
-        .with_timezone(&chrono_tz::Asia::Ho_Chi_Minh)
-        .date_naive()
+fn spa_today() -> Date {
+    common::vn_today()
 }
 
 /// Five months: long enough for every category (a lapsed customer 60+ days away, the technician
@@ -128,17 +127,15 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
     // The owner sees closed payroll; partial months follow ADR-0019 D4.
     let owner = session_for(&h, common::OWNER_PHONE).await;
     let today = spa_today();
-    let this_month = today.with_day(1).unwrap_or(today);
-    let last_month = (this_month - chrono::Duration::days(1))
-        .with_day(1)
-        .unwrap_or(this_month);
-    let payroll = |month: chrono::NaiveDate| {
+    let this_month = today.first_of_month();
+    let last_month = (this_month - Span::new().days(1)).first_of_month();
+    let payroll = |month: Date| {
         let (app, owner) = (&h.app, &owner);
         async move {
             call(
                 app,
                 "GET",
-                &format!("/payroll?month={}", month.format("%Y-%m")),
+                &format!("/payroll?month={}", month.strftime("%Y-%m")),
                 Some(owner),
                 None,
             )
@@ -164,9 +161,7 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
     assert_eq!(leaver["loyalty_bonus_accrued"], 500_000, "18 days ≥ 15");
     let mut four_ago = this_month;
     for _ in 0..4 {
-        four_ago = (four_ago - chrono::Duration::days(1))
-            .with_day(1)
-            .unwrap_or(four_ago);
+        four_ago = (four_ago - Span::new().days(1)).first_of_month();
     }
     let joined = payroll(four_ago).await;
     let joiner = list(&joined.body["payslips"])
@@ -184,7 +179,7 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
 
     // Commission reconciles with the visits, closed month and open month alike.
     for (from, to) in [
-        (last_month, this_month - chrono::Duration::days(1)),
+        (last_month, this_month - Span::new().days(1)),
         (this_month, today),
     ] {
         let reply = payroll(from).await;
@@ -198,8 +193,8 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
                    AND v.business_date BETWEEN $2 AND $3",
             )
             .bind(staff)
-            .bind(from)
-            .bind(to)
+            .bind(jiff_sqlx::Date::from(from))
+            .bind(jiff_sqlx::Date::from(to))
             .fetch_one(&h.owner)
             .await?;
             assert_eq!(
@@ -214,8 +209,8 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
              JOIN app.visit v ON v.tenant_id = vl.tenant_id AND v.id = vl.visit_id
              WHERE v.status = 'completed' AND v.business_date BETWEEN $1 AND $2",
         )
-        .bind(from)
-        .bind(to)
+        .bind(jiff_sqlx::Date::from(from))
+        .bind(jiff_sqlx::Date::from(to))
         .fetch_one(&h.owner)
         .await?;
         assert_eq!(total, visits, "every completed line belongs to one payslip");
@@ -247,10 +242,13 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
     );
     // Both refunds on past days (about three weeks and three months back), after the package was
     // sold and after its last session: no visit takes a session from a cancelled package.
-    let refund_days: Vec<chrono::NaiveDate> =
+    let refund_days: Vec<Date> =
         sqlx::query_scalar("SELECT business_date FROM app.refund ORDER BY business_date")
             .fetch_all(&h.owner)
-            .await?;
+            .await?
+            .into_iter()
+            .map(jiff_sqlx::Date::to_jiff)
+            .collect();
     assert_eq!(refund_days.len(), 2, "{refund_days:?}");
     assert!(refund_days.iter().all(|d| *d < today), "{refund_days:?}");
     assert_ne!(refund_days[0], refund_days[1]);
@@ -303,7 +301,7 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
     let past = call(
         &h.app,
         "GET",
-        &format!("/me/staff?month={}", last_month.format("%Y-%m")),
+        &format!("/me/staff?month={}", last_month.strftime("%Y-%m")),
         Some(&former),
         None,
     )
@@ -344,7 +342,7 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
         "SELECT count(*), count(*) FILTER (WHERE (at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date = $1)
          FROM app.audit_log",
     )
-    .bind(today)
+    .bind(jiff_sqlx::Date::from(today))
     .fetch_one(&h.owner)
     .await?;
     assert!(
@@ -371,7 +369,7 @@ async fn a_full_scenario_covers_every_category_through_the_use_cases(pool: PgPoo
         0,
         "a visit audited on another day than its own"
     );
-    let back = today - chrono::Duration::days(60);
+    let back = today - Span::new().days(60);
     // The screen is off by default (ADR-0022 D5); `reset-demo` drops the operator's switch too.
     common::enable_feature(&h, tenant_id(&h.owner, "vpyd").await?, "activity_log").await?;
     let page = call(

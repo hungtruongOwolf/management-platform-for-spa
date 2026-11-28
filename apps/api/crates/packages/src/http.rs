@@ -10,9 +10,10 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{DateTime, NaiveDate, Utc};
 use crm::FieldCipher;
 use identity::AuthUser;
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::http::{IdempotencyKey, IfMatch, etag};
 use kernel::idempotency::hash_route;
 use kernel::{AppError, FieldError};
@@ -99,8 +100,9 @@ pub struct RefundDto {
     pub amount: i64,
     pub method: RefundMethodDto,
     /// Cash-book day of the refund.
-    pub business_date: NaiveDate,
-    pub created_at: DateTime<Utc>,
+    pub business_date: Date,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
 }
 
 impl From<Refund> for RefundDto {
@@ -133,10 +135,11 @@ pub struct CustomerPackageDto {
     pub sale_id: Option<Uuid>,
     pub closer_staff_id: Option<Uuid>,
     pub closer_name: Option<String>,
-    pub starts_on: NaiveDate,
-    pub expires_on: Option<NaiveDate>,
+    pub starts_on: Date,
+    pub expires_on: Option<Date>,
     /// Set when the package was cancelled (a voided sale or a cancellation with refund).
-    pub cancelled_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub cancelled_at: Option<Timestamp>,
     pub cancel_reason: Option<String>,
     pub refund: Option<RefundDto>,
     /// Derived on read: cancelled → exhausted → expired → active.
@@ -144,7 +147,8 @@ pub struct CustomerPackageDto {
     pub sessions_total: i64,
     pub sessions_remaining: i64,
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
     pub items: Vec<CustomerPackageItemDto>,
     /// "Ghi chú gói" of the sale that created it (F4, health data). Filled only by
     /// `GET /customers/{id}/packages` and `GET /customer-packages/{id}` for

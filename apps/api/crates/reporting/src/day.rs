@@ -9,8 +9,10 @@ use crate::dto::{
     LedgerPage, LedgerRow, RangeBucket, RangePreset, RangeQuery, RangeReport, Revenue, SaleKind,
     TechnicianDay, TopPackage, TopService,
 };
-use chrono::{Datelike, Days, Months, NaiveDate};
 use crm::http::gender_dto;
+use jiff::civil::Date;
+use jiff::{Span, ToSpan};
+use jiff_sqlx::ToSqlx;
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -32,18 +34,21 @@ fn field(name: &'static str, code: &'static str) -> AppError {
     AppError::Validation(vec![FieldError::new(name, code)])
 }
 
-fn minus_days(d: NaiveDate, n: u64) -> Result<NaiveDate, AppError> {
-    d.checked_sub_days(Days::new(n))
+fn minus_days(d: Date, n: u64) -> Result<Date, AppError> {
+    i64::try_from(n)
+        .ok()
+        .and_then(|n| Span::new().try_days(n).ok())
+        .and_then(|days| d.checked_sub(days).ok())
         .ok_or_else(|| field("date", "out_of_range"))
 }
 
 /// First day of the bucket `d` falls in; must match Postgres `date_trunc` (ISO weeks start Monday).
-fn bucket_of(d: NaiveDate, g: Granularity) -> NaiveDate {
+fn bucket_of(d: Date, g: Granularity) -> Date {
     match g {
         Granularity::Day => d,
-        Granularity::Week => d - Days::new(u64::from(d.weekday().num_days_from_monday())),
-        Granularity::Month => d.with_day(1).unwrap_or(d),
-        Granularity::Year => d.with_ordinal(1).unwrap_or(d),
+        Granularity::Week => d - d.weekday().to_monday_zero_offset().days(),
+        Granularity::Month => d.first_of_month(),
+        Granularity::Year => d.first_of_year(),
     }
 }
 
@@ -56,29 +61,27 @@ const fn max_days(g: Granularity, long_range: bool) -> u64 {
     }
 }
 
-fn first_of_month(d: NaiveDate) -> NaiveDate {
-    d.with_day(1).unwrap_or(d)
+fn first_of_month(d: Date) -> Date {
+    d.first_of_month()
 }
 
 /// `[from, to]` and the default granularity of a preset, relative to the spa's `today`.
-fn preset_window(
-    preset: RangePreset,
-    today: NaiveDate,
-) -> Result<(NaiveDate, NaiveDate, Granularity), AppError> {
+fn preset_window(preset: RangePreset, today: Date) -> Result<(Date, Date, Granularity), AppError> {
     let bad = || field("preset", "out_of_range");
     let months_back = |n: u32| {
-        first_of_month(today)
-            .checked_sub_months(Months::new(n))
-            .ok_or_else(bad)
+        Span::new()
+            .try_months(n)
+            .and_then(|months| first_of_month(today).checked_sub(months))
+            .map_err(|_| bad())
     };
-    let jan_first = |year: i32| NaiveDate::from_ymd_opt(year, 1, 1).ok_or_else(bad);
+    let jan_first = |year: i16| Date::new(year, 1, 1).map_err(|_| bad());
     Ok(match preset {
         RangePreset::Last7Days => (minus_days(today, 6)?, today, Granularity::Day),
         RangePreset::Last30Days => (minus_days(today, 29)?, today, Granularity::Day),
         RangePreset::ThisMonth => (first_of_month(today), today, Granularity::Day),
         RangePreset::LastMonth => {
             let start = months_back(1)?;
-            let end = first_of_month(today).pred_opt().ok_or_else(bad)?;
+            let end = first_of_month(today).yesterday().map_err(|_| bad())?;
             (start, end, Granularity::Day)
         }
         RangePreset::ThisYear => (jan_first(today.year())?, today, Granularity::Month),
@@ -90,15 +93,15 @@ fn preset_window(
 }
 
 /// Every day from `from` to `to` inclusive.
-fn days(from: NaiveDate, to: NaiveDate) -> Vec<NaiveDate> {
-    from.iter_days().take_while(|d| *d <= to).collect()
+fn days(from: Date, to: Date) -> Vec<Date> {
+    from.series(1.day()).take_while(|d| *d <= to).collect()
 }
 
 /// Accumulates counts and money per bucket (bucket = first day as `date_trunc` returns it).
 #[derive(Default)]
 struct Books {
-    counts: HashMap<NaiveDate, DayCounts>,
-    revenue: HashMap<NaiveDate, Revenue>,
+    counts: HashMap<Date, DayCounts>,
+    revenue: HashMap<Date, Revenue>,
     /// Completed visit lines of the whole span, per service and per technician.
     services: Vec<LineTotals>,
     staff: Vec<LineTotals>,
@@ -121,7 +124,7 @@ impl Books {
     /// five-year report never ships 1 800 dates and no plan depends on an optional array.
     async fn read(
         tx: &mut TenantTx,
-        (from, to): (NaiveDate, NaiveDate),
+        (from, to): (Date, Date),
         granularity: Granularity,
         with_money: bool,
     ) -> Result<Self, AppError> {
@@ -168,9 +171,9 @@ impl Books {
                SELECT 'all', NULL, NULL, 0, count(DISTINCT customer_id), 0, 0, 0, 0, 0
                FROM vl WHERE done"#,
             tenant,
-            from,
+            from.to_sqlx(),
             unit,
-            to
+            to.to_sqlx()
         )
         .fetch_all(tx.conn())
         .await?
@@ -178,7 +181,7 @@ impl Books {
             let n = |v: Option<i64>| v.unwrap_or_default();
             match (r.tag.as_deref(), r.bucket, r.key) {
                 (Some("bucket"), Some(bucket), _) => {
-                    let c = books.counts.entry(bucket).or_default();
+                    let c = books.counts.entry(bucket.to_jiff()).or_default();
                     c.visits = n(r.visits);
                     c.customers = n(r.customers);
                     c.voided_visits = n(r.voided);
@@ -219,14 +222,14 @@ impl Books {
                WHERE s.tenant_id = $1 AND s.business_date BETWEEN $2 AND $4 AND s.status = 'open'
                GROUP BY 1"#,
             tenant,
-            from,
+            from.to_sqlx(),
             unit,
-            to
+            to.to_sqlx()
         )
         .fetch_all(tx.conn())
         .await?
         {
-            books.counts.entry(r.bucket).or_default().packages_sold = r.sold;
+            books.counts.entry(r.bucket.to_jiff()).or_default().packages_sold = r.sold;
         }
 
         if with_money {
@@ -251,14 +254,14 @@ impl Books {
                    WHERE r.tenant_id = $1 AND r.business_date BETWEEN $2 AND $4
                    GROUP BY 1, 2, 3, 4"#,
                 tenant,
-                from,
+                from.to_sqlx(),
                 unit,
-                to
+                to.to_sqlx()
             )
             .fetch_all(tx.conn())
             .await?
             {
-                let money = books.revenue.entry(r.bucket).or_default();
+                let money = books.revenue.entry(r.bucket.to_jiff()).or_default();
                 let kind = SaleKind::parse(&r.sale_kind);
                 let (target, by_kind) = match r.entry.as_str() {
                     "payment" => (&mut money.collected, Some(&mut money.collected_by_kind)),
@@ -274,11 +277,11 @@ impl Books {
         Ok(books)
     }
 
-    fn counts(&self, bucket: NaiveDate) -> DayCounts {
+    fn counts(&self, bucket: Date) -> DayCounts {
         self.counts.get(&bucket).copied().unwrap_or_default()
     }
 
-    fn revenue(&self, bucket: NaiveDate) -> Revenue {
+    fn revenue(&self, bucket: Date) -> Revenue {
         self.revenue
             .get(&bucket)
             .copied()
@@ -287,7 +290,7 @@ impl Books {
     }
 }
 
-fn headline(books: &Books, date: NaiveDate, with_money: bool) -> DayHeadline {
+fn headline(books: &Books, date: Date, with_money: bool) -> DayHeadline {
     let c = books.counts(date);
     DayHeadline {
         date,
@@ -299,15 +302,15 @@ fn headline(books: &Books, date: NaiveDate, with_money: bool) -> DayHeadline {
     }
 }
 
-async fn today(tx: &mut TenantTx) -> Result<NaiveDate, AppError> {
-    Ok(kernel::tenant::profile(tx).await?.business_date.as_naive())
+async fn today(tx: &mut TenantTx) -> Result<Date, AppError> {
+    Ok(kernel::tenant::profile(tx).await?.business_date.as_date())
 }
 
 /// `GET /reports/daily?date=` (`report.read`; money with `report.revenue.read`).
 pub async fn daily(
     pool: &PgPool,
     actor: &Actor,
-    date: Option<NaiveDate>,
+    date: Option<Date>,
 ) -> Result<DailyReport, AppError> {
     actor.require(Permission::ReportRead)?;
     let with_money = actor.can(Permission::ReportRevenueRead);
@@ -332,7 +335,7 @@ pub async fn daily(
            GROUP BY l.staff_id, st.full_name
            ORDER BY 3 DESC, st.full_name, l.staff_id"#,
         tenant,
-        date
+        date.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?;
@@ -351,12 +354,12 @@ pub async fn daily(
 
 /// Validated `[from, to]` with defaults: `to` = today, `from` = `to` − (default_days − 1).
 fn window(
-    from: Option<NaiveDate>,
-    to: Option<NaiveDate>,
-    today: NaiveDate,
+    from: Option<Date>,
+    to: Option<Date>,
+    today: Date,
     default_days: u64,
     max_days: u64,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
+) -> Result<(Date, Date), AppError> {
     let to = to.unwrap_or_else(|| from.map_or(today, |f| f.max(today)));
     let from = match from {
         Some(f) => f,
@@ -365,7 +368,7 @@ fn window(
     if from > to {
         return Err(field("from", "after_to"));
     }
-    let span = u64::try_from((to - from).num_days()).unwrap_or(u64::MAX);
+    let span = u64::try_from((to - from).get_days()).unwrap_or(u64::MAX);
     if span >= max_days {
         return Err(field("to", "range_too_long"));
     }
@@ -376,9 +379,9 @@ fn window(
 /// one is given) or `from` / `to` (default the last 7 days, by day). Bounded per granularity.
 fn range_window(
     query: &RangeQuery,
-    today: NaiveDate,
+    today: Date,
     long_range: bool,
-) -> Result<(NaiveDate, NaiveDate, Granularity), AppError> {
+) -> Result<(Date, Date, Granularity), AppError> {
     let (from, to, granularity) = match query.preset {
         Some(_) if query.from.is_some() || query.to.is_some() => {
             return Err(field("preset", "conflicts_with_range"));
@@ -504,8 +507,8 @@ pub async fn range(
            ORDER BY 3 DESC, 2, cp.plan_id
            LIMIT $4"#,
         tenant,
-        from,
-        to,
+        from.to_sqlx(),
+        to.to_sqlx(),
         TOP
     )
     .fetch_all(tx.conn())
@@ -520,7 +523,7 @@ pub async fn range(
     .collect();
     tx.commit().await?;
 
-    let mut buckets: Vec<NaiveDate> = all_days
+    let mut buckets: Vec<Date> = all_days
         .iter()
         .map(|d| bucket_of(*d, granularity))
         .collect();
@@ -533,7 +536,7 @@ pub async fn range(
         .map(|(i, key)| {
             let end = buckets
                 .get(i + 1)
-                .and_then(|next| next.pred_opt())
+                .and_then(|next| next.yesterday().ok())
                 .map_or(to, |e| e.min(to));
             let counts = books.counts(*key);
             let revenue = books.revenue(*key);
@@ -568,8 +571,8 @@ pub async fn range(
 pub async fn ledger(
     pool: &PgPool,
     actor: &Actor,
-    from: Option<NaiveDate>,
-    to: Option<NaiveDate>,
+    from: Option<Date>,
+    to: Option<Date>,
     after: Option<&str>,
     limit: Option<u32>,
 ) -> Result<LedgerPage, AppError> {
@@ -624,9 +627,9 @@ pub async fn ledger(
            ORDER BY b.business_date, b.seq
            LIMIT $6"#,
         tenant,
-        from,
-        to,
-        a_day,
+        from.to_sqlx(),
+        to.to_sqlx(),
+        a_day.map(ToSqlx::to_sqlx),
         a_seq,
         limit + 1
     )
@@ -659,14 +662,14 @@ pub async fn ledger(
            GROUP BY b.business_date
            ORDER BY b.business_date"#,
         tenant,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?
     .into_iter()
     .map(|d| LedgerDay {
-        date: d.date,
+        date: d.date.to_jiff(),
         bank_transfer: d.bank_transfer,
         cash: d.cash,
         unpaid: d.unpaid,
@@ -681,7 +684,7 @@ pub async fn ledger(
     let next_cursor = more
         .then(|| rows.last())
         .flatten()
-        .map(|r| cursor::encode(&[r.business_date.to_string(), r.seq.to_string()]));
+        .map(|r| cursor::encode(&[r.business_date.to_jiff().to_string(), r.seq.to_string()]));
     Ok(LedgerPage {
         from,
         to,
@@ -694,8 +697,8 @@ pub async fn ledger(
                     "void" => LedgerEntry::Void,
                     _ => LedgerEntry::Refund,
                 },
-                business_date: r.business_date,
-                at: r.at,
+                business_date: r.business_date.to_jiff(),
+                at: r.at.to_jiff(),
                 customer_id: r.customer_id,
                 customer_name: r.full_name,
                 customer_gender: gender_dto(r.gender.as_deref()),
@@ -728,7 +731,7 @@ pub async fn ledger(
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 

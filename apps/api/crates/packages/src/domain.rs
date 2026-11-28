@@ -1,6 +1,6 @@
 //! Pure package rules: derived status and the value of a session (spec R1-1 D4).
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use kernel::Money;
 
 /// Never stored, so it can never drift (data.md): precedence cancelled → exhausted → expired → active.
@@ -16,8 +16,8 @@ impl PackageStatus {
     pub fn derive(
         cancelled: bool,
         sessions_remaining: i64,
-        expires_on: Option<NaiveDate>,
-        today: NaiveDate,
+        expires_on: Option<Date>,
+        today: Date,
     ) -> Self {
         if cancelled {
             Self::Cancelled
@@ -107,8 +107,8 @@ mod tests {
         Money::vnd(v).unwrap_or_default()
     }
 
-    fn day(d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 11, d).unwrap_or_default()
+    fn day(d: i8) -> Date {
+        jiff::civil::date(2026, 11, d)
     }
 
     #[test]

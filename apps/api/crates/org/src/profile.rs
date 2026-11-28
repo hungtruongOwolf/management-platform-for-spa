@@ -10,7 +10,9 @@
 use crate::employment::{Employment, Period, Tenure};
 use crate::repo::{self, AccountRow, HistoryRow, PayRow, PeriodRow, ProfileRow, ProfileWrite};
 use crate::service::StaffStatus;
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use jiff::Timestamp;
+use jiff::civil::{Date, Time};
+use jiff::tz::TimeZone;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantTx};
 use serde_json::{Value, json};
@@ -47,15 +49,15 @@ pub struct Profile {
     pub phone: Option<PhoneE164>,
     pub status: StaffStatus,
     /// Start of the latest period (mirrored on the staff row).
-    pub joined_on: Option<NaiveDate>,
+    pub joined_on: Option<Date>,
     /// End of the latest period, when the person has left.
-    pub left_on: Option<NaiveDate>,
+    pub left_on: Option<Date>,
     /// The login linked to this staff member (self-service), with its display name.
     pub user_id: Option<Uuid>,
     pub user_name: Option<String>,
     /// The linked login as the owner manages it (phone, role, locked): `None` when unlinked.
     pub login: Option<LoginInfo>,
-    pub shift_start: Option<NaiveTime>,
+    pub shift_start: Option<Time>,
     pub note: Option<String>,
     pub version: i64,
     pub employment: Employment,
@@ -82,8 +84,8 @@ impl Profile {
             position: r.account_role.unwrap_or(r.position),
             phone: r.phone_e164.and_then(|p| PhoneE164::parse(&p).ok()),
             status,
-            joined_on: r.joined_on,
-            left_on: r.left_on,
+            joined_on: r.joined_on.map(jiff_sqlx::Date::to_jiff),
+            left_on: r.left_on.map(jiff_sqlx::Date::to_jiff),
             login: r.user_id.map(|_| LoginInfo {
                 phone: r
                     .user_phone
@@ -98,7 +100,7 @@ impl Profile {
             }),
             user_id: r.user_id,
             user_name: r.user_name,
-            shift_start: r.shift_start,
+            shift_start: r.shift_start.map(jiff_sqlx::Time::to_jiff),
             note: r.note,
             version: r.version,
             employment: Employment::new(periods),
@@ -109,8 +111,8 @@ impl Profile {
 fn period_of(r: PeriodRow) -> Period {
     Period {
         id: r.id,
-        started_on: r.started_on,
-        ended_on: r.ended_on,
+        started_on: r.started_on.map(jiff_sqlx::Date::to_jiff),
+        ended_on: r.ended_on.map(jiff_sqlx::Date::to_jiff),
         end_reason: r.end_reason,
     }
 }
@@ -181,8 +183,8 @@ pub struct ProfileInput {
     pub phone: Option<String>,
     /// Start of the current period ("ngày vào làm"); `None` = not recorded (tenure unknown).
     /// The UI fills in today when hiring.
-    pub joined_on: Option<NaiveDate>,
-    pub shift_start: Option<NaiveTime>,
+    pub joined_on: Option<Date>,
+    pub shift_start: Option<Time>,
     pub note: Option<String>,
 }
 
@@ -295,7 +297,7 @@ fn audit_profile(p: &Profile) -> Value {
         "full_name": p.full_name, "position": p.position,
         "has_phone": p.phone.is_some(), "has_note": p.note.is_some(), "status": p.status.as_str(),
         "joined_on": p.joined_on, "left_on": p.left_on, "user_id": p.user_id,
-        "shift_start": p.shift_start.map(|t| t.format("%H:%M").to_string()),
+        "shift_start": p.shift_start.map(|t| t.strftime("%H:%M").to_string()),
     })
 }
 
@@ -306,7 +308,7 @@ fn audit_pay(p: &PayTerms) -> Value {
     })
 }
 
-fn view(actor: &Actor, profile: Profile, pay: Option<&PayRow>, today: NaiveDate) -> ProfileView {
+fn view(actor: &Actor, profile: Profile, pay: Option<&PayRow>, today: Date) -> ProfileView {
     let pay_visible = actor.can(Permission::PayrollRead);
     ProfileView {
         tenure: profile.employment.tenure(today),
@@ -326,8 +328,8 @@ pub(crate) fn fresh(p: &Profile, version: i64) -> Result<(), AppError> {
     }
 }
 
-async fn today(tx: &mut TenantTx) -> Result<NaiveDate, AppError> {
-    Ok(kernel::tenant::profile(tx).await?.business_date.as_naive())
+async fn today(tx: &mut TenantTx) -> Result<Date, AppError> {
+    Ok(kernel::tenant::profile(tx).await?.business_date.as_date())
 }
 
 /// The caller's view of one profile, read inside the write's transaction.
@@ -564,10 +566,7 @@ const UPCOMING_LISTED: i64 = 20;
 /// `409 staff.has_upcoming_bookings` naming the bookings to reassign first (F24, 2026-11-08):
 /// date, start time in the spa's time zone and the customer as the calendar shows them. The caller
 /// manages staff and sees the calendar already; no phone or note is included.
-fn upcoming_bookings<Tz: chrono::TimeZone>(rows: &[repo::UpcomingBookingRow], tz: &Tz) -> AppError
-where
-    Tz::Offset: std::fmt::Display,
-{
+fn upcoming_bookings(rows: &[repo::UpcomingBookingRow], tz: &TimeZone) -> AppError {
     let shown = usize::try_from(UPCOMING_LISTED).unwrap_or(usize::MAX);
     let bookings: Vec<Value> = rows
         .iter()
@@ -576,7 +575,7 @@ where
             json!({
                 "id": b.id,
                 "date": b.business_date,
-                "time": b.starts_at.with_timezone(tz).format("%H:%M").to_string(),
+                "time": tz.to_datetime(b.starts_at).strftime("%H:%M").to_string(),
                 "customer": b.customer,
             })
         })
@@ -588,7 +587,7 @@ where
 }
 
 pub struct EndInput {
-    pub ended_on: NaiveDate,
+    pub ended_on: Date,
     pub reason: String,
     /// Also lock the linked login in this spa (the owner's choice, "Khóa tài khoản").
     pub lock_login: bool,
@@ -703,7 +702,7 @@ pub async fn rehire(
     actor: &Actor,
     id: Uuid,
     version: i64,
-    started_on: NaiveDate,
+    started_on: Date,
 ) -> Result<ProfileView, AppError> {
     actor.require(Permission::StaffManage)?;
     let mut tx = TenantTx::for_actor(pool, actor).await?;
@@ -816,7 +815,7 @@ pub struct Change {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryEntry {
-    pub at: DateTime<Utc>,
+    pub at: Timestamp,
     /// `staff.create`, `staff.update`, `staff.account_link`, `staff.end`, `staff.rehire`,
     /// `staff.pay_update`.
     pub action: String,
@@ -954,7 +953,7 @@ mod tests {
             position: "Kỹ thuật viên".into(),
             phone: Some("0905 111 222".into()),
             joined_on: "2026-01-05".parse().ok(),
-            shift_start: NaiveTime::from_hms_opt(9, 0, 0),
+            shift_start: Time::new(9, 0, 0, 0).ok(),
             note: Some("  ".into()),
         }
     }

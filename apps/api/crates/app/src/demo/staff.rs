@@ -8,12 +8,13 @@ use super::rng::Rng;
 use super::run::{each, retry};
 use super::{Clock, Window, fail, idempotency};
 use anyhow::Context;
-use chrono::{Duration, NaiveDate, NaiveTime};
 use hr::adjustment::{AdjustmentInput, AdjustmentKind};
 use hr::attendance::{AttendanceStatus, Entry};
 use hr::evaluation::{CRITERIA, CriterionInput, EvaluationInput, Level};
 use hr::month::Month;
 use hr::review::ReviewEntry;
+use jiff::Span;
+use jiff::civil::{Date, Time};
 use kernel::{Actor, UserId};
 use org::profile::{EndInput, PayInput, ProfileInput};
 use sqlx::PgPool;
@@ -42,9 +43,9 @@ pub struct Member {
     pub name: &'static str,
     pub technician: bool,
     pub login: Option<Login>,
-    pub joined: NaiveDate,
+    pub joined: Date,
     /// Last day of work (she left; ADR-0013 period ended with a reason).
-    pub left: Option<NaiveDate>,
+    pub left: Option<Date>,
     /// (base salary, commission bp, loyalty bonus per month, meal allowance)
     pub pay: (i64, i32, i64, i64),
     /// Takes more days off than the others (payslip deductions, a weak evaluation).
@@ -52,7 +53,7 @@ pub struct Member {
 }
 
 impl Member {
-    pub fn works_on(&self, day: NaiveDate) -> bool {
+    pub fn works_on(&self, day: Date) -> bool {
         self.joined <= day && self.left.is_none_or(|l| day <= l)
     }
 
@@ -62,14 +63,14 @@ impl Member {
 }
 
 /// The roster, dated relative to `today`. Index 0 is the manager; the leaver is last.
-pub fn roster(today: NaiveDate) -> Vec<Member> {
+pub fn roster(today: Date) -> Vec<Member> {
     let this_month = Month::of(today);
-    let last_month = Month::of(this_month.first_day() - Duration::days(1));
+    let last_month = Month::of(this_month.first_day() - Span::new().days(1));
     let mut four_ago = this_month;
     for _ in 0..4 {
-        four_ago = Month::of(four_ago.first_day() - Duration::days(1));
+        four_ago = Month::of(four_ago.first_day() - Span::new().days(1));
     }
-    let ago = |days: i64| today - Duration::days(days);
+    let ago = |days: i64| today - Span::new().days(days);
     let m = |name, technician, login, joined, pay| Member {
         name,
         technician,
@@ -107,7 +108,7 @@ pub fn roster(today: NaiveDate) -> Vec<Member> {
             "Lê Thị Hoa",
             true,
             None,
-            four_ago.first_day() + Duration::days(19),
+            four_ago.first_day() + Span::new().days(19),
             (4_500_000, 1_000, 500_000, 300_000),
         ),
         Member {
@@ -131,7 +132,7 @@ pub fn roster(today: NaiveDate) -> Vec<Member> {
         // loyalty bonus; her login now sees only her past months.
         Member {
             left: Some(
-                (last_month.first_day() + Duration::days(17)).min(today - Duration::days(1)),
+                (last_month.first_day() + Span::new().days(17)).min(today - Span::new().days(1)),
             ),
             ..m(
                 "Đỗ Thị Ngân",
@@ -148,18 +149,18 @@ pub fn roster(today: NaiveDate) -> Vec<Member> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
     pub status: AttendanceStatus,
-    pub check_in: Option<NaiveTime>,
-    pub check_out: Option<NaiveTime>,
+    pub check_in: Option<Time>,
+    pub check_out: Option<Time>,
 }
 
 /// Who is at work each day: `cells[member][day offset from the window start]`.
 pub struct Attendance {
-    start: NaiveDate,
+    start: Date,
     cells: Vec<Vec<Option<Cell>>>,
 }
 
-fn time(h: u32, m: u32) -> Option<NaiveTime> {
-    NaiveTime::from_hms_opt(h, m, 0)
+fn time(h: i8, m: i8) -> Option<Time> {
+    Time::new(h, m, 0, 0).ok()
 }
 
 impl Attendance {
@@ -172,7 +173,7 @@ impl Attendance {
             .map(|member| {
                 (0..days)
                     .map(|offset| {
-                        let day = window.start + Duration::days(i64::try_from(offset).ok()?);
+                        let day = window.start + Span::new().days(i64::try_from(offset).ok()?);
                         if !member.works_on(day) {
                             return None;
                         }
@@ -185,8 +186,8 @@ impl Attendance {
                             _ => AttendanceStatus::AbsentK,
                         };
                         let late = rng.chance(if member.often_absent { 30 } else { 12 });
-                        let minute = u32::try_from(rng.below(20)).unwrap_or(0);
-                        let out = u32::try_from(rng.below(60)).unwrap_or(0);
+                        let minute = i8::try_from(rng.below(20)).unwrap_or(0);
+                        let out = i8::try_from(rng.below(60)).unwrap_or(0);
                         let present = status == AttendanceStatus::Present;
                         Some(Cell {
                             status,
@@ -211,14 +212,14 @@ impl Attendance {
         }
     }
 
-    pub fn cell(&self, member: usize, day: NaiveDate) -> Option<Cell> {
-        let offset = usize::try_from((day - self.start).num_days()).ok()?;
+    pub fn cell(&self, member: usize, day: Date) -> Option<Cell> {
+        let offset = usize::try_from(i64::from((day - self.start).get_days())).ok()?;
         self.cells.get(member)?.get(offset).copied().flatten()
     }
 
     /// Technicians at work on `day` (indices into the roster); every employed technician when
     /// nobody is (never leaves a visit without a technician).
-    pub fn technicians_on(&self, roster: &[Member], day: NaiveDate) -> Vec<usize> {
+    pub fn technicians_on(&self, roster: &[Member], day: Date) -> Vec<usize> {
         let present: Vec<usize> = (0..roster.len())
             .filter(|&m| roster[m].technician)
             .filter(|&m| {
@@ -274,7 +275,7 @@ pub async fn setup(
     slug: &str,
     roster: &[Member],
     logins: &Logins,
-    (clock, start): (Clock, NaiveDate),
+    (clock, start): (Clock, Date),
     report: &mut StaffReport,
 ) -> anyhow::Result<Staff> {
     let names = |list: Vec<org::profile::ProfileView>| -> HashMap<String, Uuid> {
@@ -413,8 +414,8 @@ impl Books<'_> {
     /// Every cell of the plan, the manager's by the owner (decision C), in batches of at most
     /// [`hr::attendance::MAX_ENTRIES`], months side by side.
     async fn attendance(&self, report: &mut StaffReport) -> anyhow::Result<()> {
-        let mut firsts: Vec<(bool, NaiveDate, Vec<Entry>)> = Vec::new();
-        let mut batches: Vec<(bool, NaiveDate, Vec<Entry>)> = Vec::new();
+        let mut firsts: Vec<(bool, Date, Vec<Entry>)> = Vec::new();
+        let mut batches: Vec<(bool, Date, Vec<Entry>)> = Vec::new();
         for month in months(self.window) {
             let mut first = true;
             let mut day = month.first_day().max(self.window.start);
@@ -458,10 +459,10 @@ impl Books<'_> {
                         }
                     }
                 }
-                day += Duration::days(1);
+                day += Span::new().days(1);
             }
         }
-        let work = |(by_owner, day, batch): (bool, NaiveDate, Vec<Entry>)| async move {
+        let work = |(by_owner, day, batch): (bool, Date, Vec<Entry>)| async move {
             let actor = if by_owner { self.owner } else { self.manager };
             let actor = &self
                 .clock
@@ -483,10 +484,10 @@ impl Books<'_> {
 
     /// Compliments and complaints on about a fifth of the technicians' working days.
     async fn reviews(&self, rng: &mut Rng) -> anyhow::Result<usize> {
-        let mut batches: Vec<(NaiveDate, Vec<ReviewEntry>)> = Vec::new();
+        let mut batches: Vec<(Date, Vec<ReviewEntry>)> = Vec::new();
         for month in months(self.window) {
             let mut day = month.first_day().max(self.window.start);
-            while day < month.last_day().min(self.window.today) + Duration::days(1) {
+            while day < month.last_day().min(self.window.today) + Span::new().days(1) {
                 let mut list = Vec::new();
                 for (m, member) in self.roster.iter().enumerate() {
                     let at_work = self
@@ -512,7 +513,7 @@ impl Books<'_> {
                 for chunk in list.chunks(hr::review::MAX_ENTRIES) {
                     batches.push((day, chunk.to_vec()));
                 }
-                day += Duration::days(1);
+                day += Span::new().days(1);
             }
         }
         let recorded = each(batches, self.workers, |(day, batch)| async move {
@@ -533,7 +534,7 @@ impl Books<'_> {
             for _ in 0..1 + rng.below(3) {
                 let m = 1 + rng.below(self.roster.len() - 1);
                 let day =
-                    month.first_day() + Duration::days(i64::try_from(rng.below(28)).unwrap_or(0));
+                    month.first_day() + Span::new().days(i64::try_from(rng.below(28)).unwrap_or(0));
                 if day > self.window.today
                     || day < self.window.start
                     || !self.roster[m].works_on(day)
@@ -636,7 +637,7 @@ impl Books<'_> {
             };
             let actor = &self.clock.acting(
                 actor,
-                month.last_day() + Duration::days(1),
+                month.last_day() + Span::new().days(1),
                 9 * 60 + 30 + u32::try_from(m).unwrap_or(0) * 7,
             );
             retry(|| hr::evaluation::record(self.app, actor, &input))
@@ -694,7 +695,7 @@ impl Books<'_> {
             let owner =
                 &self
                     .clock
-                    .acting(self.owner, month.last_day() + Duration::days(3), 10 * 60);
+                    .acting(self.owner, month.last_day() + Span::new().days(3), 10 * 60);
             let (_, body) = retry(|| {
                 hr::payroll::close(self.app, owner, key, hash, &input, |m| {
                     serde_json::to_value(m).map_err(|e| kernel::AppError::Internal(e.to_string()))
@@ -755,7 +756,7 @@ const ADJUSTMENTS: &[Adjustment] = &[
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 
@@ -781,7 +782,7 @@ mod tests {
                 assert_eq!(plan.cell(m, day).is_some(), member.works_on(day), "{day}");
             }
             assert!(!plan.technicians_on(&roster, day).is_empty());
-            day += Duration::days(1);
+            day += Span::new().days(1);
         }
         let leaver = roster.len() - 1;
         assert!(plan.cell(leaver, d("2026-10-19")).is_none());

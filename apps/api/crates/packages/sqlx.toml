@@ -1,0 +1,11 @@
+# sqlx query macros (ADR-0026): date and time columns and parameters use the jiff-sqlx wrappers;
+# convert with `.to_jiff()` / `.to_sqlx()` (or `From`). sqlx reads this file from the root of the
+# crate being compiled, so every crate that runs `query!` has an identical copy (checked by
+# `kernel/tests/sqlx_toml.rs`).
+[macros.type-overrides]
+'TIMESTAMPTZ' = "jiff_sqlx::Timestamp"
+'DATE' = "jiff_sqlx::Date"
+'TIME' = "jiff_sqlx::Time"
+'TIMESTAMPTZ[]' = "Vec<jiff_sqlx::Timestamp>"
+'DATE[]' = "Vec<jiff_sqlx::Date>"
+'TIME[]' = "Vec<jiff_sqlx::Time>"

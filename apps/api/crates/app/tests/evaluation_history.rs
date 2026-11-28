@@ -7,11 +7,11 @@
 mod common;
 
 use axum::http::StatusCode;
-use chrono::{Datelike, Months, NaiveDate, Utc};
-use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{OWNER_PHONE, Reply, TestResult, add_member, call, harness, session_for};
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
+use jiff::Span;
+use jiff::civil::Date;
 use kernel::testing::app_pool;
 use kernel::{Actor, TenantId, UserId};
 use serde_json::{Value, json};
@@ -22,13 +22,13 @@ const MANAGER_PHONE: &str = "0912000111";
 const TECH_PHONE: &str = "0912000222";
 const OTHER_OWNER_PHONE: &str = "0913000333";
 
-fn this_month() -> NaiveDate {
-    let today = Utc::now().with_timezone(&Ho_Chi_Minh).date_naive();
-    today.with_day(1).unwrap_or(today)
+fn this_month() -> Date {
+    let today = common::vn_today();
+    today.first_of_month()
 }
 
-fn ym(d: NaiveDate) -> String {
-    d.format("%Y-%m").to_string()
+fn ym(d: Date) -> String {
+    d.strftime("%Y-%m").to_string()
 }
 
 fn criteria() -> Value {
@@ -99,7 +99,7 @@ async fn spa(pool: PgPool) -> Result<Spa, Box<dyn std::error::Error>> {
             .execute(&h.owner)
             .await?;
     }
-    let last = this_month() - Months::new(1);
+    let last = this_month() - Span::new().months(1);
     sqlx::query(
         "INSERT INTO app.staff_evaluation
            (tenant_id, staff_id, work_date, criteria, serious_issue, total_points, result_level,
@@ -108,7 +108,7 @@ async fn spa(pool: PgPool) -> Result<Spa, Box<dyn std::error::Error>> {
     )
     .bind(tenant)
     .bind(lan)
-    .bind(last)
+    .bind(jiff_sqlx::Date::from(last))
     .bind(criteria())
     .bind(manager_user)
     .execute(&h.owner)
@@ -119,7 +119,7 @@ async fn spa(pool: PgPool) -> Result<Spa, Box<dyn std::error::Error>> {
     )
     .bind(tenant)
     .bind(lan)
-    .bind(last + chrono::Duration::days(4))
+    .bind(jiff_sqlx::Date::from(last + Span::new().days(4)))
     .bind(manager_user)
     .execute(&h.owner)
     .await?;
@@ -150,7 +150,7 @@ impl Spa {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn owners_and_managers_read_a_persons_months(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let last = ym(this_month() - Months::new(1));
+    let last = ym(this_month() - Span::new().months(1));
     for who in [&s.owner, &s.manager] {
         let r = s.history(Some(who), &format!("?staff_id={}", s.lan)).await;
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);
@@ -331,7 +331,7 @@ async fn bad_requests_are_refused(pool: PgPool) -> TestResult {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_technician_reads_only_their_own_scorecard(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let last = ym(this_month() - Months::new(1));
+    let last = ym(this_month() - Span::new().months(1));
     let me = call(
         &s.h.app,
         "GET",
@@ -381,7 +381,7 @@ fn months_of(r: &Reply) -> Vec<String> {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn a_technician_reads_their_own_months_only(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let last = ym(this_month() - Months::new(1));
+    let last = ym(this_month() - Span::new().months(1));
     let r = mine(&s, Some(&s.tech), "").await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     assert_eq!(r.body["linked"], true);
@@ -421,16 +421,16 @@ async fn a_technician_reads_their_own_months_only(pool: PgPool) -> TestResult {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn former_staff_see_only_the_months_they_worked(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let started = this_month() - Months::new(4);
-    let left = this_month() - Months::new(1) + chrono::Duration::days(14);
+    let started = this_month() - Span::new().months(4);
+    let left = this_month() - Span::new().months(1) + Span::new().days(14);
     sqlx::query(
         "UPDATE app.staff_employment SET started_on = $3, ended_on = $4, end_reason = 'Chuyển về quê'
          WHERE tenant_id = $1 AND staff_id = $2 AND ended_on IS NULL",
     )
     .bind(s.tenant)
     .bind(s.lan)
-    .bind(started)
-    .bind(left)
+    .bind(jiff_sqlx::Date::from(started))
+    .bind(jiff_sqlx::Date::from(left))
     .execute(&s.h.owner)
     .await?;
     sqlx::query(
@@ -438,11 +438,13 @@ async fn former_staff_see_only_the_months_they_worked(pool: PgPool) -> TestResul
     )
     .bind(s.tenant)
     .bind(s.lan)
-    .bind(started)
-    .bind(left)
+    .bind(jiff_sqlx::Date::from(started))
+    .bind(jiff_sqlx::Date::from(left))
     .execute(&s.h.owner)
     .await?;
-    let expected: Vec<String> = (1..=4).map(|n| ym(this_month() - Months::new(n))).collect();
+    let expected: Vec<String> = (1..=4)
+        .map(|n| ym(this_month() - Span::new().months(n)))
+        .collect();
     let r = mine(&s, Some(&s.tech), "").await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     assert_eq!(r.body["left_on"], left.to_string());
@@ -452,7 +454,7 @@ async fn former_staff_see_only_the_months_they_worked(pool: PgPool) -> TestResul
     assert_eq!(past_end.status, StatusCode::OK, "{}", past_end.body);
     assert_eq!(months_of(&past_end), expected);
     // A range wholly before they started: empty, not refused.
-    let before = this_month() - Months::new(8);
+    let before = this_month() - Span::new().months(8);
     let none = mine(
         &s,
         Some(&s.tech),

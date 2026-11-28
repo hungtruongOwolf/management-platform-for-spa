@@ -6,7 +6,7 @@ use crate::audit::{self, PlatformEntry};
 use crate::auth::OperatorSession;
 use crate::gate_refusal;
 use crate::tenants::Reason;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use kernel::audit::{Action, AuditEntry, record_platform};
 use kernel::{AppError, Feature, TenantId, TenantTx};
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,8 @@ pub struct TenantFeature {
     /// The state without an operator's switch (`updated_at` null).
     pub default_enabled: bool,
     /// When an operator last switched it (`null` = never: the default applies).
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub updated_at: Option<Timestamp>,
 }
 
 /// `GET /admin/tenants/{id}/features`: every registry feature, its default unless a row says
@@ -77,7 +78,7 @@ pub async fn of_tenant(
                 name: f.name(),
                 enabled: row.map_or(f.default_enabled(), |r| r.enabled),
                 default_enabled: f.default_enabled(),
-                updated_at: row.map(|r| r.updated_at),
+                updated_at: (row.map(|r| r.updated_at)).map(jiff_sqlx::Timestamp::to_jiff),
             }
         })
         .collect())
@@ -157,6 +158,6 @@ pub async fn set(
         name: feature.name(),
         enabled: input.enabled,
         default_enabled: feature.default_enabled(),
-        updated_at: Some(Utc::now()),
+        updated_at: Some(Timestamp::now()),
     })
 }

@@ -13,8 +13,8 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use chrono::{DateTime, Utc};
 use identity::AuthUser;
+use jiff::Timestamp;
 use kernel::http::{IdempotencyKey, IfMatch, etag};
 use kernel::idempotency::hash_route;
 use kernel::{AppError, FieldError, Permission};
@@ -77,7 +77,8 @@ pub enum LuckyDrawEligible {
 pub struct LuckyDrawSummary {
     pub id: Uuid,
     pub name: String,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
     pub participant_count: i64,
     /// Every prize's quantity, summed.
     pub prize_slots: i64,
@@ -132,10 +133,12 @@ pub struct LuckyDrawResult {
     pub seq: i32,
     pub prize_id: Uuid,
     pub participant_id: Uuid,
-    pub drawn_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub drawn_at: Timestamp,
     /// "Vắng mặt, trả giải": the slot went back to the prize, the person stays out of the draw.
     #[schema(required = true)]
-    pub forfeited_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub forfeited_at: Option<Timestamp>,
 }
 
 /// A whole draw: what every read and write of it answers.
@@ -143,7 +146,8 @@ pub struct LuckyDrawResult {
 pub struct LuckyDrawDetail {
     pub id: Uuid,
     pub name: String,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
     /// Goes up on every write inside the draw; send back as `If-Match` when renaming it.
     pub version: i64,
     pub status: LuckyDrawStatus,
@@ -164,7 +168,8 @@ pub struct LuckyDrawSpinResult {
     pub seq: i32,
     pub prize_id: Uuid,
     pub participant_id: Uuid,
-    pub drawn_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub drawn_at: Timestamp,
 }
 
 /// `POST /lucky-draws/{id}/spins`: the result, and the whole draw after it.
@@ -279,7 +284,7 @@ fn result_dto(r: ResultRow) -> LuckyDrawResult {
         prize_id: r.prize_id,
         participant_id: r.participant_id,
         drawn_at: r.drawn_at,
-        forfeited_at: r.forfeited_at,
+        forfeited_at: r.forfeited_at.map(jiff_sqlx::Timestamp::to_jiff),
     }
 }
 

@@ -5,7 +5,7 @@ use crate::error::AppError;
 use crate::feature::Feature;
 use crate::ids::{TenantId, UserId};
 use crate::tenant::TenantFacts;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::collections::BTreeSet;
 use std::net::IpAddr;
 
@@ -121,7 +121,7 @@ pub struct Actor {
     /// Tooling only (`app seed-demo`): the instant this actor's audit entries are stamped with,
     /// so back-filled history reads as written on its own day (ADR-0021). A session's actor never
     /// has one: nothing a request sends reaches it.
-    clock: Option<DateTime<Utc>>,
+    clock: Option<Timestamp>,
 }
 
 impl Actor {
@@ -146,13 +146,13 @@ impl Actor {
     /// instead of the database clock at write time (ADR-0023). Nothing else stamps them: the `now`
     /// of a `*_as_of` use case is its business clock only.
     #[must_use]
-    pub const fn at_clock(mut self, at: DateTime<Utc>) -> Self {
+    pub const fn at_clock(mut self, at: Timestamp) -> Self {
         self.clock = Some(at);
         self
     }
 
     /// The instant set by [`Actor::at_clock`], if any.
-    pub const fn clock(&self) -> Option<DateTime<Utc>> {
+    pub const fn clock(&self) -> Option<Timestamp> {
         self.clock
     }
 

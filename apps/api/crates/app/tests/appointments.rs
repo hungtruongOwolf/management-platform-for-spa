@@ -5,12 +5,13 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{Duration, FixedOffset, NaiveDate, Utc};
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
+use jiff::civil::Date;
+use jiff::{SignedDuration, Span, Timestamp};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -52,17 +53,13 @@ fn service_id(services: &Value, name: &str) -> String {
         .to_owned()
 }
 
-fn vn() -> FixedOffset {
-    FixedOffset::east_opt(7 * 3600).unwrap_or_else(|| panic!("offset"))
-}
-
-fn spa_today() -> NaiveDate {
-    Utc::now().with_timezone(&vn()).date_naive()
+fn spa_today() -> Date {
+    common::vn_today()
 }
 
 /// `HH:MM` on the spa's day `today + days`, as RFC 3339.
 fn at(days: i64, hm: &str) -> String {
-    format!("{}T{hm}:00+07:00", spa_today() + Duration::days(days))
+    format!("{}T{hm}:00+07:00", spa_today() + Span::new().days(days))
 }
 
 fn key() -> String {
@@ -239,7 +236,7 @@ async fn bookings_respect_technicians_and_the_grid(pool: PgPool) -> TestResult {
     let calendar = call(
         &s.h.app,
         "GET",
-        &format!("/appointments?from={}", spa_today() + Duration::days(1)),
+        &format!("/appointments?from={}", spa_today() + Span::new().days(1)),
         Some(&s.manager),
         None,
     )
@@ -361,11 +358,11 @@ async fn a_booking_lasts_exactly_its_services_time(pool: PgPool) -> TestResult {
     let first = book(json!({"customer_id": s.ha}), "09:00", Some(&s.lan)).await;
     assert_eq!(first.status, StatusCode::CREATED, "{}", first.body);
     assert_eq!(first.body["duration_min"], 70);
-    let end = chrono::DateTime::parse_from_rfc3339(&at(1, "10:10"))?;
+    let end = parse_instant(&at(1, "10:10"))?;
     assert_eq!(
         first.body["ends_at"]
             .as_str()
-            .map(chrono::DateTime::parse_from_rfc3339)
+            .map(parse_instant)
             .transpose()?,
         Some(end)
     );
@@ -709,7 +706,10 @@ async fn calendar_of(s: &Spa, who: &str, days: i64) -> Reply {
     call(
         &s.h.app,
         "GET",
-        &format!("/appointments?from={}", spa_today() + Duration::days(days)),
+        &format!(
+            "/appointments?from={}",
+            spa_today() + Span::new().days(days)
+        ),
         Some(who),
         None,
     )
@@ -780,10 +780,7 @@ async fn walk_in_visits_share_the_timeline_with_bookings(pool: PgPool) -> TestRe
     let shown = past.body["visits"][0]["starts_at"]
         .as_str()
         .unwrap_or_default();
-    assert_eq!(
-        chrono::DateTime::parse_from_rfc3339(shown)?,
-        chrono::DateTime::parse_from_rfc3339(&at(-1, "10:00"))?
-    );
+    assert_eq!(parse_instant(shown)?, parse_instant(&at(-1, "10:00"))?);
 
     // AC10.2: a voided walk-in stays, marked voided.
     let void = s
@@ -1150,7 +1147,7 @@ async fn past_days_are_locked_for_managers_and_open_to_the_owner(pool: PgPool) -
         None,
     )
     .await;
-    let yesterday = (spa_today() - Duration::days(1)).to_string();
+    let yesterday = (spa_today() - Span::new().days(1)).to_string();
     assert_eq!(owner.body["business_date"], json!(yesterday));
     let moved = call_with_headers(
         &s.h.app,
@@ -1228,16 +1225,16 @@ async fn the_owner_back_dates_visits_onto_the_day_of_the_service(pool: PgPool) -
     );
     let owner = s.post(&s.owner, "/visits", body(&yesterday_at)).await;
     assert_eq!(owner.status, StatusCode::CREATED, "{}", owner.body);
-    let yesterday = (spa_today() - Duration::days(1)).to_string();
+    let yesterday = (spa_today() - Span::new().days(1)).to_string();
     assert_eq!(owner.body["business_date"], json!(yesterday));
-    let sale_day: (NaiveDate, NaiveDate) = sqlx::query_as(
+    let sale_day: (jiff_sqlx::Date, jiff_sqlx::Date) = sqlx::query_as(
         "SELECT s.business_date, p.business_date FROM app.sale s JOIN app.payment p ON p.sale_id = s.id WHERE s.id = $1",
     )
     .bind(Uuid::parse_str(owner.body["sale_id"].as_str().unwrap_or_default())?)
     .fetch_one(&s.h.owner)
     .await?;
-    assert_eq!(sale_day.0.to_string(), yesterday);
-    assert_eq!(sale_day.1.to_string(), yesterday);
+    assert_eq!(sale_day.0.to_jiff().to_string(), yesterday);
+    assert_eq!(sale_day.1.to_jiff().to_string(), yesterday);
     let report = call(
         &s.h.app,
         "GET",
@@ -1781,7 +1778,7 @@ async fn companions_are_added_and_edited_on_an_existing_booking(pool: PgPool) ->
 
 /// Whether a JSON timestamp is the instant `rfc3339`.
 fn is_at(v: &Value, rfc3339: &str) -> bool {
-    let parse = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
+    let parse = |s: &str| parse_instant(s).ok();
     let got = v.as_str().and_then(parse);
     got.is_some() && got == parse(rfc3339)
 }
@@ -1796,10 +1793,10 @@ fn is_at(v: &Value, rfc3339: &str) -> bool {
 /// move on before the request lands; both choices stay refused (and in hours) when it does.
 fn a_slot_already_over() -> String {
     let midnight = at(0, "00:00");
-    let over_from = chrono::DateTime::parse_from_rfc3339(&midnight)
-        .map(|m| m.with_timezone(&Utc) + Duration::minutes(15))
+    let over_from = parse_instant(&midnight)
+        .map(|m| m + SignedDuration::from_mins(15))
         .unwrap_or_default();
-    if Utc::now() >= over_from {
+    if Timestamp::now() >= over_from {
         midnight
     } else {
         at(-1, "10:00")
@@ -2201,4 +2198,9 @@ async fn calendar_columns_follow_the_login_role(pool: PgPool) -> TestResult {
     assert_eq!(booked.status, StatusCode::CREATED, "{}", booked.body);
     assert_eq!(booked.body["staff_name"], "Chị Ngọc");
     Ok(())
+}
+
+/// An RFC 3339 instant from a reply.
+fn parse_instant(s: &str) -> Result<Timestamp, jiff::Error> {
+    s.parse()
 }

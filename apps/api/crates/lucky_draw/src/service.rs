@@ -45,7 +45,7 @@ pub struct Detail {
 pub struct Summary {
     pub id: Uuid,
     pub name: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: jiff::Timestamp,
     pub participant_count: i64,
     /// Every prize's quantity, summed.
     pub prize_slots: i64,

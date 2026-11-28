@@ -17,8 +17,8 @@ use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use chrono::NaiveDate;
 use identity::AuthUser;
+use jiff::civil::Date;
 use kernel::crypto::FieldCipher;
 use kernel::http::invalid_query;
 use kernel::{AppError, Permission};
@@ -187,7 +187,7 @@ pub async fn appointment_history(
 }
 
 #[utoipa::path(get, path = "/api/v1/record-history/staff-day/{staff_id}/{date}", tag = "reports",
-    params(("staff_id" = Uuid, Path), ("date" = NaiveDate, Path, description = "YYYY-MM-DD"), StaffDayQuery),
+    params(("staff_id" = Uuid, Path), ("date" = Date, Path, description = "YYYY-MM-DD"), StaffDayQuery),
     responses(
         (status = 200, body = RecordHistory, description = "One person's cell of one staff book on one day: only that day's rows, never a note's text"),
         (status = 400, description = "query.invalid (book missing or unknown), or the path is not an id and a date"), (status = 401),
@@ -196,7 +196,7 @@ pub async fn appointment_history(
 pub async fn staff_day_history(
     State(pool): State<PgPool>,
     user: AuthUser,
-    path: Result<Path<(Uuid, NaiveDate)>, PathRejection>,
+    path: Result<Path<(Uuid, Date)>, PathRejection>,
     query: Result<Query<StaffDayQuery>, QueryRejection>,
 ) -> Result<Response, AppError> {
     // The rights first (either book's, the book being a query parameter), then the query and its

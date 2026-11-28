@@ -9,8 +9,8 @@
 //! again is a no-op. Back-dating is what the owner's migration does; only holders of
 //! `opening_balance.import` (the owner) reach it.
 
-use chrono::{TimeZone, Utc};
 use crm::FieldCipher;
+use jiff::Timestamp;
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, Permission, TenantTx};
@@ -51,7 +51,7 @@ pub async fn book_in(
         });
     }
     let profile = kernel::tenant::profile(tx).await?;
-    if payment.paid_on > profile.business_date.as_naive() {
+    if payment.paid_on > profile.business_date.as_date() {
         return Err(AppError::Validation(vec![kernel::FieldError::new(
             "paid_on",
             "in_future",
@@ -60,9 +60,8 @@ pub async fn book_in(
     // Noon of the paper day in the spa's time zone: the record's instants fall on its day.
     let at = profile
         .timezone
-        .from_local_datetime(&payment.paid_on.and_hms_opt(12, 0, 0).unwrap_or_default())
-        .earliest()
-        .map_or_else(Utc::now, |t| t.with_timezone(&Utc));
+        .to_timestamp(payment.paid_on.at(12, 0, 0, 0))
+        .unwrap_or_else(|_| Timestamp::now());
     let amount = payment.amount.as_i64();
     let sale_id = Uuid::now_v7();
     repo::insert_paper_sale(
@@ -146,7 +145,7 @@ pub async fn import_opening_balance(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let imported = opening_balance::import_in(&mut tx, cipher, actor, input, today).await?;
     for (package_id, payment) in &imported.packages {
         if let Some(payment) = payment {

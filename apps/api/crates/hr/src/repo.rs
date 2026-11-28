@@ -1,6 +1,8 @@
 //! HR SQL. Every query filters by `tx.tenant()` explicitly; RLS is the second layer.
 
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
+use jiff_sqlx::ToSqlx;
 use kernel::{AppError, TenantTx};
 use serde_json::Value;
 use uuid::Uuid;
@@ -28,17 +30,22 @@ pub async fn supervising_staff(
     .await?)
 }
 
+/// A `date[]` parameter takes the jiff-sqlx wrapper.
+fn sql_dates(days: &[Date]) -> Vec<jiff_sqlx::Date> {
+    days.iter().copied().map(jiff_sqlx::Date::from).collect()
+}
+
 pub struct VisitDayRow {
     pub staff_id: Uuid,
-    pub day: NaiveDate,
+    pub day: Date,
 }
 
 /// Days on which each person performed a service of a completed visit (the attendance warning:
 /// "absent" on a day with visits recorded is likely a mistake).
 pub async fn visit_days(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<VisitDayRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -50,8 +57,8 @@ pub async fn visit_days(
              AND v.business_date BETWEEN $2 AND $3
            ORDER BY 1, 2"#,
         tenant,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -112,11 +119,11 @@ pub async fn put_rules(
 
 pub struct PeriodRow {
     pub status: String,
-    pub closed_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<jiff_sqlx::Timestamp>,
     pub closed_by_name: Option<String>,
 }
 
-pub async fn period(tx: &mut TenantTx, period: NaiveDate) -> Result<Option<PeriodRow>, AppError> {
+pub async fn period(tx: &mut TenantTx, period: Date) -> Result<Option<PeriodRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
         PeriodRow,
@@ -124,24 +131,24 @@ pub async fn period(tx: &mut TenantTx, period: NaiveDate) -> Result<Option<Perio
            FROM app.payroll_period p LEFT JOIN app.user_account u ON u.id = p.closed_by
            WHERE p.tenant_id = $1 AND p.period = $2"#,
         tenant,
-        period
+        period.to_sqlx()
     )
     .fetch_optional(tx.conn())
     .await?)
 }
 
 pub struct DatedPeriodRow {
-    pub period: NaiveDate,
+    pub period: Date,
     pub status: String,
-    pub closed_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<jiff_sqlx::Timestamp>,
     pub closed_by_name: Option<String>,
 }
 
 /// The months `from..=to` that have a row (a month without one is open), in one query.
 pub async fn periods_between(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<DatedPeriodRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -150,8 +157,8 @@ pub async fn periods_between(
            FROM app.payroll_period p LEFT JOIN app.user_account u ON u.id = p.closed_by
            WHERE p.tenant_id = $1 AND p.period BETWEEN $2 AND $3"#,
         tenant,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -161,7 +168,7 @@ pub async fn periods_between(
 /// records (many at once), `FOR UPDATE` for the close (exclusive). Returns the status.
 pub async fn lock_period(
     tx: &mut TenantTx,
-    period: NaiveDate,
+    period: Date,
     exclusive: bool,
 ) -> Result<String, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -169,7 +176,7 @@ pub async fn lock_period(
         r#"INSERT INTO app.payroll_period (tenant_id, period) VALUES ($1, $2)
            ON CONFLICT (tenant_id, period) DO NOTHING"#,
         tenant,
-        period
+        period.to_sqlx()
     )
     .execute(tx.conn())
     .await?;
@@ -177,7 +184,7 @@ pub async fn lock_period(
         sqlx::query_scalar!(
             "SELECT status FROM app.payroll_period WHERE tenant_id = $1 AND period = $2 FOR UPDATE",
             tenant,
-            period
+            period.to_sqlx()
         )
         .fetch_one(tx.conn())
         .await?
@@ -185,7 +192,7 @@ pub async fn lock_period(
         sqlx::query_scalar!(
             "SELECT status FROM app.payroll_period WHERE tenant_id = $1 AND period = $2 FOR SHARE",
             tenant,
-            period
+            period.to_sqlx()
         )
         .fetch_one(tx.conn())
         .await?
@@ -193,13 +200,13 @@ pub async fn lock_period(
     Ok(status)
 }
 
-pub async fn close_period(tx: &mut TenantTx, period: NaiveDate, by: Uuid) -> Result<(), AppError> {
+pub async fn close_period(tx: &mut TenantTx, period: Date, by: Uuid) -> Result<(), AppError> {
     let tenant = tx.tenant().as_uuid();
     sqlx::query!(
         r#"UPDATE app.payroll_period SET status = 'closed', closed_at = now(), closed_by = $3
            WHERE tenant_id = $1 AND period = $2 AND status = 'open'"#,
         tenant,
-        period,
+        period.to_sqlx(),
         by
     )
     .execute(tx.conn())
@@ -212,18 +219,18 @@ pub async fn close_period(tx: &mut TenantTx, period: NaiveDate, by: Uuid) -> Res
 #[derive(Debug, Clone)]
 pub struct AttendanceRow {
     pub staff_id: Uuid,
-    pub work_date: NaiveDate,
+    pub work_date: Date,
     pub status: String,
-    pub check_in: Option<NaiveTime>,
-    pub check_out: Option<NaiveTime>,
+    pub check_in: Option<jiff_sqlx::Time>,
+    pub check_out: Option<jiff_sqlx::Time>,
     pub late_minutes: i32,
     pub note: Option<String>,
 }
 
 pub async fn attendance_between(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
     staff: Option<Uuid>,
 ) -> Result<Vec<AttendanceRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -235,8 +242,8 @@ pub async fn attendance_between(
              AND ($4::uuid IS NULL OR staff_id = $4)
            ORDER BY staff_id, work_date"#,
         tenant,
-        from,
-        to,
+        from.to_sqlx(),
+        to.to_sqlx(),
         staff
     )
     .fetch_all(tx.conn())
@@ -247,10 +254,10 @@ pub async fn attendance_between(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Cell {
     pub staff_id: Uuid,
-    pub day: NaiveDate,
+    pub day: Date,
 }
 
-fn columns(cells: &[Cell]) -> (Vec<Uuid>, Vec<NaiveDate>) {
+fn columns(cells: &[Cell]) -> (Vec<Uuid>, Vec<Date>) {
     cells.iter().map(|c| (c.staff_id, c.day)).unzip()
 }
 
@@ -270,7 +277,7 @@ pub async fn attendance_cells(
            WHERE a.tenant_id = $1"#,
         tenant,
         &staff[..],
-        &days[..]
+        sql_dates(&days)
     )
     .fetch_all(tx.conn())
     .await?)
@@ -313,7 +320,7 @@ pub async fn delete_attendance_many(tx: &mut TenantTx, cells: &[Cell]) -> Result
            WHERE a.tenant_id = $1 AND a.staff_id = c.staff_id AND a.work_date = c.work_date"#,
         tenant,
         &staff[..],
-        &days[..]
+        sql_dates(&days)
     )
     .execute(tx.conn())
     .await?;
@@ -325,7 +332,7 @@ pub async fn delete_attendance_many(tx: &mut TenantTx, cells: &[Cell]) -> Result
 #[derive(Debug, Clone)]
 pub struct ReviewRow {
     pub staff_id: Uuid,
-    pub work_date: NaiveDate,
+    pub work_date: Date,
     pub compliments: i32,
     pub complaints: i32,
     pub note: Option<String>,
@@ -333,8 +340,8 @@ pub struct ReviewRow {
 
 pub async fn reviews_between(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
     staff: Option<Uuid>,
 ) -> Result<Vec<ReviewRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -346,8 +353,8 @@ pub async fn reviews_between(
              AND ($4::uuid IS NULL OR staff_id = $4)
            ORDER BY staff_id, work_date"#,
         tenant,
-        from,
-        to,
+        from.to_sqlx(),
+        to.to_sqlx(),
         staff
     )
     .fetch_all(tx.conn())
@@ -367,7 +374,7 @@ pub async fn review_cells(tx: &mut TenantTx, cells: &[Cell]) -> Result<Vec<Revie
            WHERE r.tenant_id = $1"#,
         tenant,
         &staff[..],
-        &days[..]
+        sql_dates(&days)
     )
     .fetch_all(tx.conn())
     .await?)
@@ -409,7 +416,7 @@ pub async fn delete_reviews_many(tx: &mut TenantTx, cells: &[Cell]) -> Result<()
            WHERE r.tenant_id = $1 AND r.staff_id = c.staff_id AND r.work_date = c.work_date"#,
         tenant,
         &staff[..],
-        &days[..]
+        sql_dates(&days)
     )
     .execute(tx.conn())
     .await?;
@@ -422,7 +429,7 @@ pub async fn delete_reviews_many(tx: &mut TenantTx, cells: &[Cell]) -> Result<()
 pub struct EvaluationRow {
     pub staff_id: Uuid,
     /// First day of the evaluated month.
-    pub work_date: NaiveDate,
+    pub work_date: Date,
     pub criteria: Value,
     pub serious_issue: bool,
     pub total_points: i32,
@@ -430,15 +437,15 @@ pub struct EvaluationRow {
     pub coaching_plan: Option<String>,
     pub comment: Option<String>,
     pub by_name: String,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
     pub version: i64,
 }
 
 /// Evaluations of the months `from..=to` (first days), of one person or everyone, in one query.
 pub async fn evaluations(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
     staff: Option<Uuid>,
 ) -> Result<Vec<EvaluationRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -451,8 +458,8 @@ pub async fn evaluations(
            WHERE e.tenant_id = $1 AND e.work_date BETWEEN $2 AND $3
              AND ($4::uuid IS NULL OR e.staff_id = $4)"#,
         tenant,
-        from,
-        to,
+        from.to_sqlx(),
+        to.to_sqlx(),
         staff
     )
     .fetch_all(tx.conn())
@@ -461,7 +468,7 @@ pub async fn evaluations(
 
 pub struct EvaluationWrite<'a> {
     pub staff_id: Uuid,
-    pub month: NaiveDate,
+    pub month: Date,
     pub criteria: &'a Value,
     pub serious_issue: bool,
     pub total_points: i32,
@@ -489,7 +496,7 @@ pub async fn upsert_evaluation(
              updated_at = now()"#,
         tenant,
         w.staff_id,
-        w.month,
+        w.month.to_sqlx(),
         w.criteria,
         w.serious_issue,
         w.total_points,
@@ -509,20 +516,20 @@ pub async fn upsert_evaluation(
 pub struct AdjustmentRow {
     pub id: Uuid,
     pub staff_id: Uuid,
-    pub work_date: NaiveDate,
+    pub work_date: Date,
     pub kind: String,
     pub amount: Option<i64>,
     pub points: Option<i32>,
     pub reason: String,
-    pub corrects_period: Option<NaiveDate>,
+    pub corrects_period: Option<jiff_sqlx::Date>,
     pub by_name: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 pub async fn adjustments_between(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
     staff: Option<Uuid>,
 ) -> Result<Vec<AdjustmentRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -535,8 +542,8 @@ pub async fn adjustments_between(
              AND ($4::uuid IS NULL OR a.staff_id = $4)
            ORDER BY a.work_date DESC, a.created_at DESC"#,
         tenant,
-        from,
-        to,
+        from.to_sqlx(),
+        to.to_sqlx(),
         staff
     )
     .fetch_all(tx.conn())
@@ -560,7 +567,7 @@ pub async fn adjustment(tx: &mut TenantTx, id: Uuid) -> Result<Option<Adjustment
 
 pub struct AdjustmentLock {
     pub staff_id: Uuid,
-    pub work_date: NaiveDate,
+    pub work_date: Date,
     pub voided: bool,
 }
 
@@ -598,12 +605,12 @@ pub async fn void_adjustment(tx: &mut TenantTx, id: Uuid, by: Uuid) -> Result<()
 pub struct AdjustmentInsert<'a> {
     pub id: Uuid,
     pub staff_id: Uuid,
-    pub work_date: NaiveDate,
+    pub work_date: Date,
     pub kind: &'a str,
     pub amount: Option<i64>,
     pub points: Option<i32>,
     pub reason: &'a str,
-    pub corrects_period: Option<NaiveDate>,
+    pub corrects_period: Option<Date>,
     pub created_by: Uuid,
 }
 
@@ -619,12 +626,12 @@ pub async fn insert_adjustment(
         a.id,
         tenant,
         a.staff_id,
-        a.work_date,
+        a.work_date.to_sqlx(),
         a.kind,
         a.amount,
         a.points,
         a.reason,
-        a.corrects_period,
+        a.corrects_period.map(ToSqlx::to_sqlx),
         a.created_by
     )
     .execute(tx.conn())
@@ -646,8 +653,8 @@ pub struct CommissionRow {
 /// Services performed in completed (not voided) visits of the period, per technician and service.
 pub async fn commission_lines(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<CommissionRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -662,8 +669,8 @@ pub async fn commission_lines(
            GROUP BY vl.staff_id, vl.service_name_snapshot, vl.source
            ORDER BY vl.staff_id, SUM(vl.line_value) DESC, vl.service_name_snapshot"#,
         tenant,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -691,8 +698,8 @@ pub struct UpsellRow {
 /// "Khách tự chọn" (no closer / referrer) credits nobody.
 pub async fn upsell_lines(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<UpsellRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -728,8 +735,8 @@ pub async fn upsell_lines(
            ) u
            ORDER BY staff_id, kind, value DESC, description"#,
         tenant,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -741,8 +748,8 @@ pub struct PackageRefundRow {
     pub staff_id: Uuid,
     pub description: String,
     pub amount: i64,
-    pub business_date: NaiveDate,
-    pub created_at: DateTime<Utc>,
+    pub business_date: Date,
+    pub created_at: Timestamp,
 }
 
 /// Refunds dated `from..=to` of packages sold in an open sale with a closer, one row each, oldest
@@ -750,8 +757,8 @@ pub struct PackageRefundRow {
 /// D2b).
 pub async fn package_refunds_between(
     tx: &mut TenantTx,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<PackageRefundRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -765,8 +772,8 @@ pub async fn package_refunds_between(
              AND r.business_date BETWEEN $2 AND $3
            ORDER BY r.business_date, r.created_at, r.id"#,
         tenant,
-        from,
-        to
+        from.to_sqlx(),
+        to.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -776,7 +783,7 @@ pub async fn package_refunds_between(
 
 pub async fn payslips(
     tx: &mut TenantTx,
-    period: NaiveDate,
+    period: Date,
     staff: Option<Uuid>,
 ) -> Result<Vec<Value>, AppError> {
     let tenant = tx.tenant().as_uuid();
@@ -785,7 +792,7 @@ pub async fn payslips(
            WHERE p.tenant_id = $1 AND p.period = $2 AND ($3::uuid IS NULL OR p.staff_id = $3)
            ORDER BY s.full_name"#,
         tenant,
-        period,
+        period.to_sqlx(),
         staff
     )
     .fetch_all(tx.conn())
@@ -794,7 +801,7 @@ pub async fn payslips(
 
 pub async fn insert_payslip(
     tx: &mut TenantTx,
-    period: NaiveDate,
+    period: Date,
     staff: Uuid,
     net_pay: i64,
     detail: &Value,
@@ -805,7 +812,7 @@ pub async fn insert_payslip(
            VALUES ($1, $2, $3, $4, $5, $6)"#,
         Uuid::now_v7(),
         tenant,
-        period,
+        period.to_sqlx(),
         staff,
         net_pay,
         detail
@@ -819,7 +826,7 @@ pub async fn insert_payslip(
 
 pub struct DayLineRow {
     pub visit_id: Uuid,
-    pub check_in_at: DateTime<Utc>,
+    pub check_in_at: Timestamp,
     pub customer_name: String,
     pub service_name: String,
     pub source: String,
@@ -837,7 +844,7 @@ pub struct DayLineRow {
 pub async fn day_lines(
     tx: &mut TenantTx,
     staff: Uuid,
-    day: NaiveDate,
+    day: Date,
 ) -> Result<Vec<DayLineRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -856,7 +863,7 @@ pub async fn day_lines(
            ORDER BY v.check_in_at, v.id, vl.position"#,
         tenant,
         staff,
-        day
+        day.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)
@@ -876,7 +883,7 @@ pub struct DayUpsellRow {
 pub async fn day_upsell(
     tx: &mut TenantTx,
     staff: Uuid,
-    day: NaiveDate,
+    day: Date,
 ) -> Result<Vec<DayUpsellRow>, AppError> {
     let tenant = tx.tenant().as_uuid();
     Ok(sqlx::query_as!(
@@ -913,7 +920,7 @@ pub async fn day_upsell(
            ORDER BY at, kind, description"#,
         tenant,
         staff,
-        day
+        day.to_sqlx()
     )
     .fetch_all(tx.conn())
     .await?)

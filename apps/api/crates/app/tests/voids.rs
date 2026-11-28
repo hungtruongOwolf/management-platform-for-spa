@@ -4,13 +4,13 @@ mod common;
 
 use axum::http::StatusCode;
 use catalog::service::seed_menu;
-use chrono::{DateTime, Duration, TimeZone, Utc};
-use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
+use jiff::civil::Date;
+use jiff::{SignedDuration, Span, Timestamp};
 use kernel::idempotency::hash_request;
 use kernel::testing::app_pool;
 use kernel::{Actor, TenantId, UserId};
@@ -760,7 +760,7 @@ async fn owner_extends_an_expired_package_with_a_reason(pool: PgPool) -> TestRes
     let before = s.get(&format!("/customer-packages/{}", sold.package)).await;
     assert_eq!(before.body["status"], "expired");
     let version = before.body["version"].to_string();
-    let new_expiry = (chrono::Utc::now().date_naive() + chrono::Days::new(60)).to_string();
+    let new_expiry = (common::vn_today() + Span::new().days(60)).to_string();
     let body = json!({"expires_on": new_expiry, "reason": "Khách nằm viện 2 tháng"});
 
     let manager = s
@@ -977,14 +977,9 @@ async fn actor_of(app: &PgPool, owner: &PgPool, phone: &str) -> Setup<Actor> {
 }
 
 /// `minutes` after midnight, `days_ago` days back, in the spa's time zone.
-fn spa_time(days_ago: i64, minutes: i64) -> Setup<DateTime<Utc>> {
-    let day = Utc::now().with_timezone(&Ho_Chi_Minh).date_naive() - Duration::days(days_ago);
-    let local = day.and_hms_opt(0, 0, 0).ok_or("midnight")? + Duration::minutes(minutes);
-    Ok(Ho_Chi_Minh
-        .from_local_datetime(&local)
-        .earliest()
-        .ok_or("local time")?
-        .with_timezone(&Utc))
+fn spa_time(days_ago: i64, minutes: i64) -> Setup<Timestamp> {
+    let day = common::vn_today() - Span::new().days(days_ago);
+    Ok(common::vn_at(day, 0, 0) + SignedDuration::from_mins(minutes))
 }
 
 fn key() -> (Uuid, [u8; 32]) {
@@ -1003,7 +998,7 @@ async fn the_as_of_forms_keep_the_rules_and_book_on_the_day_of_their_clock(
     let app = app_pool(&s.h.owner).await?;
     let manager = actor_of(&app, &s.h.owner, MANAGER_PHONE).await?;
     let owner = actor_of(&app, &s.h.owner, OWNER_PHONE).await?;
-    let three_days_ago = Utc::now().with_timezone(&Ho_Chi_Minh).date_naive() - Duration::days(3);
+    let three_days_ago = common::vn_today() - Span::new().days(3);
     let (morning, later) = (spa_time(3, 10 * 60)?, spa_time(3, 11 * 60)?);
     let one_off = |amount: i64, qty: i64| -> Result<VisitCreate, serde_json::Error> {
         serde_json::from_value(json!({
@@ -1066,10 +1061,14 @@ async fn the_as_of_forms_keep_the_rules_and_book_on_the_day_of_their_clock(
     operations::service::correct_as_of(&app, &s.h.cipher, &manager, k, h, correction(), later)
         .await?;
 
-    let days: Vec<(String, chrono::NaiveDate, i64)> =
-        sqlx::query_as("SELECT kind, business_date, amount FROM app.payment ORDER BY id")
-            .fetch_all(&s.h.owner)
-            .await?;
+    let days: Vec<(String, Date, i64)> = sqlx::query_as::<_, (String, jiff_sqlx::Date, i64)>(
+        "SELECT kind, business_date, amount FROM app.payment ORDER BY id",
+    )
+    .fetch_all(&s.h.owner)
+    .await?
+    .into_iter()
+    .map(|(k, d, a)| (k, d.to_jiff(), a))
+    .collect();
     let past: Vec<(&str, i64)> = days
         .iter()
         .filter(|(_, d, _)| *d == three_days_ago)
@@ -1093,16 +1092,16 @@ async fn the_as_of_forms_keep_the_rules_and_book_on_the_day_of_their_clock(
     let cancel: packages::lifecycle::PackageCancel = serde_json::from_value(
         json!({"reason": "Khách chuyển nhà", "refund_amount": 300_000, "refund_method": "cash"}),
     )?;
-    let tomorrow = Utc::now() + Duration::days(1);
+    let tomorrow = Timestamp::now() + jiff::SignedDuration::from_hours(24);
     let (k, h) = key();
     let refused =
         packages::lifecycle::cancel_as_of(&app, &manager, k, h, package, &cancel, tomorrow).await;
     assert_eq!(refused.err().map(|e| e.code()), Some("auth.forbidden"));
     let (k, h) = key();
     packages::lifecycle::cancel_as_of(&app, &owner, k, h, package, &cancel, tomorrow).await?;
-    let refunded: chrono::NaiveDate = sqlx::query_scalar("SELECT business_date FROM app.refund")
+    let refunded: jiff_sqlx::Date = sqlx::query_scalar("SELECT business_date FROM app.refund")
         .fetch_one(&s.h.owner)
         .await?;
-    assert_eq!(refunded, tomorrow.with_timezone(&Ho_Chi_Minh).date_naive());
+    assert_eq!(refunded.to_jiff(), common::vn_day(tomorrow));
     Ok(())
 }

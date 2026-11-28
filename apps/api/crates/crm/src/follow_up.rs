@@ -12,7 +12,8 @@
 //! - `other` → no date.
 
 use crate::repo::{self, FollowUpInsert, FollowUpRow};
-use chrono::{Days, NaiveDate};
+use jiff::civil::Date;
+use jiff::{Timestamp, ToSpan};
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::idempotency::{self, Claim};
 use kernel::{Actor, AppError, FieldError, Permission, TenantTx};
@@ -21,15 +22,15 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 /// "Không nghe máy" → gọi lại sau 3 ngày, unless the manager picks another date.
-pub const NO_ANSWER_RETRY_DAYS: u64 = 3;
+pub const NO_ANSWER_RETRY_DAYS: i64 = 3;
 /// "Hẹn sẽ đến" → kiểm lại sau 7 ngày nếu vẫn chưa đến.
-pub const WILL_COME_CHECK_DAYS: u64 = 7;
+pub const WILL_COME_CHECK_DAYS: i64 = 7;
 /// "Không muốn" → không làm phiền trong 90 ngày (the inactive list applies it).
 pub const NOT_INTERESTED_PAUSE_DAYS: u64 = 90;
 /// A contact can be recorded late (yesterday's calls typed in today), within this many days.
-pub const MAX_BACKDATE_DAYS: u64 = 30;
+pub const MAX_BACKDATE_DAYS: i64 = 30;
 /// The next follow-up can be planned at most this far after the contact.
-pub const MAX_SCHEDULE_DAYS: u64 = 365;
+pub const MAX_SCHEDULE_DAYS: i64 = 365;
 pub const MAX_NOTE_CHARS: usize = 500;
 /// `GET /customers/{id}/follow-ups` returns at most this many, newest first.
 pub const LIST_LIMIT: i64 = 100;
@@ -93,13 +94,13 @@ impl Outcome {
 
 pub struct FollowUpInput {
     /// Default today (spa time zone).
-    pub contacted_on: Option<NaiveDate>,
+    pub contacted_on: Option<Date>,
     pub channel: Channel,
     pub outcome: Outcome,
     pub note: Option<String>,
     /// `None` = the rule's suggestion; `Some(None)` = no next try ("Không hẹn"); `Some(Some(d))`
     /// = that day.
-    pub next_follow_up_on: Option<Option<NaiveDate>>,
+    pub next_follow_up_on: Option<Option<Date>>,
 }
 
 /// A recorded follow-up as the API shows it.
@@ -107,14 +108,14 @@ pub struct FollowUpInput {
 pub struct FollowUp {
     pub id: Uuid,
     pub customer_id: Uuid,
-    pub contacted_on: NaiveDate,
+    pub contacted_on: Date,
     pub channel: Channel,
     pub outcome: Outcome,
     pub note: Option<String>,
-    pub next_follow_up_on: Option<NaiveDate>,
+    pub next_follow_up_on: Option<Date>,
     pub by_user_id: Uuid,
     pub by_name: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: Timestamp,
 }
 
 impl TryFrom<FollowUpRow> for FollowUp {
@@ -128,7 +129,7 @@ impl TryFrom<FollowUpRow> for FollowUp {
             customer_id: r.customer_id,
             contacted_on: r.contacted_on,
             note: r.note,
-            next_follow_up_on: r.next_follow_up_on,
+            next_follow_up_on: r.next_follow_up_on.map(jiff_sqlx::Date::to_jiff),
             by_user_id: r.created_by,
             by_name: r.by_name,
             created_at: r.created_at,
@@ -137,10 +138,10 @@ impl TryFrom<FollowUpRow> for FollowUp {
 }
 
 /// The date the rules suggest for a contact on `contacted_on` with this outcome.
-pub fn suggested_next(outcome: Outcome, contacted_on: NaiveDate) -> Option<NaiveDate> {
+pub fn suggested_next(outcome: Outcome, contacted_on: Date) -> Option<Date> {
     match outcome {
-        Outcome::NoAnswer => contacted_on.checked_add_days(Days::new(NO_ANSWER_RETRY_DAYS)),
-        Outcome::WillCome => contacted_on.checked_add_days(Days::new(WILL_COME_CHECK_DAYS)),
+        Outcome::NoAnswer => contacted_on.checked_add(NO_ANSWER_RETRY_DAYS.days()).ok(),
+        Outcome::WillCome => contacted_on.checked_add(WILL_COME_CHECK_DAYS.days()).ok(),
         Outcome::NotInterested | Outcome::Other => None,
     }
 }
@@ -149,9 +150,9 @@ pub fn suggested_next(outcome: Outcome, contacted_on: NaiveDate) -> Option<Naive
 /// suggestion.
 pub fn next_follow_up(
     outcome: Outcome,
-    contacted_on: NaiveDate,
-    requested: Option<Option<NaiveDate>>,
-) -> Option<NaiveDate> {
+    contacted_on: Date,
+    requested: Option<Option<Date>>,
+) -> Option<Date> {
     requested.unwrap_or_else(|| suggested_next(outcome, contacted_on))
 }
 
@@ -159,14 +160,14 @@ pub fn next_follow_up(
 /// before saving (`GET /customers/{id}/follow-ups`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Suggestions {
-    pub today: NaiveDate,
-    pub will_come: Option<NaiveDate>,
-    pub not_interested: Option<NaiveDate>,
-    pub no_answer: Option<NaiveDate>,
-    pub other: Option<NaiveDate>,
+    pub today: Date,
+    pub will_come: Option<Date>,
+    pub not_interested: Option<Date>,
+    pub no_answer: Option<Date>,
+    pub other: Option<Date>,
 }
 
-pub fn suggestions(today: NaiveDate) -> Suggestions {
+pub fn suggestions(today: Date) -> Suggestions {
     Suggestions {
         today,
         will_come: suggested_next(Outcome::WillCome, today),
@@ -177,19 +178,19 @@ pub fn suggestions(today: NaiveDate) -> Suggestions {
 }
 
 struct Clean {
-    contacted_on: NaiveDate,
+    contacted_on: Date,
     note: Option<String>,
-    next: Option<NaiveDate>,
+    next: Option<Date>,
 }
 
-fn validate(input: &FollowUpInput, today: NaiveDate) -> Result<Clean, AppError> {
+fn validate(input: &FollowUpInput, today: Date) -> Result<Clean, AppError> {
     let mut errors = Vec::new();
     let contacted_on = input.contacted_on.unwrap_or(today);
     if contacted_on > today {
         errors.push(FieldError::new("contacted_on", "in_future"));
     } else if today
-        .checked_sub_days(Days::new(MAX_BACKDATE_DAYS))
-        .is_some_and(|oldest| contacted_on < oldest)
+        .checked_sub(MAX_BACKDATE_DAYS.days())
+        .is_ok_and(|oldest| contacted_on < oldest)
     {
         errors.push(FieldError::new("contacted_on", "too_old"));
     }
@@ -209,8 +210,8 @@ fn validate(input: &FollowUpInput, today: NaiveDate) -> Result<Clean, AppError> 
         if next < contacted_on {
             errors.push(FieldError::new("next_follow_up_on", "before_contact"));
         } else if contacted_on
-            .checked_add_days(Days::new(MAX_SCHEDULE_DAYS))
-            .is_some_and(|latest| next > latest)
+            .checked_add(MAX_SCHEDULE_DAYS.days())
+            .is_ok_and(|latest| next > latest)
         {
             errors.push(FieldError::new("next_follow_up_on", "too_far"));
         }
@@ -251,7 +252,7 @@ pub async fn record(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let c = validate(input, today)?;
     let id = Uuid::now_v7();
     repo::insert_follow_up(
@@ -310,7 +311,7 @@ pub async fn list(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     let mut rows = repo::follow_ups(&mut tx, customer_id, LIST_LIMIT + 1).await?;
     tx.commit().await?;
     let page = usize::try_from(LIST_LIMIT).unwrap_or(usize::MAX);
@@ -327,7 +328,7 @@ pub async fn list(
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap_or_default()
     }
 

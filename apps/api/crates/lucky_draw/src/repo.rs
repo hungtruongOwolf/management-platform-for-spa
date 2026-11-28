@@ -2,7 +2,7 @@
 //! child row is always reached through its draw (`draw_id` in the key), so an id of another
 //! draw or spa matches nothing.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use kernel::TenantTx;
 use uuid::Uuid;
 
@@ -10,7 +10,7 @@ use uuid::Uuid;
 pub struct DrawRow {
     pub id: Uuid,
     pub name: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     pub version: i64,
 }
 
@@ -46,8 +46,9 @@ pub struct ResultRow {
     pub seq: i32,
     pub prize_id: Uuid,
     pub participant_id: Uuid,
-    pub drawn_at: DateTime<Utc>,
-    pub forfeited_at: Option<DateTime<Utc>>,
+    pub drawn_at: Timestamp,
+    /// Nullable column: the sqlx wrapper (`.map(jiff_sqlx::Timestamp::to_jiff)`).
+    pub forfeited_at: Option<jiff_sqlx::Timestamp>,
 }
 
 /// One line of the list, before its state is derived.
@@ -55,7 +56,7 @@ pub struct ResultRow {
 pub struct SummaryRow {
     pub id: Uuid,
     pub name: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     pub participants: i64,
     pub results: i64,
     pub undrawn_female: i64,

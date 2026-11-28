@@ -11,7 +11,8 @@ workspace = true
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["json", "query"] }
 base64 = "0.23.1"
-chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+jiff = { version = "1.0.3", default-features = false, features = ["std", "serde"] }
+jiff-sqlx = { version = "1.0.0", features = ["postgres"] }
 crm = { version = "0.1.0", path = "../crm" }
 hr = { version = "0.1.0", path = "../hr" }
 identity = { version = "0.1.0", path = "../identity" }
@@ -20,6 +21,6 @@ org = { version = "0.1.0", path = "../org" }
 packages = { version = "0.1.0", path = "../packages" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono", "macros"] }
-utoipa = { version = "6.0.0", features = ["uuid", "chrono"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "macros"] }
+utoipa = { version = "6.0.0", features = ["uuid", "jiff_0_2"] }
 uuid = "1.29.0"

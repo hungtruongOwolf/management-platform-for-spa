@@ -36,10 +36,11 @@ pub use staff::{FORMER_TECHNICIAN_PHONE, StaffReport, TECHNICIAN_PHONE};
 pub use summary::{Summary, render, summary};
 
 use anyhow::{Context, anyhow, bail};
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Utc};
-use chrono_tz::Tz;
 use data::{PLANS, Sex};
 use desk::{Chain, Package, packages_in};
+use jiff::civil::{Date, Time};
+use jiff::tz::TimeZone;
+use jiff::{Span, Timestamp};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::hash_request;
 use kernel::{Actor, AppError, TenantId, TenantTx, UserId};
@@ -64,22 +65,29 @@ const MONTHS: std::ops::RangeInclusive<u32> = 2..=24;
 /// audit entries, ADR-0023), so "Nhật ký thao tác" shows a believable year instead of one burst at
 /// the run time; the `*_as_of` ones also take that instant as their business clock (day, rules).
 /// Rows' own `created_at` columns keep the real clock.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct Clock {
-    tz: Tz,
-    now: DateTime<Utc>,
+    tz: TimeZone,
+    now: Timestamp,
+}
+
+/// `minutes` after local midnight of `day` in `tz`; `None` past 23:59.
+fn local_instant(tz: &TimeZone, day: Date, minutes: u32) -> Option<Timestamp> {
+    let h = i8::try_from(minutes / 60).ok()?;
+    let m = i8::try_from(minutes % 60).ok()?;
+    let time = Time::new(h, m, 0, 0).ok()?;
+    tz.to_timestamp(day.to_datetime(time)).ok()
 }
 
 impl Clock {
     /// `minutes` after local midnight of `day`, never later than the run's clock.
-    pub(crate) fn at(&self, day: NaiveDate, minutes: u32) -> DateTime<Utc> {
-        day.and_hms_opt((minutes / 60).min(23), minutes % 60, 0)
-            .and_then(|local| self.tz.from_local_datetime(&local).earliest())
-            .map_or(self.now, |t| t.with_timezone(&Utc).min(self.now))
+    pub(crate) fn at(&self, day: Date, minutes: u32) -> Timestamp {
+        let minutes = (minutes / 60).min(23) * 60 + minutes % 60;
+        local_instant(&self.tz, day, minutes).map_or(self.now, |t| t.min(self.now))
     }
 
     /// `actor`, with their audit entries stamped [`Clock::at`].
-    pub(crate) fn acting(&self, actor: &Actor, day: NaiveDate, minutes: u32) -> Actor {
+    pub(crate) fn acting(&self, actor: &Actor, day: Date, minutes: u32) -> Actor {
         actor.clone().at_clock(self.at(day, minutes))
     }
 }
@@ -88,22 +96,22 @@ impl Clock {
 /// today. Every month but the current one ends before today and is closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Window {
-    pub start: NaiveDate,
-    pub today: NaiveDate,
+    pub start: Date,
+    pub today: Date,
 }
 
 impl Window {
-    pub fn new(today: NaiveDate, months: u32) -> Self {
-        let first = today.with_day(1).unwrap_or(today);
+    pub fn new(today: Date, months: u32) -> Self {
+        let first = today.first_of_month();
         let start = first
-            .checked_sub_months(chrono::Months::new(months.saturating_sub(1)))
+            .checked_sub(Span::new().months(months.saturating_sub(1)))
             .unwrap_or(first);
         Self { start, today }
     }
 
     /// Days from the start to today.
     pub fn days(&self) -> i64 {
-        (self.today - self.start).num_days()
+        i64::from((self.today - self.start).get_days())
     }
 }
 
@@ -130,8 +138,8 @@ pub struct Phase {
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct DemoReport {
-    pub window_start: Option<NaiveDate>,
-    pub today: Option<NaiveDate>,
+    pub window_start: Option<Date>,
+    pub today: Option<Date>,
     pub catalog_seeded: bool,
     pub plans_created: usize,
     pub customers: usize,
@@ -239,14 +247,17 @@ pub async fn seed(
         tx.commit().await.map_err(fail("commit"))?;
         profile.timezone
     };
-    let now = Utc::now();
-    let today = kernel::BusinessDate::of_instant(now, tz).as_naive();
+    let now = Timestamp::now();
+    let today = kernel::BusinessDate::of_instant(now, &tz).as_date();
     let window = Window::new(today, options.months);
     report.window_start = Some(window.start);
     report.today = Some(today);
 
     let roster = staff::roster(today);
-    let clock = Clock { tz, now };
+    let clock = Clock {
+        tz: tz.clone(),
+        now,
+    };
     let staff_ids = staff::setup(
         owner,
         app,
@@ -648,37 +659,29 @@ pub(crate) struct Ctx<'a> {
     roster: Vec<staff::Member>,
     staff: staff::Staff,
     attendance: staff::Attendance,
-    tz: Tz,
+    tz: TimeZone,
     window: Window,
     /// The run's clock, read once: "today" and today's times never move during a run.
-    now: DateTime<Utc>,
+    now: Timestamp,
     workers: usize,
 }
 
 impl Ctx<'_> {
-    fn at(&self, day: NaiveDate, minutes: u32) -> anyhow::Result<DateTime<Utc>> {
-        let local = day
-            .and_hms_opt(minutes / 60, minutes % 60, 0)
-            .context("time of day")?;
-        Ok(self
-            .tz
-            .from_local_datetime(&local)
-            .earliest()
-            .context("local time")?
-            .with_timezone(&Utc))
+    fn at(&self, day: Date, minutes: u32) -> anyhow::Result<Timestamp> {
+        local_instant(&self.tz, day, minutes).context("local time")
     }
 
-    const fn clock(&self) -> Clock {
+    fn clock(&self) -> Clock {
         Clock {
-            tz: self.tz,
+            tz: self.tz.clone(),
             now: self.now,
         }
     }
 
     /// Local minutes after midnight of the run's clock.
     fn now_minute(&self) -> u32 {
-        let local = self.now.with_timezone(&self.tz);
-        local.hour() * 60 + local.minute()
+        let local = self.tz.to_datetime(self.now);
+        u32::from(local.hour().unsigned_abs()) * 60 + u32::from(local.minute().unsigned_abs())
     }
 
     /// The manager's staff record, who closes most package sales (D9).
@@ -686,7 +689,7 @@ impl Ctx<'_> {
         self.staff.ids[0]
     }
 
-    fn roster_works(&self, staff: Uuid, day: NaiveDate) -> bool {
+    fn roster_works(&self, staff: Uuid, day: Date) -> bool {
         self.staff
             .ids
             .iter()
@@ -694,7 +697,7 @@ impl Ctx<'_> {
             .is_some_and(|m| self.roster[m].works_on(day))
     }
 
-    fn technicians_on(&self, day: NaiveDate) -> Vec<Uuid> {
+    fn technicians_on(&self, day: Date) -> Vec<Uuid> {
         self.attendance
             .technicians_on(&self.roster, day)
             .into_iter()
@@ -763,7 +766,7 @@ impl Ctx<'_> {
         initial: &mut [Vec<Package>],
     ) -> anyhow::Result<usize> {
         let today = self.window.today;
-        let day = |offset: i64| (today + Duration::days(offset)).to_string();
+        let day = |offset: i64| (today + Span::new().days(offset)).to_string();
         let item = |service: &str, purchased: u32, bonus: u32, remaining: u32| {
             Ok::<_, anyhow::Error>(json!({
                 "service_id": self.catalog.service(service)?, "sessions_purchased": purchased,
@@ -782,7 +785,7 @@ impl Ctx<'_> {
                 "health_note": p.health_note,
             })
         };
-        let before_window = (self.window.start - today).num_days() - 30;
+        let before_window = i64::from((self.window.start - today).get_days()) - 30;
         let imports = [
             (
                 0,
@@ -865,7 +868,7 @@ impl Ctx<'_> {
         people: &[Person],
     ) -> anyhow::Result<(usize, usize)> {
         let today = self.window.today;
-        let last_visits: Vec<NaiveDate> = people.iter().map(|p| p.last_day).collect();
+        let last_visits: Vec<Date> = people.iter().map(|p| p.last_day).collect();
         let mut cancelled = 0;
         let mut used: Vec<usize> = Vec::new();
         for (days_ago, method) in [(21, "cash"), (90, "bank_transfer")] {
@@ -903,7 +906,7 @@ impl Ctx<'_> {
                 .await
                 .map_err(fail("read a package"))?;
             let input = packages::lifecycle::PackageExtend {
-                expires_on: today + Duration::days(60),
+                expires_on: today + Span::new().days(60),
                 reason: Some("Khách nằm viện 1 tháng, chủ spa đồng ý gia hạn 2 tháng".to_owned()),
             };
             let (key, hash) = idempotency();
@@ -932,12 +935,12 @@ impl Ctx<'_> {
 /// then the day nearest the target. `None` when no package qualifies (a very short history).
 fn cancellation<'p>(
     packages: &'p [Package],
-    last_visits: &[NaiveDate],
+    last_visits: &[Date],
     taken: &[usize],
     window: Window,
     days_ago: i64,
-) -> Option<(&'p Package, NaiveDate)> {
-    let target = window.today - Duration::days(days_ago);
+) -> Option<(&'p Package, Date)> {
+    let target = window.today - Span::new().days(days_ago);
     packages
         .iter()
         .filter(|p| {
@@ -947,12 +950,12 @@ fn cancellation<'p>(
                 && p.remaining() < p.sessions_total
         })
         .filter_map(|p| {
-            let day = target.max(p.last_used? + Duration::days(1));
+            let day = target.max(p.last_used? + Span::new().days(1));
             (day < window.today && p.usable_on(day)).then_some((p, day))
         })
         .min_by_key(|(p, day)| {
             let still_coming = last_visits.get(p.customer).is_none_or(|last| last >= day);
-            (still_coming, (*day - target).num_days().abs())
+            (still_coming, i64::from((*day - target).get_days()).abs())
         })
 }
 
@@ -969,17 +972,14 @@ mod tests {
 
     #[test]
     fn the_window_starts_on_the_first_of_the_month_months_minus_one_ago() {
-        let today = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap_or_default();
+        let today = Date::new(2026, 11, 9).ok().unwrap_or_default();
         let w = Window::new(today, 12);
-        assert_eq!(
-            w.start,
-            NaiveDate::from_ymd_opt(2025, 12, 1).unwrap_or_default()
-        );
+        assert_eq!(w.start, Date::new(2025, 12, 1).ok().unwrap_or_default());
         assert_eq!(Window::new(today, 2).start.to_string(), "2026-10-01");
     }
 
     fn package(customer: usize, starts: i64, expires: i64, last_used: i64) -> Package {
-        let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap_or_default();
+        let today = Date::new(2026, 11, 10).ok().unwrap_or_default();
         Package {
             id: Uuid::from_u128(u128::try_from(customer).unwrap_or(0) + 1),
             customer,
@@ -988,22 +988,22 @@ mod tests {
                 service_id: Uuid::nil(),
                 remaining: 6,
             }],
-            starts_on: today - Duration::days(starts),
-            expires_on: Some(today - Duration::days(expires)),
+            starts_on: today - Span::new().days(starts),
+            expires_on: Some(today - Span::new().days(expires)),
             sold_price: 2_000_000,
             sessions_total: 10,
             from_sale: true,
             cancelled: false,
             keep: 0,
-            last_used: Some(today - Duration::days(last_used)),
+            last_used: Some(today - Span::new().days(last_used)),
         }
     }
 
     #[test]
     fn a_cancellation_lands_after_the_last_session_and_prefers_a_customer_who_left() {
-        let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap_or_default();
+        let today = Date::new(2026, 11, 10).ok().unwrap_or_default();
         let w = Window::new(today, 12);
-        let ago = |n: i64| today - Duration::days(n);
+        let ago = |n: i64| today - Span::new().days(n);
         // Customer 0 still comes (used 10 days ago), customer 1 left 70 days ago, customer 2's
         // package had expired by then.
         let packages = [

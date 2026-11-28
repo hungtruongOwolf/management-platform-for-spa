@@ -5,7 +5,8 @@
 use super::Window;
 use super::data::{self, CUSTOMERS, Gender, Sex};
 use super::rng::Rng;
-use chrono::{Datelike, Duration, NaiveDate};
+use jiff::Span;
+use jiff::civil::Date;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Segment {
@@ -46,14 +47,14 @@ pub struct Person {
     pub sex: Sex,
     pub gender_recorded: bool,
     pub birth_year: Option<i16>,
-    pub birth_date: Option<NaiveDate>,
+    pub birth_date: Option<Date>,
     pub address: Option<&'static str>,
     pub source: Option<&'static str>,
     pub health_note: Option<&'static str>,
     pub segment: Segment,
     /// First and last day this customer visits (both visits are on the schedule).
-    pub first_day: NaiveDate,
-    pub last_day: NaiveDate,
+    pub first_day: Date,
+    pub last_day: Date,
     /// Buys a package when they have none left.
     pub buys_packages: bool,
 }
@@ -90,7 +91,7 @@ fn person(window: Window, i: usize, rng: &mut Rng) -> Person {
         },
     };
     let span = window.days();
-    let at = |offset: i64| window.start + Duration::days(offset.clamp(0, span));
+    let at = |offset: i64| window.start + Span::new().days(offset.clamp(0, span));
     let mut last_day = window.today;
     // The hand-written customers are the spa's existing clientele: back in the first two weeks.
     let existing = i < CUSTOMERS.len() && segment != Segment::Lapsed;
@@ -107,14 +108,14 @@ fn person(window: Window, i: usize, rng: &mut Rng) -> Person {
         }
         Segment::Lapsed => {
             let lapse = 60 + rng.days(120);
-            let last = window.today - Duration::days(lapse);
-            if last < window.start + Duration::days(7) {
+            let last = window.today - Span::new().days(lapse);
+            if last < window.start + Span::new().days(7) {
                 // The history is too short for this customer to have stopped coming.
                 segment = Segment::Occasional;
                 at(rng.days(span - 7))
             } else {
                 last_day = last;
-                at(rng.days((last - window.start).num_days() * 2 / 3))
+                at(rng.days(i64::from((last - window.start).get_days()) * 2 / 3))
             }
         }
     };
@@ -164,8 +165,8 @@ fn generated(
     window: Window,
     i: usize,
     segment: Segment,
-    first_day: NaiveDate,
-    last_day: NaiveDate,
+    first_day: Date,
+    last_day: Date,
     buys_packages: bool,
     rng: &mut Rng,
 ) -> Person {
@@ -226,9 +227,9 @@ fn generated(
     }
 }
 
-fn birthday_this_month(today: NaiveDate, year: i16, rng: &mut Rng) -> Option<NaiveDate> {
-    let day = 1 + u32::try_from(rng.below(28)).unwrap_or(0);
-    NaiveDate::from_ymd_opt(i32::from(year), today.month(), day)
+fn birthday_this_month(today: Date, year: i16, rng: &mut Rng) -> Option<Date> {
+    let day = 1 + i8::try_from(rng.below(28)).unwrap_or(0);
+    Date::new(year, today.month(), day).ok()
 }
 
 #[cfg(test)]
@@ -236,10 +237,7 @@ mod tests {
     use super::*;
 
     fn window(months: u32) -> Window {
-        Window::new(
-            NaiveDate::from_ymd_opt(2026, 11, 9).unwrap_or_default(),
-            months,
-        )
+        Window::new(Date::new(2026, 11, 9).ok().unwrap_or_default(), months)
     }
 
     #[test]
@@ -277,7 +275,7 @@ mod tests {
             assert!(w.start <= p.first_day && p.first_day <= p.last_day);
             assert!(p.last_day <= w.today);
             if p.segment == Segment::Lapsed {
-                let away = (w.today - p.last_day).num_days();
+                let away = i64::from((w.today - p.last_day).get_days());
                 assert!((60..=180).contains(&away), "{away}");
             }
             if p.segment == Segment::WalkIn {

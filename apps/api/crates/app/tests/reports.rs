@@ -5,14 +5,14 @@
 mod common;
 
 use axum::http::StatusCode;
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
-use chrono_tz::Asia::Ho_Chi_Minh;
 use common::{
     Harness, OWNER_PHONE, Reply, TestResult, add_member, call, call_with_headers, harness,
     post_customer, session_for,
 };
 use identity::SystemRole;
 use identity::provisioning::create_tenant;
+use jiff::civil::Date;
+use jiff::{SignedDuration, Span, Timestamp};
 use kernel::idempotency::hash_request;
 use kernel::testing::app_pool;
 use kernel::{Actor, TenantId, UserId};
@@ -43,17 +43,13 @@ struct Spa {
     plan: Uuid,
 }
 
-fn today() -> NaiveDate {
-    Utc::now().with_timezone(&Ho_Chi_Minh).date_naive()
+fn today() -> Date {
+    common::vn_today()
 }
 
 /// `HH:MM` Vietnam time on `day`, as an instant.
-fn ict(day: NaiveDate, hour: u32, minute: u32) -> DateTime<Utc> {
-    Ho_Chi_Minh
-        .from_local_datetime(&day.and_hms_opt(hour, minute, 0).unwrap_or_default())
-        .single()
-        .map(|t| t.with_timezone(&Utc))
-        .unwrap_or_default()
+fn ict(day: Date, hour: i8, minute: i8) -> Timestamp {
+    common::vn_at(day, hour, minute)
 }
 
 fn id(reply: &Reply) -> Uuid {
@@ -181,7 +177,7 @@ impl Spa {
         customer: Uuid,
         discount: i64,
         method: &str,
-        at: Option<DateTime<Utc>>,
+        at: Option<Timestamp>,
     ) -> Setup<Value> {
         let body = self.sale_body(customer, discount, method);
         match at {
@@ -221,7 +217,7 @@ impl Spa {
         customer: Uuid,
         lines: Vec<Value>,
         cash: i64,
-        at: Option<DateTime<Utc>>,
+        at: Option<Timestamp>,
     ) -> Setup<Value> {
         let payments = if cash > 0 {
             json!([{"method": "cash", "amount": cash}])
@@ -279,8 +275,8 @@ impl Spa {
     async fn import(
         &self,
         customer: Uuid,
-        starts_on: NaiveDate,
-        expires_on: Option<NaiveDate>,
+        starts_on: Date,
+        expires_on: Option<Date>,
         remaining: u32,
     ) -> String {
         let reply = self
@@ -317,7 +313,7 @@ fn kinds(package: i64, one_off: i64) -> Value {
 #[sqlx::test(migrator = "kernel::MIGRATOR")]
 async fn the_daily_dashboard_nets_discounts_voids_and_refunds(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
-    let (day, yesterday) = (today(), today() - Duration::days(1));
+    let (day, yesterday) = (today(), today() - Span::new().days(1));
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
     let lan = s.customer("Trần Thị Lan", "0905111002").await;
 
@@ -419,7 +415,7 @@ async fn the_daily_dashboard_nets_discounts_voids_and_refunds(pool: PgPool) -> T
     let future = s
         .get(
             &s.owner,
-            &format!("/reports/daily?date={}", day + Duration::days(30)),
+            &format!("/reports/daily?date={}", day + Span::new().days(30)),
         )
         .await;
     assert_eq!(future.status, StatusCode::OK);
@@ -433,16 +429,16 @@ async fn the_daily_dashboard_nets_discounts_voids_and_refunds(pool: PgPool) -> T
 async fn the_business_day_turns_at_midnight_in_vietnam(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
-    let day = today() - Duration::days(10);
+    let day = today() - Span::new().days(10);
     let late = ict(day, 23, 59);
-    let early = ict(day + Duration::days(1), 0, 1);
-    assert_eq!(late.format("%H:%M").to_string(), "16:59", "UTC");
+    let early = ict(day + Span::new().days(1), 0, 1);
+    assert_eq!(late.strftime("%H:%M").to_string(), "16:59", "UTC");
     s.visit(ha, vec![s.one_off(s.staff)], PRICE, Some(late))
         .await?;
     s.visit(ha, vec![s.one_off(s.staff)], PRICE, Some(early))
         .await?;
 
-    for d in [day, day + Duration::days(1)] {
+    for d in [day, day + Span::new().days(1)] {
         let r = s.get(&s.owner, &format!("/reports/daily?date={d}")).await;
         assert_eq!(r.body["counts"]["visits"], 1, "{d}: {}", r.body);
         assert_eq!(r.body["revenue"]["net"]["cash"], PRICE, "{d}");
@@ -450,7 +446,7 @@ async fn the_business_day_turns_at_midnight_in_vietnam(pool: PgPool) -> TestResu
     let range = s
         .get(
             &s.owner,
-            &format!("/reports/range?from={day}&to={}", day + Duration::days(1)),
+            &format!("/reports/range?from={day}&to={}", day + Span::new().days(1)),
         )
         .await;
     let visits: Vec<i64> = range.body["series"]
@@ -602,7 +598,7 @@ async fn the_range_report_is_continuous_and_reconciles(pool: PgPool) -> TestResu
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
     let lan = s.customer("Trần Thị Lan", "0905111002").await;
     // 2026-10-04 is a Sunday, 2026-10-05 a Monday: one ISO week boundary in between.
-    let d = |s: &str| s.parse::<NaiveDate>().unwrap_or_default();
+    let d = |s: &str| s.parse::<Date>().unwrap_or_default();
     s.sell(ha, 0, "bank_transfer", Some(ict(d("2026-10-04"), 9, 0)))
         .await?;
     s.visit(
@@ -735,7 +731,7 @@ async fn the_ledger_mirrors_the_paper_book(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
     let lan = s.customer("Trần Thị Lan", "0905111002").await;
-    let (day, yesterday) = (today(), today() - Duration::days(1));
+    let (day, yesterday) = (today(), today() - Span::new().days(1));
     let old = s.sell(lan, 0, "cash", Some(ict(yesterday, 9, 0))).await?;
     let sale = s.sell(ha, 200_000, "bank_transfer", None).await?;
     s.visit(lan, vec![s.one_off(s.staff)], PRICE, None).await?;
@@ -876,9 +872,9 @@ async fn the_ledger_mirrors_the_paper_book(pool: PgPool) -> TestResult {
 async fn a_customer_history_shows_every_visit_purchase_void_and_refund(pool: PgPool) -> TestResult {
     let s = spa(pool).await?;
     let ha = s.customer("Nguyễn Thị Hà", "0905111001").await;
-    let day = today() - Duration::days(3);
+    let day = today() - Span::new().days(3);
     let sale = s
-        .sell(ha, 0, "cash", Some(ict(day - Duration::days(1), 9, 0)))
+        .sell(ha, 0, "cash", Some(ict(day - Span::new().days(1), 9, 0)))
         .await?;
     let package = sale["customer_packages"][0]["id"]
         .as_str()
@@ -890,7 +886,7 @@ async fn a_customer_history_shows_every_visit_purchase_void_and_refund(pool: PgP
         ha,
         vec![s.session_line(s.staff_b), s.one_off(s.staff)],
         PRICE,
-        Some(ict(day + Duration::days(1), 10, 0)),
+        Some(ict(day + Span::new().days(1), 10, 0)),
     )
     .await?;
     let wrong = s
@@ -898,7 +894,7 @@ async fn a_customer_history_shows_every_visit_purchase_void_and_refund(pool: PgP
             ha,
             vec![s.session_line(s.staff)],
             0,
-            Some(Utc::now() - Duration::seconds(2)),
+            Some(Timestamp::now() - SignedDuration::from_secs(2)),
         )
         .await?;
     s.void(format!(
@@ -907,7 +903,7 @@ async fn a_customer_history_shows_every_visit_purchase_void_and_refund(pool: PgP
     ))
     .await;
     s.cancel(&package, 400_000, "cash").await;
-    let paper = s.import(ha, day - Duration::days(30), None, 3).await;
+    let paper = s.import(ha, day - Span::new().days(30), None, 3).await;
 
     let history = s
         .get(&s.manager, &format!("/customers/{ha}/history?limit=100"))
@@ -1011,7 +1007,7 @@ async fn a_customer_history_shows_every_visit_purchase_void_and_refund(pool: PgP
     assert_eq!(summary.status, StatusCode::OK, "{}", summary.body);
     let b = &summary.body;
     assert_eq!(b["first_visit_on"], json!(day));
-    assert_eq!(b["last_visit_on"], json!(day + Duration::days(1)));
+    assert_eq!(b["last_visit_on"], json!(day + Span::new().days(1)));
     assert_eq!(b["days_since_last_visit"], 2);
     assert_eq!(
         (b["visit_count"].clone(), b["voided_visit_count"].clone()),
@@ -1075,37 +1071,37 @@ async fn the_packages_overview_filters_by_status_and_expiry(pool: PgPool) -> Tes
     let soon = s
         .import(
             ha,
-            day - Duration::days(60),
-            Some(day + Duration::days(10)),
+            day - Span::new().days(60),
+            Some(day + Span::new().days(10)),
             5,
         )
         .await;
     let later = s
         .import(
             lan,
-            day - Duration::days(60),
-            Some(day + Duration::days(20)),
+            day - Span::new().days(60),
+            Some(day + Span::new().days(20)),
             5,
         )
         .await;
     let far = s
         .import(
             lan,
-            day - Duration::days(50),
-            Some(day + Duration::days(200)),
+            day - Span::new().days(50),
+            Some(day + Span::new().days(200)),
             5,
         )
         .await;
     let expired = s
         .import(
             ha,
-            day - Duration::days(90),
-            Some(day - Duration::days(1)),
+            day - Span::new().days(90),
+            Some(day - Span::new().days(1)),
             5,
         )
         .await;
-    let exhausted = s.import(ha, day - Duration::days(80), None, 0).await;
-    let cancelled = s.import(lan, day - Duration::days(70), None, 5).await;
+    let exhausted = s.import(ha, day - Span::new().days(80), None, 0).await;
+    let cancelled = s.import(lan, day - Span::new().days(70), None, 5).await;
     s.cancel(&cancelled, 0, "cash").await;
     s.visit(ha, vec![s.session_line(s.staff)], 0, None).await?;
 
@@ -1215,23 +1211,23 @@ async fn customers_who_stopped_coming_are_listed_longest_absence_first(pool: PgP
     let regular = s.customer("Khách quen", "0905111002").await;
     let never = s.customer("Khách chưa đến", "0905111003").await;
     let done = s.customer("Khách hết buổi", "0905111004").await;
-    s.import(absent, day - Duration::days(45), None, 4).await;
+    s.import(absent, day - Span::new().days(45), None, 4).await;
     s.visit(
         absent,
         vec![s.one_off(s.staff)],
         PRICE,
-        Some(ict(day - Duration::days(40), 10, 0)),
+        Some(ict(day - Span::new().days(40), 10, 0)),
     )
     .await?;
-    s.import(regular, day - Duration::days(45), None, 4).await;
+    s.import(regular, day - Span::new().days(45), None, 4).await;
     s.visit(regular, vec![s.session_line(s.staff)], 0, None)
         .await?;
-    s.import(never, day - Duration::days(60), None, 4).await;
+    s.import(never, day - Span::new().days(60), None, 4).await;
     s.visit(
         done,
         vec![s.one_off(s.staff)],
         PRICE,
-        Some(ict(day - Duration::days(50), 10, 0)),
+        Some(ict(day - Span::new().days(50), 10, 0)),
     )
     .await?;
 
@@ -1265,7 +1261,7 @@ async fn customers_who_stopped_coming_are_listed_longest_absence_first(pool: PgP
             (
                 json!("Khách vắng 40 ngày"),
                 json!(40),
-                json!(day - Duration::days(40)),
+                json!(day - Span::new().days(40)),
                 json!(4)
             ),
         ]
@@ -1343,13 +1339,16 @@ async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) ->
     )
     .await?;
     let owner = session_for(&h, OWNER_PHONE).await;
-    let days: Vec<NaiveDate> = sqlx::query_scalar(
+    let days: Vec<Date> = sqlx::query_scalar::<_, jiff_sqlx::Date>(
         "SELECT DISTINCT business_date FROM app.visit
          UNION SELECT DISTINCT business_date FROM app.payment
          UNION SELECT DISTINCT business_date FROM app.refund ORDER BY 1",
     )
     .fetch_all(&h.owner)
-    .await?;
+    .await?
+    .into_iter()
+    .map(jiff_sqlx::Date::to_jiff)
+    .collect();
     assert!(days.len() >= 15, "three weeks of demo days: {}", days.len());
     let mut range_net = 0;
     for day in &days {
@@ -1364,7 +1363,7 @@ async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) ->
                       WHERE n.tenant_id = v.tenant_id AND n.corrects_visit_id = v.id))
              FROM app.visit v WHERE business_date = $1",
         )
-        .bind(day)
+        .bind(jiff_sqlx::Date::from(*day))
         .fetch_one(&h.owner)
         .await?;
         let (paid, reversed): (i64, i64) = sqlx::query_as(
@@ -1372,13 +1371,13 @@ async fn the_dashboard_reconciles_with_raw_rows_after_seed_demo(pool: PgPool) ->
                     coalesce(sum(amount) FILTER (WHERE kind = 'reversal'), 0)::bigint
              FROM app.payment WHERE business_date = $1",
         )
-        .bind(day)
+        .bind(jiff_sqlx::Date::from(*day))
         .fetch_one(&h.owner)
         .await?;
         let refunded: i64 = sqlx::query_scalar(
             "SELECT coalesce(sum(amount), 0)::bigint FROM app.refund WHERE business_date = $1",
         )
-        .bind(day)
+        .bind(jiff_sqlx::Date::from(*day))
         .fetch_one(&h.owner)
         .await?;
         let b = &report.body;
