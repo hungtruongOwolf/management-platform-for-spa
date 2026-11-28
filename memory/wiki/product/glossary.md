@@ -56,6 +56,11 @@ Code, DB và API dùng đúng tên tiếng Anh ở cột 2; giao diện dùng ti
 | Thưởng gắn bó | `LoyaltyBonus` (phiếu lương: `loyalty_bonus_accrued`) | 500k/tháng cộng dồn, trả theo mốc (chi trả theo mốc chưa build; phiếu chỉ ghi nhận) |
 | Thưởng Tết | `TetBonus` (phiếu lương: `tet_level`, `tet_amount`) | Tổng mức của từng tháng (phiếu ghi nhận mức tháng, không cộng vào thực lĩnh) |
 | Cờ kỷ luật | `DisciplineFlag` (hiện chỉ có cờ phiếu lương `absent_k5_plus`) | Cảnh báo tự động theo Nhóm A; người quyết định là chủ spa |
+| Vòng quay may mắn / Chương trình | `lucky_draw` (route `/vong-quay`, `/vong-quay/$drawId`) | Một đợt quay thưởng của chủ spa (ví dụ "Tri ân 20/11"): tên, người tham gia, giải, kết quả. Trạng thái suy ra: Chưa quay · Đang quay · Đã xong ([spec](specs/lucky-draw.md)) |
+| Người tham gia | `lucky_draw_participant` | Họ tên + giới tính Nam / Nữ (bắt buộc) của một người trong chương trình; gõ hoặc dán, không lấy từ hồ sơ khách |
+| Giải thưởng (của vòng quay) | `lucky_draw_prize` | Tên, mô tả, "Dành cho" (Cả nam và nữ / Chỉ nữ / Chỉ nam = `all` / `female` / `male`), số suất; *còn lại* = số suất − kết quả chưa trả |
+| Lượt quay | `lucky_draw_result` (`seq`) | Một lần bấm "Quay": server chọn ngẫu nhiên một người đủ điều kiện cho giải đang chọn, lưu ngay (không bước xác nhận) |
+| Trả giải ("Vắng mặt, trả giải") | `POST /lucky-draws/{id}/results/{rid}/forfeit` | Người trúng vắng mặt: suất quay lại cho giải, người đó vẫn bị loại khỏi các lượt sau; kết quả còn trong danh sách, chip "Vắng mặt" |
 | Nhắc nhở | `Reminder` *(chưa build như một module; khách vắng lâu có danh sách gọi lại `customer_follow_up`)* | Liệu trình sắp hết, khách vắng lâu, công nợ, lịch hẹn |
 
 ## Tên màn hình và điều hướng (EM vòng 4 mục 7, 2026-11-05)
@@ -69,6 +74,7 @@ EM: "đặt lại các tên cho đúng đừng ghi là gói bán hay theo dõi g
 | `/khach-hang` | Khách hàng | Danh sách khách hàng (breadcrumb của hồ sơ: "Khách hàng") | Khách | nav "Hồ sơ khách" |
 | `/khach-hang/:id` | Khách hàng | tên khách; breadcrumb `Khách hàng › Tên` | — | — |
 | `/khach-lau-khong-quay-lai` | Khách hàng | Khách lâu chưa quay lại | — | "Lâu không quay lại" / "Khách lâu không quay lại" |
+| `/vong-quay`, `/vong-quay/:id` | Khách hàng | Vòng quay may mắn (chỉ chủ spa, `lucky_draw.manage`); chương trình: tên chương trình, breadcrumb `Vòng quay may mắn › Tên` | — | — |
 | `/goi-lieu-trinh` | Gói liệu trình | Gói liệu trình của khách | — | nav "Theo dõi gói", h1 "Theo dõi gói của khách" |
 | `/bao-cao` | Báo cáo | Báo cáo kinh doanh (tab "Tổng quan" / "Sổ doanh thu"; h1 theo tab) | Báo cáo | nav "Kinh doanh" |
 | `/nhat-ky-ghi-chu` | Báo cáo | Nhật ký ghi chú (khi bật feature `notes_journal`) | — | — |

@@ -87,6 +87,12 @@ export function navFor(me: Me | null): NavGroup[] {
           label: "Khách lâu chưa quay lại",
           icon: "user-clock",
         },
+        // The owner's prize draws for customers (spec lucky-draw §5).
+        mayOpen.luckyDraw(me) && {
+          to: "/vong-quay",
+          label: "Vòng quay may mắn",
+          icon: "gift",
+        },
       ],
     ],
     [
@@ -198,37 +204,6 @@ function myWorkItem(me: Me | null): NavItem | false {
       icon: "history",
     }
   );
-}
-
-/**
- * Short names of the screens, for a back control whose destination has no PageHeader title (the
- * front desk, home). Paths not listed fall back to the nearest listed parent.
- */
-const SCREEN_LABELS: Record<string, string> = {
-  "/": "Tổng quan",
-  "/quay": "Quầy",
-  "/khach-hang": "Khách hàng",
-  "/khach-lau-khong-quay-lai": "Khách lâu chưa quay lại",
-  "/goi-lieu-trinh": "Gói liệu trình của khách",
-  "/bao-cao": "Báo cáo kinh doanh",
-  "/bang-gia": "Bảng giá dịch vụ",
-  "/bang-gia/goi": "Mẫu gói liệu trình",
-  "/nhan-vien": "Quản lý nhân sự",
-  "/nhan-vien/cua-toi": "Công và lương của tôi",
-  "/khach-cua-toi": "Khách của tôi",
-  "/cai-dat": "Cài đặt",
-};
-
-export function screenLabel(pathname: string): string {
-  for (
-    let p = pathname;
-    p.length > 0;
-    p = p.slice(0, Math.max(0, p.lastIndexOf("/")))
-  ) {
-    const label = SCREEN_LABELS[p];
-    if (label) return label;
-  }
-  return "Tổng quan";
 }
 
 /**

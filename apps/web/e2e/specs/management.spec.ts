@@ -15,10 +15,10 @@ interface Service {
 }
 
 /**
- * A female customer with one paid one-off visit, moved 20 days back: she is then on the
- * "Lâu không quay lại" list. Calls go through the page's own fetch (same origin, session cookie).
+ * A female customer with one paid one-off visit today. Calls go through the page's own fetch (same
+ * origin, session cookie).
  */
-async function absentCustomer(page: Page, fullName: string, phone: string): Promise<string> {
+async function paidVisit(page: Page, fullName: string, phone: string): Promise<string> {
   await page.goto("/khach-hang");
   const id = await page.evaluate(
     async ({ fullName, phone }) => {
@@ -52,12 +52,21 @@ async function absentCustomer(page: Page, fullName: string, phone: string): Prom
     },
     { fullName, phone },
   );
+  return id;
+}
+
+/** `paidVisit` moved 20 days back: the customer is then on the "Lâu không quay lại" list. */
+async function absentCustomer(page: Page, fullName: string, phone: string): Promise<string> {
+  const id = await paidVisit(page, fullName, phone);
   await backdateCustomer(id, 20);
   return id;
 }
 
 test.describe("báo cáo (EM round 3)", () => {
   test("period picker in the URL, line chart with keyboard tooltip, ledger tab", async ({ page }) => {
+    // Its own revenue: the chart is drawn only for a period with visits or money, and the specs
+    // sharing this shard's spa change with the shard split (e2e/shard.mjs).
+    await paidVisit(page, `Khách báo cáo ${String(Date.now()).slice(-6)}`, uniquePhone());
     await page.goto("/bao-cao");
     await expect(page.getByRole("heading", { level: 1, name: "Báo cáo kinh doanh" })).toBeVisible();
     await page.getByRole("button", { name: "30 ngày" }).click();

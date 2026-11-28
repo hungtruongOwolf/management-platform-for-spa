@@ -1,0 +1,463 @@
+/*
+ * "Vòng quay may mắn" (design/lucky-draw.md). Loaded with the lazy chunk only; tokens only. The
+ * wheel's two images carry the EM's art; everything around them is the app's own cards, chips and
+ * buttons. The stage is the one maroon block: the frame's baked warm glow only reads on the chrome.
+ */
+
+@layer components {
+  .ld-page {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 20px;
+    container-type: inline-size;
+  }
+  .ld-grid {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+  }
+  .ld-side {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 20px;
+  }
+  /* Two columns once the content is wide enough for the stage beside the cards (1280 with the
+   * sidebar); at 1024 the sidebar leaves ~700px, where one column reads better. */
+  @container (min-width: 880px) {
+    .ld-grid {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    }
+  }
+
+  /* --- Stage: the wheel on the chrome's maroon (spec §5) --------------------------------------- */
+  .ld-stage {
+    display: grid;
+    min-width: 0;
+    justify-items: center;
+    align-content: start;
+    gap: 16px;
+    padding: 20px 0 24px;
+    border-radius: var(--radius-lg);
+    box-shadow:
+      inset 0 0 0 1px var(--mix-gold-hairline),
+      var(--shadow-2);
+    text-align: center;
+  }
+  .ld-stage > :not(.ld-wheel) {
+    width: 100%;
+    padding-inline: 16px;
+  }
+  @media (min-width: 640px) {
+    .ld-stage {
+      padding: 24px 20px 28px;
+    }
+  }
+  .ld-stage-skeleton {
+    min-height: 560px;
+    border-radius: var(--radius-lg);
+  }
+  .ld-stage:empty {
+    min-height: 560px;
+  }
+  .ld-stage-prize {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+  }
+  .ld-stage-label,
+  .ld-stage-hint,
+  .ld-result-label,
+  .ld-result-wait,
+  .ld-result-idle {
+    color: var(--chrome-text-muted);
+    font-size: var(--fs-sm);
+  }
+  .ld-stage-name {
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    line-height: 28px;
+    text-wrap: balance;
+  }
+  .ld-stage-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 4px 8px;
+    color: var(--chrome-text-muted);
+    font-size: var(--fs-sm);
+  }
+  .ld-stage-pick {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    color: var(--chrome-text-muted);
+    font-size: var(--fs-label);
+    font-weight: 500;
+  }
+  .ld-stage-pick select {
+    width: min(100%, 22rem);
+  }
+  .ld-stage-actions {
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+  }
+  .ld-stage-actions .btn-lg {
+    min-width: min(100%, 13rem);
+  }
+
+  /* Buttons on the maroon: the primary turns cream (a maroon button would vanish into it), the
+   * secondary is a cream outline. Same shapes and states as everywhere else. */
+  :is(.ld-stage, .ld-present) .btn-primary {
+    background-color: var(--chrome-text);
+    color: var(--chrome-bg);
+  }
+  :is(.ld-stage, .ld-present) .btn-primary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
+    background-color: color-mix(in srgb, var(--chrome-text) 86%, var(--chrome-accent));
+  }
+  :is(.ld-stage, .ld-present) .btn-primary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):active {
+    background-color: color-mix(in srgb, var(--chrome-text) 72%, var(--chrome-accent));
+  }
+  :is(.ld-stage, .ld-present) .btn-secondary {
+    border-color: var(--chrome-text-muted);
+    background: transparent;
+    box-shadow: none;
+    color: var(--chrome-text);
+  }
+  :is(.ld-stage, .ld-present) .btn-secondary:not(:disabled, [aria-disabled="true"], [aria-busy="true"]):hover {
+    border-color: var(--chrome-accent);
+    background: var(--mix-chrome-edge);
+    color: var(--chrome-text);
+  }
+
+  /* --- The wheel: two images placed by the original 466 × 481 crop ------------------------------ */
+  .ld-wheel {
+    position: relative;
+    width: min(100%, 420px);
+    aspect-ratio: 466 / 481;
+    isolation: isolate;
+    user-select: none;
+  }
+  .ld-wheel-disk,
+  .ld-wheel-frame {
+    position: absolute;
+    display: block;
+    max-width: none;
+    pointer-events: none;
+  }
+  .ld-wheel-disk {
+    top: 13.9293139%;
+    left: 8.7982833%;
+    width: 80.6866953%;
+    height: 78.1704782%;
+    border-radius: 50%;
+    will-change: transform;
+  }
+  .ld-wheel-disk > img {
+    display: block;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    border-radius: 50%;
+  }
+  .ld-wheel-frame {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    -webkit-mask: var(--texture-wheel-fade);
+    mask: var(--texture-wheel-fade);
+  }
+  /* One turn of the image inside the disk: the wind-up and the loop (Wheel.tsx). */
+  @keyframes ld-wheel-turn {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* --- Result, under the button: fades in once the wheel has stopped ----------------------------- */
+  .ld-result {
+    display: grid;
+    min-height: 136px;
+    max-width: 30rem;
+    align-content: center;
+    justify-items: center;
+    gap: 8px;
+  }
+  .ld-result-win {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    animation: ld-fade var(--dur-base) var(--ease-out);
+  }
+  .ld-result-name {
+    color: var(--chrome-accent);
+    font-size: var(--fs-xl);
+    font-weight: 600;
+    line-height: 32px;
+    overflow-wrap: anywhere;
+  }
+  .ld-result-prize {
+    font-size: var(--fs-md);
+    line-height: 24px;
+  }
+  .ld-result-win .btn {
+    margin-top: 8px;
+  }
+  .ld-result .alert {
+    text-align: left;
+  }
+  @keyframes ld-fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* --- Prizes: choices for the stage -------------------------------------------------------------- */
+  .ld-prizes {
+    display: grid;
+    gap: 8px;
+  }
+  .ld-prize {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 4px;
+  }
+  .ld-prize-pick {
+    display: grid;
+    min-width: 0;
+    min-height: var(--size-control);
+    flex: 1;
+    justify-items: start;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    text-align: left;
+  }
+  .ld-prize-pick:not([aria-disabled="true"]):hover {
+    border-color: var(--primary);
+  }
+  .ld-prize-pick[aria-pressed="true"] {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    box-shadow: inset 0 0 0 1px var(--primary);
+  }
+  .ld-prize-pick[data-blocked] {
+    background: var(--surface-2);
+    cursor: not-allowed;
+  }
+  .ld-prize-pick[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+  .ld-prize-head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+  }
+  .ld-prize-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .ld-prize-pick[data-blocked] .ld-prize-name {
+    color: var(--text-muted);
+  }
+  .ld-prize-check {
+    color: var(--primary);
+  }
+  .ld-prize-desc {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+  .ld-prize-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+
+  /* --- Lists ------------------------------------------------------------------------------------ */
+  .ld-count {
+    margin-left: 4px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .ld-people-tools {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  /* Phones: the chips scroll sideways in their own row (.chip-row), never the page. */
+  .ld-people-tools > .segmented {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .ld-chip-count {
+    padding: 0 8px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    font-size: var(--fs-xs);
+    line-height: 18px;
+  }
+  .ld-who {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+  }
+  /* Holds a row without ⋯ at the height of one with it. */
+  .ld-menu-space {
+    display: block;
+    width: var(--size-control);
+    height: var(--size-control);
+  }
+  .ld-row-absent {
+    color: var(--text-muted);
+  }
+  .ld-row-absent .font-semibold {
+    font-weight: 500;
+  }
+
+  /* --- Summary ---------------------------------------------------------------------------------- */
+  .ld-summary {
+    display: grid;
+    gap: 12px;
+  }
+  .ld-summary-prize {
+    display: grid;
+    gap: 4px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .ld-summary-title,
+  .ld-summary-heading {
+    font-size: var(--fs-base);
+    font-weight: 600;
+  }
+  .ld-summary-count,
+  .ld-summary-seq {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 400;
+  }
+  .ld-summary-list {
+    display: grid;
+    gap: 2px;
+  }
+
+  /* --- Sheets ------------------------------------------------------------------------------------ */
+  textarea.ld-paste {
+    min-height: 200px;
+  }
+  .ld-qty {
+    max-width: 10rem;
+  }
+  /* A title line and its list, close together (the callout's own 12px gap is for blocks). */
+  :is(.alert, .callout).ld-note-box {
+    display: grid;
+    gap: 4px;
+  }
+  .ld-notes {
+    display: grid;
+    gap: 2px;
+  }
+
+  /* --- Presentation: the stage over the whole screen (US7) ---------------------------------------- */
+  .ld-present {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    overflow: auto;
+    inset: 0;
+  }
+  .ld-present[open] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .ld-present::backdrop {
+    background: var(--chrome-bg);
+  }
+  .ld-present-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 24px;
+  }
+  .ld-present-title {
+    min-width: 0;
+    font-size: var(--fs-xl);
+    font-weight: 600;
+    line-height: 32px;
+    overflow-wrap: anywhere;
+  }
+  .ld-present .ld-stage {
+    align-content: center;
+    padding-top: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .ld-present .ld-wheel {
+    width: min(100%, 62dvh);
+  }
+  .ld-present .ld-stage-name {
+    font-size: var(--fs-xl);
+    line-height: 32px;
+  }
+  .ld-present-summary {
+    display: grid;
+    width: 100%;
+    gap: 8px;
+    padding: 16px;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--text);
+    text-align: left;
+  }
+  /* A TV or a projector: the wheel on the left, the prize, button and result beside it. */
+  @media (min-width: 1024px) and (orientation: landscape) {
+    .ld-present .ld-stage {
+      grid-template-columns: auto minmax(20rem, 28rem);
+      grid-template-areas:
+        "wheel prize"
+        "wheel actions"
+        "wheel result";
+      justify-content: center;
+      align-items: center;
+      column-gap: 48px;
+    }
+    .ld-present .ld-wheel {
+      width: min(52vw, 80dvh);
+      grid-area: wheel;
+    }
+    .ld-present .ld-stage-prize {
+      grid-area: prize;
+      align-self: end;
+    }
+    .ld-present .ld-stage-actions {
+      grid-area: actions;
+    }
+    .ld-present .ld-result {
+      grid-area: result;
+      align-self: start;
+    }
+  }
+}

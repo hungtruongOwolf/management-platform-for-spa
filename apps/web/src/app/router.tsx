@@ -32,6 +32,8 @@ const staffPage = () => import("../features/staff/StaffPage");
 const myWorkPage = () => import("../features/staff/MyWorkPage");
 const notesPage = () => import("../features/notes/NotesPage");
 const activityPage = () => import("../features/activity/ActivityPage");
+// Both lucky draw screens in one chunk: one import here instead of two (startup bytes).
+const luckyDrawPage = () => import("../features/lucky-draw/LuckyDrawPage");
 
 /** Shown while a lazy screen's chunk loads (after the router's pending delay): no spinner. */
 function PageSkeleton() {
@@ -253,6 +255,25 @@ const activityRoute = createRoute({
   component: lazyRouteComponent(activityPage, "ActivityPage"),
 });
 
+/**
+ * "Vòng quay may mắn" (spec lucky-draw): the owner's prize draws; every `/lucky-draws` route
+ * answers 403 to anyone without `lucky_draw.manage`. The participants' filter and search are
+ * parsed in the lazy chunk (features/lucky-draw/search.ts), like the notes.
+ */
+const luckyDrawsRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/vong-quay",
+  beforeLoad: only(mayOpen.luckyDraw),
+  component: lazyRouteComponent(luckyDrawPage, "LuckyDrawListPage"),
+});
+
+const luckyDrawRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/vong-quay/$drawId",
+  beforeLoad: only(mayOpen.luckyDraw),
+  component: lazyRouteComponent(luckyDrawPage, "LuckyDrawPage"),
+});
+
 const inactiveRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/khach-lau-khong-quay-lai",
@@ -368,6 +389,8 @@ const routeTree = rootRoute.addChildren([
     reportsRoute,
     packagesRoute,
     inactiveRoute,
+    luckyDrawsRoute,
+    luckyDrawRoute,
     notesRoute,
     activityRoute,
     staffRoute,

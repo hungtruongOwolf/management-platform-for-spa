@@ -19,6 +19,8 @@ export const mayOpen = {
   // Behind the `activity_log` switch, off by default (ADR-0022 D5).
   activity: (me: Me | null) => can(me, "audit.read") && hasFeature(me, "activity_log", { defaultOff: true }),
   catalog: (me: Me | null) => can(me, "catalog.read"),
+  /** "Vòng quay may mắn" (spec lucky-draw §2): the owner's prize draws, `lucky_draw.manage` only. */
+  luckyDraw: (me: Me | null) => can(me, "lucky_draw.manage"),
   /** Keeps the staff books (attendance, reviews, payroll, profiles). */
   staffBooks: (me: Me | null) =>
     ["attendance.record", "evaluation.record", "payroll.read", "staff.manage"].some((p) => can(me, p)),

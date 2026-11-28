@@ -19,6 +19,7 @@ const HINTS: Record<string, string> = {
   "/quay": "Tìm khách, trừ buổi, thu tiền",
   "/khach-hang": "Tìm khách, hồ sơ, gói liệu trình, lịch sử",
   "/khach-lau-khong-quay-lai": "Khách vắng từ 7 ngày, cần gọi nhắc",
+  "/vong-quay": "Quay thưởng tri ân: người tham gia, giải, kết quả",
   "/goi-lieu-trinh": "Gói sắp hết hạn, hết buổi, đã hủy",
   "/bao-cao": "Thực thu, khách, lượt theo kỳ; sổ doanh thu",
   "/nhat-ky-ghi-chu": "Đọc lại mọi ghi chú: buổi, hồ sơ, chấm công, thưởng/phạt",
