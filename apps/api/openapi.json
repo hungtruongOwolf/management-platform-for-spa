@@ -3500,6 +3500,633 @@
         }
       }
     },
+    "/api/v1/lucky-draws": {
+      "get": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "list_draws",
+        "responses": {
+          "200": {
+            "description": "Every draw of the spa, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawList"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {
+            "description": "auth.forbidden: needs lucky_draw.manage (the owner)"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "create_draw",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LuckyDrawWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created (ETag = version); audited as lucky_draw.create",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "401": {},
+          "403": {},
+          "422": {
+            "description": "validation_failed: name required / too_long, body invalid"
+          }
+        }
+      }
+    },
+    "/api/v1/lucky-draws/{id}": {
+      "get": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "get_draw",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ETag = version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "path.invalid: id is not a UUID"
+          },
+          "401": {},
+          "403": {},
+          "404": {
+            "description": "No such draw in this spa"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "rename_draw",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "The draw's version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LuckyDrawWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed; audited as lucky_draw.rename",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "precondition.if_match_required / if_match_invalid; path.invalid"
+          },
+          "401": {},
+          "403": {},
+          "404": {},
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {
+            "description": "validation_failed: name required / too_long, body invalid"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "delete_draw",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted with its participants, prizes and results; audited as lucky_draw.delete (name and counts)"
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {}
+        }
+      }
+    },
+    "/api/v1/lucky-draws/{id}/participants": {
+      "post": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "add_participants",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LuckyDrawParticipantsAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "All added, in order; audited as lucky_draw.participants_add (the count)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "413": {
+            "description": "payload_too_large: body over 256 KB"
+          },
+          "422": {
+            "description": "validation_failed, nobody added: participants[i].name required / too_long, participants[i].gender invalid, participants count_out_of_range (0 or over 500 in one request), participants too_many (over 2.000 in the draw), body invalid"
+          }
+        }
+      }
+    },
+    "/api/v1/lucky-draws/{id}/participants/{pid}": {
+      "put": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "update_participant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "The person's version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LuckyDrawParticipantWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved; audited as lucky_draw.participant_update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "lucky_draw.participant_drawn: they have a result (forfeited or not)"
+          },
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {
+            "description": "validation_failed: name required / too_long, gender invalid, body invalid"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "delete_participant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted; audited as lucky_draw.participant_delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "lucky_draw.participant_drawn"
+          }
+        }
+      }
+    },
+    "/api/v1/lucky-draws/{id}/prizes": {
+      "post": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "create_prize",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LuckyDrawPrizeWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Added last; audited as lucky_draw.prize_create",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "422": {
+            "description": "validation_failed: name required / too_long, description too_long, eligible invalid, quantity out_of_range, prizes too_many (over 50), body invalid"
+          }
+        }
+      }
+    },
+    "/api/v1/lucky-draws/{id}/prizes/{qid}": {
+      "put": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "update_prize",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "qid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "The prize's version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LuckyDrawPrizeWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved; audited as lucky_draw.prize_update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "lucky_draw.prize_drawn: `eligible` changed on a prize with a result (forfeited or not)"
+          },
+          "412": {
+            "description": "conflict.stale_version"
+          },
+          "422": {
+            "description": "lucky_draw.quantity_below_awarded; validation_failed as for POST"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "delete_prize",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "qid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted; audited as lucky_draw.prize_delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "lucky_draw.prize_drawn: it has a result (forfeited or not)"
+          }
+        }
+      }
+    },
+    "/api/v1/lucky-draws/{id}/results/{rid}/forfeit": {
+      "post": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "forfeit_result",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "rid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Forfeited: the prize gets the slot back, the person stays out of the draw; audited as lucky_draw.forfeit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LuckyDrawDetail"
+                }
+              }
+            }
+          },
+          "400": {},
+          "401": {},
+          "403": {},
+          "404": {},
+          "409": {
+            "description": "lucky_draw.result_forfeited: already forfeited"
+          }
+        }
+      }
+    },
+    "/api/v1/lucky-draws/{id}/spins": {
+      "post": {
+        "tags": [
+          "lucky-draws"
+        ],
+        "operationId": "spin",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "One key per spin attempt: a retry (network error, double click) answers with the result the first request recorded, never a second spin",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LuckyDrawSpin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The server picked the winner uniformly among the people still eligible (OS CSPRNG) and recorded the draw's next spin; audited as lucky_draw.spin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpinOutcome"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "idempotency.key_required / key_invalid; path.invalid"
+          },
+          "401": {},
+          "403": {},
+          "404": {
+            "description": "No such draw, or the prize is not one of this draw's"
+          },
+          "409": {
+            "description": "lucky_draw.prize_exhausted: no slot left; lucky_draw.no_eligible: nobody left who may win it"
+          },
+          "422": {
+            "description": "validation_failed: body invalid; idempotency.key_reuse_mismatch"
+          }
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -6774,7 +7401,7 @@
               "string",
               "null"
             ],
-            "description": "Extra context by action: `staff.adjustment` → `bonus` | `penalty`; `payroll.close`,\n`evaluation.record` → the month (`YYYY-MM`); `feature.changed` → the feature key;\n`customer.follow_up` → the outcome; `staff.login_create` → the role;\n`visit.create` → `backdated` when recorded for a past day."
+            "description": "Extra context by action: `staff.adjustment` → `bonus` | `penalty`; `payroll.close`,\n`evaluation.record` → the month (`YYYY-MM`); `feature.changed` → the feature key;\n`customer.follow_up` → the outcome; `staff.login_create` → the role;\n`visit.create` → `backdated` when recorded for a past day; `lucky_draw.participant_*` →\nthe person's name, `lucky_draw.prize_*` → the prize's, `lucky_draw.spin` /\n`lucky_draw.forfeit` → the winner's."
           },
           "discount": {
             "type": [
@@ -6836,6 +7463,7 @@
           "payroll",
           "settings",
           "accounts",
+          "lucky_draw",
           "other"
         ]
       },
@@ -7961,6 +8589,17 @@
           "catalog.service_update",
           "catalog.plan_create",
           "catalog.plan_update",
+          "lucky_draw.create",
+          "lucky_draw.rename",
+          "lucky_draw.delete",
+          "lucky_draw.participants_add",
+          "lucky_draw.participant_update",
+          "lucky_draw.participant_delete",
+          "lucky_draw.prize_create",
+          "lucky_draw.prize_update",
+          "lucky_draw.prize_delete",
+          "lucky_draw.spin",
+          "lucky_draw.forfeit",
           "staff.login_create",
           "staff.login_password_reset",
           "staff.login_role",
@@ -10816,6 +11455,420 @@
           "manager",
           "technician"
         ]
+      },
+      "LuckyDrawDetail": {
+        "type": "object",
+        "description": "A whole draw: what every read and write of it answers.",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "version",
+          "status",
+          "finished",
+          "participants",
+          "prizes",
+          "results"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished": {
+            "type": "boolean",
+            "description": "`status = finished`: at least one result and no prize with a slot and an eligible person."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LuckyDrawParticipant"
+            },
+            "description": "In entry order (`position`)."
+          },
+          "prizes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LuckyDrawPrize"
+            },
+            "description": "In order (`position`)."
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LuckyDrawResult"
+            },
+            "description": "In spin order (`seq`)."
+          },
+          "status": {
+            "$ref": "#/components/schemas/LuckyDrawStatus"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Goes up on every write inside the draw; send back as `If-Match` when renaming it."
+          }
+        }
+      },
+      "LuckyDrawEligible": {
+        "type": "string",
+        "description": "Who a prize is for.",
+        "enum": [
+          "all",
+          "female",
+          "male"
+        ]
+      },
+      "LuckyDrawGender": {
+        "type": "string",
+        "enum": [
+          "female",
+          "male"
+        ]
+      },
+      "LuckyDrawList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LuckyDrawSummary"
+            },
+            "description": "Newest first."
+          }
+        }
+      },
+      "LuckyDrawParticipant": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "gender",
+          "position",
+          "version",
+          "result_id"
+        ],
+        "properties": {
+          "gender": {
+            "$ref": "#/components/schemas/LuckyDrawGender"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "result_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Their result, forfeited or not: someone with a result is out of every later spin and can no\nlonger be edited or deleted."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when editing this person."
+          }
+        }
+      },
+      "LuckyDrawParticipantWrite": {
+        "type": "object",
+        "description": "One person: name and gender (\"Nữ\" / \"Nam\", required).",
+        "required": [
+          "name",
+          "gender"
+        ],
+        "properties": {
+          "gender": {
+            "$ref": "#/components/schemas/LuckyDrawGender",
+            "description": "`female` | `male`; anything else is `participants[i].gender invalid`."
+          },
+          "name": {
+            "type": "string",
+            "description": "1–120 characters."
+          }
+        },
+        "additionalProperties": false
+      },
+      "LuckyDrawParticipantsAdd": {
+        "type": "object",
+        "required": [
+          "participants"
+        ],
+        "properties": {
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LuckyDrawParticipantWrite"
+            },
+            "description": "1–500 people, all added or none; at most 2.000 in the draw."
+          }
+        },
+        "additionalProperties": false
+      },
+      "LuckyDrawPrize": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "eligible",
+          "quantity",
+          "awarded",
+          "remaining",
+          "eligible_count",
+          "position",
+          "version"
+        ],
+        "properties": {
+          "awarded": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Results not forfeited."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eligible": {
+            "$ref": "#/components/schemas/LuckyDrawEligible"
+          },
+          "eligible_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "People still in the draw who may win it (no result yet, gender admitted)."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`quantity − awarded`."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send back as `If-Match` when editing this prize."
+          }
+        }
+      },
+      "LuckyDrawPrizeWrite": {
+        "type": "object",
+        "description": "Create or replace a prize.",
+        "required": [
+          "name",
+          "eligible",
+          "quantity"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Up to 250 characters; blank or absent = none."
+          },
+          "eligible": {
+            "$ref": "#/components/schemas/LuckyDrawEligible",
+            "description": "`all` | `female` | `male`; cannot change once the prize has a result."
+          },
+          "name": {
+            "type": "string",
+            "description": "1–140 characters."
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int64",
+            "description": "1–1000, never below what the prize awarded."
+          }
+        },
+        "additionalProperties": false
+      },
+      "LuckyDrawResult": {
+        "type": "object",
+        "required": [
+          "id",
+          "seq",
+          "prize_id",
+          "participant_id",
+          "drawn_at",
+          "forfeited_at"
+        ],
+        "properties": {
+          "drawn_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "forfeited_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "\"Vắng mặt, trả giải\": the slot went back to the prize, the person stays out of the draw."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "participant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prize_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Spin number in the draw: 1, 2, 3…"
+          }
+        }
+      },
+      "LuckyDrawSpin": {
+        "type": "object",
+        "required": [
+          "prize_id"
+        ],
+        "properties": {
+          "prize_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A prize of this draw; the server picks the winner."
+          }
+        },
+        "additionalProperties": false
+      },
+      "LuckyDrawSpinResult": {
+        "type": "object",
+        "description": "The result a spin just recorded.",
+        "required": [
+          "id",
+          "seq",
+          "prize_id",
+          "participant_id",
+          "drawn_at"
+        ],
+        "properties": {
+          "drawn_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "participant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prize_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "LuckyDrawStatus": {
+        "type": "string",
+        "enum": [
+          "not_started",
+          "in_progress",
+          "finished"
+        ]
+      },
+      "LuckyDrawSummary": {
+        "type": "object",
+        "description": "One line of `GET /lucky-draws`.",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "participant_count",
+          "prize_slots",
+          "awarded",
+          "status"
+        ],
+        "properties": {
+          "awarded": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Results not forfeited."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "participant_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "prize_slots": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Every prize's quantity, summed."
+          },
+          "status": {
+            "$ref": "#/components/schemas/LuckyDrawStatus"
+          }
+        }
+      },
+      "LuckyDrawWrite": {
+        "type": "object",
+        "description": "Create or rename a draw.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1–80 characters."
+          }
+        },
+        "additionalProperties": false
       },
       "Me": {
         "type": "object",
@@ -14600,6 +15653,22 @@
           }
         }
       },
+      "SpinOutcome": {
+        "type": "object",
+        "description": "`POST /lucky-draws/{id}/spins`: the result, and the whole draw after it.",
+        "required": [
+          "result",
+          "draw"
+        ],
+        "properties": {
+          "draw": {
+            "$ref": "#/components/schemas/LuckyDrawDetail"
+          },
+          "result": {
+            "$ref": "#/components/schemas/LuckyDrawSpinResult"
+          }
+        }
+      },
       "StaffAccountDto": {
         "type": "object",
         "required": [
@@ -15387,7 +16456,8 @@
           "package_plan",
           "account",
           "role",
-          "spa"
+          "spa",
+          "lucky_draw"
         ]
       },
       "SuggestedNextOn": {
@@ -16593,6 +17663,10 @@
     {
       "name": "reports",
       "description": "Xem lại và theo dõi: hôm nay, theo khoảng ngày, sổ doanh thu, lịch sử khách, liệu trình"
+    },
+    {
+      "name": "lucky-draws",
+      "description": "Vòng quay may mắn của chủ spa: chương trình, người tham gia, giải thưởng, quay"
     },
     {
       "name": "admin",

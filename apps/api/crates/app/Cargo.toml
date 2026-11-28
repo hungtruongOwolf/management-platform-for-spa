@@ -20,7 +20,9 @@ futures-util = { version = "0.3.34", default-features = false, features = ["std"
 hr = { version = "0.1.0", path = "../hr" }
 governor = { version = "0.10.4", default-features = false, features = ["std", "dashmap", "quanta"] }
 identity = { version = "0.1.0", path = "../identity" }
+http-body-util = "0.1.5"
 kernel = { version = "0.1.0", path = "../kernel" }
+lucky_draw = { version = "0.1.0", path = "../lucky_draw" }
 operations = { version = "0.1.0", path = "../operations" }
 org = { version = "0.1.0", path = "../org" }
 packages = { version = "0.1.0", path = "../packages" }
@@ -34,7 +36,7 @@ sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 tower = { version = "0.5.3", features = ["util"] }
-tower-http = { version = "0.7.1", features = ["limit", "request-id", "timeout", "trace", "util"] }
+tower-http = { version = "0.7.1", features = ["request-id", "timeout", "trace", "util"] }
 tower_governor = "0.8.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
@@ -43,5 +45,4 @@ uuid = "1.29.0"
 
 [dev-dependencies]
 # Every other crate the tests use is already a normal dependency (same features).
-http-body-util = "0.1.5"
 kernel = { path = "../kernel", features = ["testing"] }

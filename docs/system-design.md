@@ -165,9 +165,9 @@ Không có cron ngoài. `app::jobs::spawn_maintenance` ([`jobs.rs`](../apps/api/
 | Job | Chu kỳ claim | Việc |
 |---|---|---|
 | `purge` | 55 phút | `app.purge_idempotency_records('48 hours')`; `app.purge_sessions('30 days')`: xóa session đã thu hồi / hết hạn quá 30 ngày (tối thiểu hóa IP + user agent, EM Q-DB4) |
-| `invariants` | 23 giờ | `app.invariant_violations()`: 11 phép kiểm bản sao dữ liệu trên mọi spa, **chỉ trả số đếm** (không dữ liệu khách). Có dòng lệch → log `ERROR data invariant violated` để hosting log alert |
+| `invariants` | 23 giờ | `app.invariant_violations()`: 13 phép kiểm bản sao dữ liệu trên mọi spa, **chỉ trả số đếm** (không dữ liệu khách). Có dòng lệch → log `ERROR data invariant violated` để hosting log alert |
 
-11 phép kiểm: `sale_amount_paid`, `payment_branch`, `visit_sale_link`, `voided_visit_open_sale`, `sessions_remaining`, `cancelled_package_sessions`, `package_sale_copy`, `staff_mirrors_employment`, `customer_search_text`, `business_date_local_day`, `appointment_visit_customer` (định nghĩa ở migration 0035, bản chạy tay `infra/perf/db/invariants.sql`). Cả bốn hàm (`claim_maintenance`, `purge_idempotency_records`, `purge_sessions`, `invariant_violations`) là `SECURITY DEFINER`, nên `app_rw` không cần quyền `DELETE` trên `session` hay `BYPASSRLS`. `audit_log` **không có hạn giữ** (EM Q-DB4).
+13 phép kiểm: `sale_amount_paid`, `payment_branch`, `visit_sale_link`, `voided_visit_open_sale`, `sessions_remaining`, `cancelled_package_sessions`, `package_sale_copy`, `staff_mirrors_employment`, `customer_search_text`, `business_date_local_day`, `appointment_visit_customer`, và từ 0055 `lucky_draw_awarded_within_quantity`, `lucky_draw_winner_gender` (định nghĩa ở migration 0035, thay ở 0055, bản chạy tay `infra/perf/db/invariants.sql`). Cả bốn hàm (`claim_maintenance`, `purge_idempotency_records`, `purge_sessions`, `invariant_violations`) là `SECURITY DEFINER`, nên `app_rw` không cần quyền `DELETE` trên `session` hay `BYPASSRLS`. `audit_log` **không có hạn giữ** (EM Q-DB4).
 
 ## 6. Hiệu năng (performance budgets)
 

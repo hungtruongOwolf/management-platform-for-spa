@@ -466,11 +466,23 @@ describe("HISTORY", () => {
     "tenant.owner_mfa_changed",
     // A deleted group has no screen left (K68).
     "catalog.category_delete",
+    // The lucky draw screen shows its own results (architecture/lucky-draw §1).
+    "lucky_draw.create",
+    "lucky_draw.rename",
+    "lucky_draw.delete",
+    "lucky_draw.participants_add",
+    "lucky_draw.participant_update",
+    "lucky_draw.participant_delete",
+    "lucky_draw.prize_create",
+    "lucky_draw.prize_update",
+    "lucky_draw.prize_delete",
+    "lucky_draw.spin",
+    "lucky_draw.forfeit",
   ];
 
-  it("places every audit action (a Record over AuditAction: a new one fails the typecheck): 37 with words, 28 without", () => {
+  it("places every audit action (a Record over AuditAction: a new one fails the typecheck): 37 with words, 39 without", () => {
     const keys = Object.keys(HISTORY) as AuditAction[];
-    expect(keys).toHaveLength(65);
+    expect(keys).toHaveLength(76);
     expect(keys.filter((k) => HISTORY[k] === null).sort()).toEqual([...NONE].sort());
     expect(keys.filter((k) => HISTORY[k] !== null)).toHaveLength(37);
   });

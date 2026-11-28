@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE app.lucky_draw_result\n           SET forfeited_at = clock_timestamp(), forfeited_by = $4\n           WHERE tenant_id = $1 AND draw_id = $2 AND id = $3 AND forfeited_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3862fc10bf8517281ea05e19628d9cdbd6ca96f420d179e552471549c7397732"
+}

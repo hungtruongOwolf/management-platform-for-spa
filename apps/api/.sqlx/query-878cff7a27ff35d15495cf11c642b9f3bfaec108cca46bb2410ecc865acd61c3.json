@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d.id, d.name, d.created_at,\n                  (SELECT count(*) FROM app.lucky_draw_participant p\n                   WHERE p.tenant_id = d.tenant_id AND p.draw_id = d.id) AS \"participants!\",\n                  (SELECT count(*) FROM app.lucky_draw_result r\n                   WHERE r.tenant_id = d.tenant_id AND r.draw_id = d.id) AS \"results!\",\n                  (SELECT count(*) FROM app.lucky_draw_participant p\n                   WHERE p.tenant_id = d.tenant_id AND p.draw_id = d.id AND p.gender = 'female'\n                     AND NOT EXISTS (SELECT 1 FROM app.lucky_draw_result r\n                                     WHERE r.tenant_id = p.tenant_id AND r.draw_id = p.draw_id\n                                       AND r.participant_id = p.id)) AS \"undrawn_female!\",\n                  (SELECT count(*) FROM app.lucky_draw_participant p\n                   WHERE p.tenant_id = d.tenant_id AND p.draw_id = d.id AND p.gender = 'male'\n                     AND NOT EXISTS (SELECT 1 FROM app.lucky_draw_result r\n                                     WHERE r.tenant_id = p.tenant_id AND r.draw_id = p.draw_id\n                                       AND r.participant_id = p.id)) AS \"undrawn_male!\"\n           FROM app.lucky_draw d\n           WHERE d.tenant_id = $1\n           ORDER BY d.created_at DESC, d.id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "participants!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "results!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "undrawn_female!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "undrawn_male!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "878cff7a27ff35d15495cf11c642b9f3bfaec108cca46bb2410ecc865acd61c3"
+}

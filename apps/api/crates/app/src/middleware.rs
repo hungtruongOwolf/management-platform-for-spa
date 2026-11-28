@@ -16,7 +16,6 @@ use tower::ServiceBuilder;
 use tower_governor::governor::{GovernorConfig, GovernorConfigBuilder};
 use tower_governor::key_extractor::{KeyExtractor, SmartIpKeyExtractor};
 use tower_governor::{GovernorError, GovernorLayer};
-use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
@@ -30,6 +29,8 @@ pub struct HttpPolicy {
     pub admin_origin: Option<String>,
     pub request_timeout: Duration,
     pub max_body_bytes: usize,
+    /// Routes that take a larger body than `max_body_bytes`, each with its own cap.
+    pub larger_bodies: Vec<BodyAllowance>,
     /// Sustained requests per second per client IP, and the burst allowed on top.
     pub rate_per_second: u64,
     pub rate_burst: u32,
@@ -42,10 +43,80 @@ impl HttpPolicy {
             admin_origin: None,
             request_timeout: Duration::from_secs(10),
             max_body_bytes: 64 * 1024,
+            larger_bodies: vec![BodyAllowance {
+                method: Method::POST,
+                path: lucky_draw::http::PARTICIPANTS_ROUTE,
+                max_bytes: lucky_draw::http::PARTICIPANTS_MAX_BODY_BYTES,
+            }],
             rate_per_second: 5,
             rate_burst: 60,
         }
     }
+}
+
+/// A route allowed a larger body than the default: a pasted list of 500 participants (lucky
+/// draw) does not fit 64 KB. `path` is the route template (`{…}` = one segment).
+#[derive(Debug, Clone)]
+pub struct BodyAllowance {
+    pub method: Method,
+    pub path: &'static str,
+    pub max_bytes: usize,
+}
+
+impl BodyAllowance {
+    fn matches(&self, method: &Method, path: &str) -> bool {
+        if *method != self.method {
+            return false;
+        }
+        let mut template = self.path.split('/');
+        let mut actual = path.split('/');
+        loop {
+            match (template.next(), actual.next()) {
+                (None, None) => return true,
+                (Some(t), Some(a)) if t.starts_with('{') && t.ends_with('}') && !a.is_empty() => {}
+                (Some(t), Some(a)) if t == a => {}
+                _ => return false,
+            }
+        }
+    }
+}
+
+/// The body cap of one request: its route's allowance, else the default.
+#[derive(Debug, Clone)]
+struct BodyLimits {
+    default: usize,
+    larger: Vec<BodyAllowance>,
+}
+
+impl BodyLimits {
+    fn for_request(&self, method: &Method, path: &str) -> usize {
+        self.larger
+            .iter()
+            .find(|a| a.matches(method, path))
+            .map_or(self.default, |a| a.max_bytes)
+    }
+}
+
+/// `tower_http`'s body limit with a cap per route: a declared length over the cap is `413` at
+/// once; a body without one (chunked) is cut off at the cap while it is read, which the extractor
+/// answers with `413` too.
+async fn limit_body(
+    State(limits): State<Arc<BodyLimits>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let limit = limits.for_request(request.method(), request.uri().path());
+    let declared = request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    if declared.is_some_and(|n| n > u64::try_from(limit).unwrap_or(u64::MAX)) {
+        return Problem::for_status(StatusCode::PAYLOAD_TOO_LARGE).into_response();
+    }
+    let request =
+        request.map(|body| axum::body::Body::new(http_body_util::Limited::new(body, limit)));
+    next.run(request).await
 }
 
 /// The rate-limit bucket of a client address: an IPv4 address as is, an IPv6 address by its /64
@@ -124,6 +195,10 @@ pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
         public: policy.public_origin.clone(),
         admin: policy.admin_origin.clone(),
     });
+    let body_limits = Arc::new(BodyLimits {
+        default: policy.max_body_bytes,
+        larger: policy.larger_bodies.clone(),
+    });
 
     let router = router.layer(middleware::from_fn_with_state(origins, check_origin));
     let router = match governor {
@@ -146,7 +221,7 @@ pub fn apply(router: Router, policy: &HttpPolicy) -> Router {
                     StatusCode::REQUEST_TIMEOUT,
                     policy.request_timeout,
                 ))
-                .layer(RequestBodyLimitLayer::new(policy.max_body_bytes)),
+                .layer(middleware::from_fn_with_state(body_limits, limit_body)),
         )
         // Outermost, so it also sees what the layers above build (429, 408, 413, problem+json).
         .layer(middleware::map_response(private_unless_set))
@@ -313,6 +388,32 @@ mod tests {
             split.expected_for("/api/v1/administrator"),
             "https://app.example"
         );
+    }
+
+    #[test]
+    fn a_larger_body_is_allowed_on_its_own_route_only() {
+        let limits = BodyLimits {
+            default: 64,
+            larger: HttpPolicy::standard(String::new()).larger_bodies,
+        };
+        let id = "0190f000-0000-7000-8000-000000000001";
+        let participants = format!("/api/v1/lucky-draws/{id}/participants");
+        assert_eq!(
+            limits.for_request(&Method::POST, &participants),
+            lucky_draw::http::PARTICIPANTS_MAX_BODY_BYTES
+        );
+        for (method, path) in [
+            (Method::PUT, participants.clone()),
+            (Method::POST, format!("/api/v1/lucky-draws/{id}/prizes")),
+            (
+                Method::POST,
+                format!("/api/v1/lucky-draws/{id}/participants/x"),
+            ),
+            (Method::POST, "/api/v1/lucky-draws//participants".to_owned()),
+            (Method::POST, "/api/v1/customers".to_owned()),
+        ] {
+            assert_eq!(limits.for_request(&method, &path), 64, "{method} {path}");
+        }
     }
 
     #[test]

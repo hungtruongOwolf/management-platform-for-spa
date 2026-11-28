@@ -121,7 +121,7 @@ Thứ tự ưu tiên đúng như trên. Không cần job cập nhật trạng th
 | `maintenance_run` (0035) | job (PK), last_run_at | Không grant, RLS không policy; chỉ hàm `app.claim_maintenance(job, every)` chạm tới (một instance chạy mỗi job mỗi khoảng) |
 
 ## Migrations (forward-only, `sqlx migrate`)
-File ở `apps/api/migrations/`, mới nhất **0040**. Số **0008, 0010, 0031 không có file**: được giữ chỗ (0008 cho S9, 0010 cho S10, 0031 cho một thay đổi về chức danh mà [ADR-0015](../decisions/ADR-0015-own-profile-out-of-the-books.md) giải bằng code) rồi không dùng; sqlx chỉ cần số tăng dần nên khoảng trống vô hại.
+File ở `apps/api/migrations/`, mới nhất **0055**. Số **0008, 0010, 0031 không có file**: được giữ chỗ (0008 cho S9, 0010 cho S10, 0031 cho một thay đổi về chức danh mà [ADR-0015](../decisions/ADR-0015-own-profile-out-of-the-books.md) giải bằng code) rồi không dùng; sqlx chỉ cần số tăng dần nên khoảng trống vô hại.
 
 | Migration | Nội dung (chi tiết ở mục tương ứng bên dưới) |
 |---|---|
@@ -150,6 +150,7 @@ File ở `apps/api/migrations/`, mới nhất **0040**. Số **0008, 0010, 0031 
 | `0050_owner_mfa_switch` | `tenant.owner_mfa_required`; `user_requires_mfa` chỉ tính role `requires_mfa` ở spa bật (nghiêm nhất thắng, spa ngưng vẫn tính); `platform_set_owner_mfa`; `platform_tenant_overview` thêm cột (ADR-0020) |
 | `0051_activity_log` · `0052_record_history` | Index `audit_log_tenant_at_id_idx`, `audit_log_tenant_actor_at_idx` (ADR-0021) · `record.history.read` spa-local, cờ `activity_log` mặc định tắt, `audit_log_edit_idx`, `audit_log_staff_day_idx` (ADR-0022) |
 | `0053_audit_write_time` | Default `audit_log.at` = `clock_timestamp()` (giờ insert, không phải giờ bắt đầu transaction) cho writer SQL; writer Rust tự truyền `at` ([ADR-0023](../decisions/ADR-0023-audit-instant-is-write-time.md)); chỉ đổi catalog, binary cũ chạy được |
+| `0055_lucky_draw` | Vòng quay may mắn: `lucky_draw`, `lucky_draw_participant`, `lucky_draw_prize`, `lucky_draw_result` (RLS, FK kèm tenant, cascade theo chương trình), trigger `lucky_draw_result_forfeit_only`, quyền `lucky_draw.manage` cho owner của mọi spa + mẫu owner, `invariant_violations()` thêm 2 phép kiểm (13) ([mục dưới](#vòng-quay-may-mắn-0055-spec), [ADR-0025](../decisions/ADR-0025-lucky-draw-server-side-draw.md)). Binary cũ chạy được; migrate trước binary mới |
 | `0054_service_category_delete` | `GRANT DELETE ON app.service_category TO app_rw` (xóa nhóm chưa có dịch vụ, [spec record-history K68](../product/specs/record-history.md)); FK `service.category_id` (NO ACTION) giữ nhóm còn dịch vụ, kể cả ngừng bán; ghi dịch vụ giữ nhóm `FOR KEY SHARE`, xóa khóa `FOR UPDATE`. Binary cũ chạy được; migrate trước binary mới |
 
 Từ 0016 crate `kernel` có `build.rs` (`rerun-if-changed=../../migrations`): trước đó thêm file migration mới không làm build lại migrator nhúng, `app migrate` lặng lẽ bỏ qua nó. Kế hoạch tách riêng migration RLS/grants ban đầu đã bỏ: mỗi migration tự bật RLS và cấp quyền cho bảng của nó.
@@ -263,7 +264,7 @@ Không có bảng mới. 0013:
   - `visit_day_idx`, `sale_day_idx`, `payment_day_idx`, `refund_day_idx`: dẫn đầu `branch_id`. Bản `(tenant_id, business_date)` từ 0013 thay thế.
   - Không đụng constraint, unique hay đích FK nào. Hoàn tác: `CREATE INDEX CONCURRENTLY` ghi trong file migration. Test `kernel/tests/indexes.rs`.
 - **0035–0037 (C1, C2, C4, EM 2026-11-09):**
-  - **0035** thêm `app.maintenance_run` (RLS bật, không policy, không grant), `app.claim_maintenance(job, every)` (upsert nguyên tử, một instance chạy mỗi khoảng), `app.purge_sessions(older_than)` (job truyền 30 ngày) và `app.invariant_violations()` (11 phép kiểm: `sale_amount_paid`, `payment_branch`, `visit_sale_link`, `voided_visit_open_sale`, `sessions_remaining`, `cancelled_package_sessions`, `package_sale_copy`, `staff_mirrors_employment`, `customer_search_text`, `business_date_local_day`, `appointment_visit_customer`; chỉ trả số đếm). Cả ba hàm là `SECURITY DEFINER` + `search_path` pin, chỉ `app_rw` `EXECUTE`. Job gọi chúng: `app::jobs` (backend §6).
+  - **0035** thêm `app.maintenance_run` (RLS bật, không policy, không grant), `app.claim_maintenance(job, every)` (upsert nguyên tử, một instance chạy mỗi khoảng), `app.purge_sessions(older_than)` (job truyền 30 ngày) và `app.invariant_violations()` (11 phép kiểm, 13 từ 0055 thêm 2 phép của vòng quay: `sale_amount_paid`, `payment_branch`, `visit_sale_link`, `voided_visit_open_sale`, `sessions_remaining`, `cancelled_package_sessions`, `package_sale_copy`, `staff_mirrors_employment`, `customer_search_text`, `business_date_local_day`, `appointment_visit_customer`; chỉ trả số đếm). Cả ba hàm là `SECURITY DEFINER` + `search_path` pin, chỉ `app_rw` `EXECUTE`. Job gọi chúng: `app::jobs` (backend §6).
   - **0036** thêm FK `NOT VALID` cho cột "người làm" → `user_account`: `visit.created_by/voided_by`, `sale.created_by/voided_by`, `payment.created_by`, `refund.created_by`, `customer_package.created_by/cancelled_by`, `appointment.created_by/closed_by`.
   - **0037** chạy `VALIDATE` (khóa `SHARE UPDATE EXCLUSIVE`, ghi vẫn chạy). 3 năm dữ liệu: 0,4 + 0,4 + 0,6 s.
   - `TenantTx` đặt thêm `idle_in_transaction_session_timeout = 30s` (transaction-local; code, không phải migration).
@@ -285,6 +286,22 @@ Không có bảng mới. 0013:
 ## SĐT chỉ đầu số di động + audit khách không còn PII (0047–0048, ADR-0019 D12/D13)
 - CHECK mới `customer_phone_mobile`, `staff_phone_mobile`, `user_account_phone_mobile`, `appointment_guest_phone_mobile`: `^\+84[35789][0-9]{8}$`, đúng quy tắc của `kernel::PhoneE164` (trước đây DB nhận mọi `+84` + 9 số, khách lịch hẹn nhận mọi `+` 8–15 số). Thêm `NOT VALID` ở 0047: mọi dòng ghi mới bị kiểm ngay. 0048 `VALIDATE` rồi bỏ 4 CHECK rộng cũ; **chỉ chạy 0048 sau khi lead kiểm dữ liệu staging** (câu kiểm nằm ở đầu file 0048, cả 4 số phải bằng 0).
 - `customer.create` / `customer.update` trong `audit_log` không còn lưu tên, SĐT, năm sinh, ngày sinh: chỉ cờ `has_name`, `has_phone`, `has_birth_year`, `has_birth_date`, `has_health_note`, `gender`, và với `customer.update` thêm `after.changed` (danh sách trường đã đổi, tên theo API: `full_name`, `phone`, `gender`, `birth_year`, `birth_date`, `address`, `source`, `note`). 0047 viết lại các dòng cũ theo đúng dạng này (hàm `pg_temp` chỉ sống trong migration); ai làm (`actor_user_id`), lúc nào (`at`), đổi trường nào vẫn giữ. Lý do: audit giữ mãi (EM Q-DB4), nên PII ở đây không bao giờ mất kể cả khi hồ sơ đã ẩn danh (Nghị định 13/2023).
+
+## Vòng quay may mắn (0055, [spec](../product/specs/lucky-draw.md))
+Hợp đồng API: [lucky-draw](lucky-draw.md). Quyết định quay ở server: [ADR-0025](../decisions/ADR-0025-lucky-draw-server-side-draw.md).
+
+| Bảng | Cột chính | Ràng buộc / index |
+|---|---|---|
+| `lucky_draw` | tenant_id, name (1–80, trim), created_by → user_account, created_at, updated_at, `version` (tăng ở **mọi** lệnh ghi trong chương trình) | `UNIQUE (tenant_id, id)`; index `(tenant_id, created_at DESC)` (danh sách) |
+| `lucky_draw_participant` | draw_id, name (1–120), gender `male`/`female` (bắt buộc), position (thứ tự nhập, max + 1 dưới khóa), created_by, version | FK `(tenant_id, draw_id)` → `lucky_draw` **ON DELETE CASCADE**; `UNIQUE (tenant_id, draw_id, id)` (đích FK của kết quả), `UNIQUE (tenant_id, draw_id, position)` (cũng là index đọc theo thứ tự) |
+| `lucky_draw_prize` | draw_id, name (1–140), description (≤ 250, NULL), eligible `all`/`male`/`female`, quantity 1–1000, position, created_by, version | như trên |
+| `lucky_draw_result` | draw_id, prize_id, participant_id, seq > 0, drawn_at (`clock_timestamp()` lúc ghi, theo đúng `seq`), drawn_by, forfeited_at / forfeited_by (NULL cùng nhau) | FK `(tenant_id, draw_id)` CASCADE; FK **ba cột** `(tenant_id, draw_id, prize_id)` / `(tenant_id, draw_id, participant_id)` → giải / người **cùng chương trình**, `ON DELETE RESTRICT` (giải / người có kết quả không xóa riêng được; xóa chương trình vẫn xóa cả cây trong một câu vì kiểm RESTRICT chạy sau mọi cascade của câu đó); `UNIQUE (tenant_id, draw_id, participant_id)` (một người một kết quả, kể cả đã trả), `UNIQUE (tenant_id, draw_id, seq)`; CHECK `forfeited_at >= drawn_at`; index `(tenant_id, draw_id, prize_id)` |
+
+- RLS `tenant_isolation` trên cả 4 bảng. `app_rw`: `SELECT, INSERT, DELETE` + `UPDATE` theo cột (`lucky_draw (name, updated_at, version)`, người `(name, gender, updated_at, version)`, giải `(name, description, eligible, quantity, updated_at, version)`); kết quả chỉ `SELECT, INSERT, UPDATE (forfeited_at, forfeited_by)`, **không `DELETE`** (cascade chạy với quyền owner của bảng).
+- Trigger `lucky_draw_result_forfeit_only` (BEFORE UPDATE OR DELETE): chỉ cho `UPDATE` đặt `forfeited_*` từ NULL **một lần**, mọi cột khác bất biến; `DELETE` chỉ khi đến từ cascade (`pg_trigger_depth() >= 2`); chặn cả schema owner (`reset-demo` tắt trigger USER trong transaction của nó, như với bảng append-only).
+- Không có trạng thái lưu: *Chưa quay / Đang quay / Đã xong* suy ra ở `lucky_draw::domain::Status` từ số kết quả + `remaining` / `eligible_count` của từng giải.
+- `app.invariant_violations()` (thay bằng `CREATE OR REPLACE` ở 0055, giữ 11 phép của 0035): thêm `lucky_draw_awarded_within_quantity` (kết quả chưa trả của một giải ≤ `quantity`) và `lucky_draw_winner_gender` (người trúng khớp giới của giải); bản chạy tay ở `infra/perf/db/invariants.sql` mục 12–13.
+- Dữ liệu cá nhân: họ tên + giới tính người tham gia (không SĐT), không mã hóa (ít nhạy cảm, spec §6), xóa cùng chương trình. `reset-demo` xóa cả 4 bảng.
 
 ## Seed
 Dữ liệu tenant Viên Phúc Y Đường: 1 chi nhánh (Phường Đông Hà), 10 nhóm và 35 dịch vụ từ [service-catalog](../product/service-catalog.md), role hệ thống, tài khoản chủ spa. Giá "Ôn ấm tử cung" và các gói liệu trình: chờ EM.

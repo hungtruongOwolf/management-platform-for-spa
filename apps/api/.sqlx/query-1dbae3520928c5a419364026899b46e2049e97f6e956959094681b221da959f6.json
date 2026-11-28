@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id, p.name, p.gender, p.position, p.version, r.id AS \"result_id?\"\n           FROM app.lucky_draw_participant p\n           LEFT JOIN app.lucky_draw_result r\n             ON r.tenant_id = p.tenant_id AND r.draw_id = p.draw_id AND r.participant_id = p.id\n           WHERE p.tenant_id = $1 AND p.draw_id = $2 AND p.id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_participant",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_participant",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "gender",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_participant",
+            "name": "gender"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_participant",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_participant",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "result_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_result",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "1dbae3520928c5a419364026899b46e2049e97f6e956959094681b221da959f6"
+}

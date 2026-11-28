@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM app.lucky_draw_prize WHERE tenant_id = $1 AND draw_id = $2 AND id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9580b514feeefcdcc2896f3dae815ae809b7abcaea187e535a9c1686600c9c2c"
+}

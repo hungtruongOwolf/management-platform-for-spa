@@ -67,6 +67,11 @@ enum Target {
     Account,
     /// A refund of the fixture's package.
     Refund,
+    /// The fixture's lucky draw: two people, one prize of one slot, spun once (`{pid}` = the
+    /// winner, `{qid}` = the prize, `{rid}` = the result).
+    LuckyDraw,
+    /// A second, empty draw: deleting it leaves the first one for the other rows.
+    SpareLuckyDraw,
 }
 
 struct Route {
@@ -884,6 +889,98 @@ const ROUTES: &[Route] = &[
         "/api/v1/packages",
         Access::Perm(P::CustomerRead, OWNER_MANAGER),
     ),
+    // "Vòng quay may mắn" (spec lucky-draw): the owner's alone (tests/lucky_draw.rs).
+    route(
+        "GET",
+        "/api/v1/lucky-draws",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    ),
+    route(
+        "POST",
+        "/api/v1/lucky-draws",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .body(lucky_draw_body),
+    route(
+        "GET",
+        "/api/v1/lucky-draws/{id}",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw),
+    // The draw's version is past 1 after the fixture's writes: the owner's call is a 412.
+    route(
+        "PUT",
+        "/api/v1/lucky-draws/{id}",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw)
+    .body(lucky_draw_body)
+    .if_match(),
+    route(
+        "DELETE",
+        "/api/v1/lucky-draws/{id}",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::SpareLuckyDraw),
+    route(
+        "POST",
+        "/api/v1/lucky-draws/{id}/participants",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw)
+    .body(lucky_participants_body),
+    // `{pid}` is the winner: the owner's edit and delete are 409 participant_drawn.
+    route(
+        "PUT",
+        "/api/v1/lucky-draws/{id}/participants/{pid}",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw)
+    .body(lucky_participant_body)
+    .if_match(),
+    route(
+        "DELETE",
+        "/api/v1/lucky-draws/{id}/participants/{pid}",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw),
+    route(
+        "POST",
+        "/api/v1/lucky-draws/{id}/prizes",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw)
+    .body(lucky_prize_body),
+    // `{qid}` was spun: the edit keeps its target and slot count; the delete is 409 prize_drawn.
+    route(
+        "PUT",
+        "/api/v1/lucky-draws/{id}/prizes/{qid}",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw)
+    .body(lucky_prize_body)
+    .if_match(),
+    route(
+        "DELETE",
+        "/api/v1/lucky-draws/{id}/prizes/{qid}",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw),
+    // The prize's one slot is taken: the owner's spin is 409 prize_exhausted, never a winner.
+    route(
+        "POST",
+        "/api/v1/lucky-draws/{id}/spins",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw)
+    .body(lucky_spin_body)
+    .idempotent(),
+    route(
+        "POST",
+        "/api/v1/lucky-draws/{id}/results/{rid}/forfeit",
+        Access::Perm(P::LuckyDrawManage, OWNER_ONLY),
+    )
+    .id(Target::LuckyDraw),
     // platform admin console (ADR-0018): operators only, never a spa session
     route("POST", "/api/v1/admin/auth/login", Access::Public).body(operator_login_body),
     route("POST", "/api/v1/admin/auth/logout", Access::Operator).consumes_session(),
@@ -1262,6 +1359,23 @@ fn sell_body(f: &Fixture) -> Option<Value> {
     }))
 }
 
+fn lucky_draw_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"name": "Tri ân khách hàng"}))
+}
+fn lucky_participants_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"participants": [{"name": "Khách mời", "gender": "female"}]}))
+}
+fn lucky_participant_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"name": "Trần Thị Lan", "gender": "female"}))
+}
+/// The fixture's prize as it is (for everyone, one slot): an edit that changes nothing it guards.
+fn lucky_prize_body(_: &Fixture) -> Option<Value> {
+    Some(json!({"name": "Quà tri ân", "description": null, "eligible": "all", "quantity": 1}))
+}
+fn lucky_spin_body(f: &Fixture) -> Option<Value> {
+    Some(json!({"prize_id": f.lucky_prize}))
+}
+
 fn sale_note_body(_: &Fixture) -> Option<Value> {
     Some(json!({"note": "Khách đau vai gáy"}))
 }
@@ -1304,6 +1418,12 @@ struct Fixture {
     /// The owner's login.
     account: String,
     refund: String,
+    lucky_draw: String,
+    spare_lucky_draw: String,
+    /// The draw's winner, its prize and the result.
+    lucky_participant: String,
+    lucky_prize: String,
+    lucky_result: String,
 }
 
 impl Fixture {
@@ -1324,6 +1444,8 @@ impl Fixture {
             Target::Tenant => &self.tenant_id,
             Target::Account => &self.account,
             Target::Refund => &self.refund,
+            Target::LuckyDraw => &self.lucky_draw,
+            Target::SpareLuckyDraw => &self.spare_lucky_draw,
         }
     }
 }
@@ -1497,6 +1619,11 @@ async fn fixture(
         reset_request: String::new(),
         account: String::new(),
         refund: String::new(),
+        lucky_draw: String::new(),
+        spare_lucky_draw: String::new(),
+        lucky_participant: String::new(),
+        lucky_prize: String::new(),
+        lucky_result: String::new(),
     };
     f.service = created_id(
         app,
@@ -1633,7 +1760,71 @@ async fn fixture(
             .bind(&second)
             .fetch_one(db)
             .await?;
+    lucky_draw_fixture(app, &owner, &mut f).await?;
     Ok(f)
+}
+
+/// A draw with two people and one prize of one slot, spun once; and a second, empty draw.
+async fn lucky_draw_fixture(
+    app: &Router,
+    owner: &str,
+    f: &mut Fixture,
+) -> Result<(), Box<dyn std::error::Error>> {
+    f.lucky_draw = created_id(app, owner, "/lucky-draws", json!({"name": "Tri ân 20/11"})).await?;
+    f.spare_lucky_draw = created_id(
+        app,
+        owner,
+        "/lucky-draws",
+        json!({"name": "Chương trình nháp"}),
+    )
+    .await?;
+    let draw = format!("/lucky-draws/{}", f.lucky_draw);
+    let people = json!({"participants": [
+        {"name": "Trần Thị Lan", "gender": "female"}, {"name": "Lê Văn Minh", "gender": "male"},
+    ]});
+    let added = send(
+        app,
+        "POST",
+        &format!("{draw}/participants"),
+        Some(owner),
+        Some(people),
+        &[],
+    )
+    .await;
+    if added.status != StatusCode::CREATED {
+        return Err(format!("fixture participants → {} {}", added.status, added.body).into());
+    }
+    let prized = send(
+        app,
+        "POST",
+        &format!("{draw}/prizes"),
+        Some(owner),
+        Some(json!({"name": "Quà tri ân", "eligible": "all", "quantity": 1})),
+        &[],
+    )
+    .await;
+    f.lucky_prize = prized.body["prizes"][0]["id"]
+        .as_str()
+        .ok_or_else(|| format!("fixture prize → {} {}", prized.status, prized.body))?
+        .to_owned();
+    let spun = send(
+        app,
+        "POST",
+        &format!("{draw}/spins"),
+        Some(owner),
+        Some(json!({"prize_id": f.lucky_prize})),
+        &[("Idempotency-Key", &uuid::Uuid::now_v7().to_string())],
+    )
+    .await;
+    let (Some(result), Some(winner)) = (
+        spun.body["result"]["id"].as_str(),
+        spun.body["result"]["participant_id"].as_str(),
+    ) else {
+        return Err(format!("fixture spin → {} {}", spun.status, spun.body).into());
+    };
+    f.lucky_result = result.to_owned();
+    f.lucky_participant = winner.to_owned();
+    Ok(())
 }
 
 struct World {
@@ -1693,6 +1884,9 @@ fn concrete(route: &Route, f: &Fixture) -> String {
             },
         )
         .replace("{role}", "manager")
+        .replace("{pid}", &f.lucky_participant)
+        .replace("{qid}", &f.lucky_prize)
+        .replace("{rid}", &f.lucky_result)
 }
 
 fn label(route: &Route) -> String {

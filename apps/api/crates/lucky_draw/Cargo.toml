@@ -1,0 +1,24 @@
+[package]
+name = "lucky_draw"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["json"] }
+getrandom = "0.4.3"
+identity = { version = "0.1.0", path = "../identity" }
+jiff = { version = "1.0.3", default-features = false, features = ["std", "serde"] }
+jiff-sqlx = { version = "1.0.0", features = ["postgres"] }
+kernel = { version = "0.1.0", path = "../kernel" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "macros"] }
+thiserror = "2.0.21"
+unicode-normalization = "0.1.26"
+utoipa = { version = "6.0.0", features = ["uuid", "jiff_0_2"] }
+uuid = { version = "1.29.0", features = ["v7"] }

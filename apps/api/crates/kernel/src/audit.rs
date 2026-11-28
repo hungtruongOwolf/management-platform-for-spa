@@ -101,6 +101,20 @@ actions! {
     CatalogServiceUpdate => "catalog.service_update",
     CatalogPlanCreate => "catalog.plan_create",
     CatalogPlanUpdate => "catalog.plan_update",
+    // Lucky draw ("Vòng quay may mắn", owner only). Every entry is filed on the draw
+    // (`entity_type = 'lucky_draw'`); the person or prize it touched is named in `before` / `after`.
+    LuckyDrawCreate => "lucky_draw.create",
+    LuckyDrawRename => "lucky_draw.rename",
+    /// The draw's name and counts in `before` (the rows are gone; the trail still names it).
+    LuckyDrawDelete => "lucky_draw.delete",
+    LuckyDrawParticipantsAdd => "lucky_draw.participants_add",
+    LuckyDrawParticipantUpdate => "lucky_draw.participant_update",
+    LuckyDrawParticipantDelete => "lucky_draw.participant_delete",
+    LuckyDrawPrizeCreate => "lucky_draw.prize_create",
+    LuckyDrawPrizeUpdate => "lucky_draw.prize_update",
+    LuckyDrawPrizeDelete => "lucky_draw.prize_delete",
+    LuckyDrawSpin => "lucky_draw.spin",
+    LuckyDrawForfeit => "lucky_draw.forfeit",
     // Logins and accounts.
     StaffLoginCreate => "staff.login_create",
     StaffLoginPasswordReset => "staff.login_password_reset",

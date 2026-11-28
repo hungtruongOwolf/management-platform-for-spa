@@ -1,5 +1,5 @@
 //! `app reset-demo --tenant <slug>`: wipes one spa's business data (customers, money, packages,
-//! appointments, staff books, its audit trail) so `seed-demo` can fill it again, and keeps what
+//! appointments, staff books, lucky draws, its audit trail) so `seed-demo` can fill it again, and keeps what
 //! makes the spa work: the spa, branch, roles and permissions, feature flags, the catalog and
 //! package plans, calendar and payroll *settings*, and every login with its MFA. Platform tables
 //! are never touched. Development and staging only (the CLI refuses `APP_ENV=production`).
@@ -21,6 +21,11 @@ pub const DELETED: &[&str] = &[
     "audit_log",
     "idempotency_record",
     "password_reset_request",
+    // The owner's lucky draws: results before the prizes and people they name.
+    "lucky_draw_result",
+    "lucky_draw_prize",
+    "lucky_draw_participant",
+    "lucky_draw",
     "customer_follow_up",
     "appointment_service",
     "appointment",

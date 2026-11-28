@@ -154,6 +154,43 @@ describe("activity sentences", () => {
     );
   });
 
+  it("words the lucky draw lines by the draw, with the person or prize of each", () => {
+    const draw = { kind: "lucky_draw", name: "Tri ân 20/11" } as const;
+    const say = (e: Partial<ActivityEntry> & Pick<ActivityEntry, "action">) =>
+      sentence(entry({ kind: "lucky_draw", actor: by("Chủ Spa"), subject: draw, ...e }));
+    expect(say({ action: "lucky_draw.create" })).toBe("Chủ Spa tạo chương trình vòng quay “Tri ân 20/11”");
+    expect(say({ action: "lucky_draw.delete" })).toBe("Chủ Spa xóa chương trình vòng quay “Tri ân 20/11”");
+    expect(say({ action: "lucky_draw.participants_add" })).toBe("Chủ Spa thêm người tham gia vào chương trình “Tri ân 20/11”");
+    expect(say({ action: "lucky_draw.participant_delete", detail: "Trần Văn Minh" })).toBe(
+      "Chủ Spa xóa người tham gia Trần Văn Minh khỏi chương trình “Tri ân 20/11”",
+    );
+    expect(say({ action: "lucky_draw.prize_update", detail: "Cổ vai gáy" })).toBe("Chủ Spa sửa giải “Cổ vai gáy” ở chương trình “Tri ân 20/11”");
+    expect(say({ action: "lucky_draw.spin", detail: "Lê Thị Mai" })).toBe(
+      "Chủ Spa quay thưởng, Lê Thị Mai trúng giải ở chương trình “Tri ân 20/11”",
+    );
+    expect(say({ action: "lucky_draw.forfeit", detail: "Lê Thị Mai" })).toBe(
+      "Chủ Spa trả giải của Lê Thị Mai (vắng mặt) ở chương trình “Tri ân 20/11”",
+    );
+    // A draw deleted with no name kept reads neutrally.
+    expect(sentence(entry({ action: "lucky_draw.rename", kind: "lucky_draw", actor: by("Chủ Spa"), subject: { kind: "lucky_draw" } }))).toBe(
+      "Chủ Spa đổi tên chương trình vòng quay (đã xóa)",
+    );
+    const changes = [
+      { field: "eligible", format: "code", old: "all", new: "female" },
+      { field: "quantity", format: "number", old: "2", new: "1" },
+      { field: "prize", format: "text", new: "Cổ vai gáy" },
+      { field: "seq", format: "number", new: "3" },
+      { field: "participants_added", format: "number", new: "6" },
+    ] as const;
+    expect(changes.map((c) => changeText({ ...c }))).toEqual([
+      "Dành cho: Cả nam và nữ → Chỉ nữ",
+      "Số suất: 2 → 1",
+      "Giải thưởng: Cổ vai gáy",
+      "Lượt: 3",
+      "Số người thêm: 6",
+    ]);
+  });
+
   it("reads one action as one line: a visit carries its sales, a package sale names its packages", () => {
     expect(sentence(CHECKOUT)).toBe("Quản lý Hà ghi lượt cho chị Lê Thị Mai kèm bán gói Gội đầu 10 buổi");
     expect(moneyOf(CHECKOUT)).toMatch(/^Thu 1\.640\.000/);

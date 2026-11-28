@@ -18,6 +18,7 @@ export const KIND_LABEL: Record<ActivityKind, string> = {
   payroll: "Lương",
   settings: "Danh mục & cài đặt",
   accounts: "Tài khoản & bảo mật",
+  lucky_draw: "Vòng quay may mắn",
   other: "Khác",
 };
 
@@ -73,6 +74,9 @@ const withPackages = (e: ActivityEntry) => (e.packages.length > 0 ? `kèm bán g
 const withSold = (e: ActivityEntry) => (e.packages.length > 0 ? ` kèm bán gói${sold(e)}` : "");
 const month = (e: ActivityEntry) => (e.detail ? ` tháng ${e.detail.slice(5, 7)}/${e.detail.slice(0, 4)}` : "");
 const flagTo = (e: ActivityEntry, field: string) => e.changes.find((c) => c.field === field)?.new;
+/** A lucky draw line's person: " Nguyễn Văn A"; its prize: " “Cổ vai gáy”". */
+const named = (e: ActivityEntry) => (e.detail ? ` ${e.detail}` : "");
+const quoted = (e: ActivityEntry) => (e.detail ? ` “${e.detail}”` : "");
 
 const PHRASES: Record<AuditAction, Words> = {
   // Quầy. A visit's line carries its sales and the packages its checkout sold (one line per
@@ -159,6 +163,19 @@ const PHRASES: Record<AuditAction, Words> = {
     lead: `${flagTo(e, "owner_mfa_required") === "false" ? "tắt" : "bật"} bắt buộc xác thực 2 bước cho chủ spa`,
     about: false,
   }),
+  // Vòng quay may mắn: the subject is the draw (a deleted one by the name its delete kept); the
+  // person or prize of the line is its `detail`. The draw's people are never listed (spec AC1.4).
+  "lucky_draw.create": () => ({ lead: "tạo chương trình vòng quay" }),
+  "lucky_draw.rename": () => ({ lead: "đổi tên chương trình vòng quay" }),
+  "lucky_draw.delete": () => ({ lead: "xóa chương trình vòng quay" }),
+  "lucky_draw.participants_add": () => ({ lead: "thêm người tham gia vào chương trình" }),
+  "lucky_draw.participant_update": (e) => ({ lead: `sửa người tham gia${named(e)} ở chương trình` }),
+  "lucky_draw.participant_delete": (e) => ({ lead: `xóa người tham gia${named(e)} khỏi chương trình` }),
+  "lucky_draw.prize_create": (e) => ({ lead: `thêm giải${quoted(e)} vào chương trình` }),
+  "lucky_draw.prize_update": (e) => ({ lead: `sửa giải${quoted(e)} ở chương trình` }),
+  "lucky_draw.prize_delete": (e) => ({ lead: `xóa giải${quoted(e)} khỏi chương trình` }),
+  "lucky_draw.spin": (e) => ({ lead: e.detail ? `quay thưởng, ${e.detail} trúng giải ở chương trình` : "quay thưởng ở chương trình" }),
+  "lucky_draw.forfeit": (e) => ({ lead: `trả giải${e.detail ? ` của ${e.detail}` : ""} (vắng mặt) ở chương trình` }),
 };
 
 /**
@@ -244,6 +261,18 @@ export const HISTORY: Record<AuditAction, ((e: ActivityEntry) => string) | null>
   "tenant.suspended": null,
   "tenant.unsuspended": null,
   "tenant.owner_mfa_changed": null,
+  // The lucky draw screen shows its own results; no record history there (contract §1).
+  "lucky_draw.create": null,
+  "lucky_draw.rename": null,
+  "lucky_draw.delete": null,
+  "lucky_draw.participants_add": null,
+  "lucky_draw.participant_update": null,
+  "lucky_draw.participant_delete": null,
+  "lucky_draw.prize_create": null,
+  "lucky_draw.prize_update": null,
+  "lucky_draw.prize_delete": null,
+  "lucky_draw.spin": null,
+  "lucky_draw.forfeit": null,
 };
 
 /** The verb of a history line; a key without words there (a legacy row) reads generically, never as a crash. */
@@ -368,6 +397,13 @@ const FIELD: Record<string, string> = {
   companions: "Người đi cùng",
   owner_mfa_required: "Bắt buộc xác thực 2 bước",
   enabled: "Bật",
+  // Vòng quay may mắn.
+  participants_added: "Số người thêm",
+  description: "Mô tả",
+  eligible: "Dành cho",
+  quantity: "Số suất",
+  seq: "Lượt",
+  prize: "Giải thưởng",
 };
 
 const ROLE: Record<string, string> = { owner: "Chủ spa", manager: "Quản lý", technician: "Kỹ thuật viên" };
@@ -383,6 +419,7 @@ const CODE: Record<string, Record<string, string>> = {
   },
   role: ROLE,
   gender: { female: "Nữ", male: "Nam" },
+  eligible: { all: "Cả nam và nữ", female: "Chỉ nữ", male: "Chỉ nam" },
   kind: { bonus: "Thưởng", penalty: "Phạt" },
   result: { m1: "Mức 1", m2: "Mức 2", m3: "Mức 3", fail: "Chưa đạt" },
   // The payroll rules' choices, as RulesSheet words them (shortened).

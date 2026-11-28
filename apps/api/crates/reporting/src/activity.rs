@@ -105,6 +105,17 @@ pub const fn kind_of(action: Action) -> ActivityKind {
         | A::TenantSuspended
         | A::TenantUnsuspended
         | A::TenantOwnerMfaChanged => K::Accounts,
+        A::LuckyDrawCreate
+        | A::LuckyDrawRename
+        | A::LuckyDrawDelete
+        | A::LuckyDrawParticipantsAdd
+        | A::LuckyDrawParticipantUpdate
+        | A::LuckyDrawParticipantDelete
+        | A::LuckyDrawPrizeCreate
+        | A::LuckyDrawPrizeUpdate
+        | A::LuckyDrawPrizeDelete
+        | A::LuckyDrawSpin
+        | A::LuckyDrawForfeit => K::LuckyDraw,
     }
 }
 
@@ -301,6 +312,26 @@ fn fields(action: Action) -> &'static [(&'static str, &'static str, ChangeFormat
         A::TenantOwnerMfaChanged => &[("/owner_mfa_required", "owner_mfa_required", F::Flag)],
         A::FeatureChanged => &[("/enabled", "enabled", F::Flag)],
         A::TenantSuspended | A::TenantUnsuspended => &[("/status", "status", F::Code)],
+        // The draw's own entries name the person / prize in `detail` ([`detail`]); these are the
+        // values around it. The draw's people are never listed (spec AC1.4).
+        A::LuckyDrawRename => &[("/name", "name", F::Text)],
+        A::LuckyDrawParticipantsAdd => &[("/added", "participants_added", F::Number)],
+        A::LuckyDrawParticipantUpdate => {
+            &[("/name", "name", F::Text), ("/gender", "gender", F::Code)]
+        }
+        A::LuckyDrawPrizeCreate => &[
+            ("/eligible", "eligible", F::Code),
+            ("/quantity", "quantity", F::Number),
+        ],
+        A::LuckyDrawPrizeUpdate => &[
+            ("/name", "name", F::Text),
+            ("/description", "description", F::Text),
+            ("/eligible", "eligible", F::Code),
+            ("/quantity", "quantity", F::Number),
+        ],
+        A::LuckyDrawSpin | A::LuckyDrawForfeit => {
+            &[("/seq", "seq", F::Number), ("/prize", "prize", F::Text)]
+        }
         _ => &[],
     }
 }
@@ -560,7 +591,7 @@ fn text(v: Option<&Value>) -> Option<String> {
 }
 
 /// Extra context by action (see [`ActivityEntry::detail`]).
-fn detail(action: Action, after: Option<&Value>) -> Option<String> {
+fn detail(action: Action, before: Option<&Value>, after: Option<&Value>) -> Option<String> {
     use Action as A;
     let at = |key: &str| after.and_then(|a| a.get(key));
     match action {
@@ -578,6 +609,13 @@ fn detail(action: Action, after: Option<&Value>) -> Option<String> {
             .and_then(Value::as_bool)
             .filter(|b| *b)
             .map(|_| "cleared".to_owned()),
+        A::LuckyDrawParticipantUpdate | A::LuckyDrawPrizeCreate | A::LuckyDrawPrizeUpdate => {
+            text(at("name"))
+        }
+        A::LuckyDrawParticipantDelete | A::LuckyDrawPrizeDelete => {
+            text(before.and_then(|b| b.get("name")))
+        }
+        A::LuckyDrawSpin | A::LuckyDrawForfeit => text(at("winner")),
         _ => None,
     }
 }
@@ -612,6 +650,7 @@ const fn subject_kind(entity_type: &str) -> Option<SubjectKind> {
         b"user" => Some(SubjectKind::Account),
         b"role" => Some(SubjectKind::Role),
         b"tenant" => Some(SubjectKind::Spa),
+        b"lucky_draw" => Some(SubjectKind::LuckyDraw),
         _ => None,
     }
 }
@@ -928,7 +967,7 @@ fn entry(r: Row) -> ActivityEntry {
         .then(|| int(after.and_then(|a| a.get("discount_amount"))))
         .flatten()
         .filter(|d| *d > 0),
-        detail: action.and_then(|a| detail(a, after)),
+        detail: action.and_then(|a| detail(a, before, after)),
         // `customer.update` never asks for a reason: what it stores is the code's own note.
         reason: r
             .reason
@@ -1220,6 +1259,17 @@ pub(crate) async fn rows_by_ids(
              UNION ALL
              SELECT NULL, NULL, NULL, NULL, r.key, NULL, NULL FROM app.role r
              WHERE a.entity_type = 'role' AND r.tenant_id = a.tenant_id AND r.id = a.entity_id
+             UNION ALL
+             -- A deleted draw by the name its delete recorded.
+             SELECT NULL, NULL, NULL, NULL,
+                    coalesce((SELECT ld.name FROM app.lucky_draw ld
+                              WHERE ld.tenant_id = a.tenant_id AND ld.id = a.entity_id),
+                             (SELECT g.before ->> 'name' FROM app.audit_log g
+                              WHERE g.tenant_id = a.tenant_id AND g.entity_type = 'lucky_draw'
+                                AND g.entity_id = a.entity_id AND g.action = 'lucky_draw.delete'
+                              LIMIT 1)),
+                    NULL, NULL
+             WHERE a.entity_type = 'lucky_draw'
            ) s ON true
            -- A booking's technician before / after (ids written by the appointments crate).
            LEFT JOIN app.staff sb ON sb.tenant_id = a.tenant_id
