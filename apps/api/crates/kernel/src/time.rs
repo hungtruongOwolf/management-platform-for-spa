@@ -114,6 +114,23 @@ mod tests {
         Ok(())
     }
 
+    /// Days and times of day already serialized as chrono did; this pins it.
+    #[test]
+    fn dates_and_times_of_day_keep_their_text() -> Result<(), serde_json::Error> {
+        let day = jiff::civil::date(2026, 11, 5);
+        assert_eq!(serde_json::to_string(&day)?, r#""2026-11-05""#);
+        assert_eq!(
+            serde_json::to_string(&jiff::civil::time(8, 55, 0, 0))?,
+            r#""08:55:00""#
+        );
+        assert_eq!(
+            serde_json::from_str::<jiff::civil::Date>(r#""2026-11-05""#)?,
+            day
+        );
+        assert!(serde_json::from_str::<jiff::civil::Date>(r#""2026-13-01""#).is_err());
+        Ok(())
+    }
+
     #[test]
     fn an_instant_without_an_offset_is_rejected() {
         assert!(

@@ -26,6 +26,7 @@ use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry, REDACTED};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
+use kernel::time::rfc3339;
 use kernel::{Actor, AppError, FieldError, Money, Permission, TenantTx};
 use packages::{Consume, Consumed};
 use sales::service::{
@@ -945,7 +946,7 @@ async fn checkout(
             entity_id: visit_id,
             before: None,
             after: Some(json!({
-                "customer_id": customer.id, "check_in_at": check_in_at,
+                "customer_id": customer.id, "check_in_at": check_in_at.map(rfc3339::format),
                 "business_date": today, "backdated": backdated, "recorded_on": recorded_on,
                 "sale_id": sale.as_ref().map(|s| s.sale_id),
                 "subtotal": sale.as_ref().map_or(0, |s| s.subtotal.as_i64()),
@@ -1403,10 +1404,11 @@ pub async fn update(
             entity_id: id,
             before: Some(json!({
                 "version": version,
-                "check_in_at": moved.map(|_| visit.check_in_at),
+                "check_in_at": moved.map(|_| rfc3339::format(visit.check_in_at)),
             })),
             after: Some(json!({
-                "version": version + 1, "staff": staff_changes, "check_in_at": moved,
+                "version": version + 1, "staff": staff_changes,
+                "check_in_at": moved.map(rfc3339::format),
                 "companions": companions.as_ref().map(Vec::len),
                 "note": note.as_ref().map(|n| if n.is_some() { REDACTED } else { "cleared" }),
             })),

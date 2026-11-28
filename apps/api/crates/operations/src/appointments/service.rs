@@ -21,6 +21,7 @@ use jiff::{SignedDuration, Timestamp};
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
+use kernel::time::rfc3339;
 use kernel::{Actor, AppError, FieldError, Permission, PhoneE164, TenantProfile, TenantTx};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -853,7 +854,7 @@ async fn insert_booking(
         None,
         json!({
             "customer_id": customer_id, "guest": guest_name.is_some(),
-            "starts_at": p.starts_at, "ends_at": p.ends_at, "staff_id": p.staff_id,
+            "starts_at": rfc3339::format(p.starts_at), "ends_at": rfc3339::format(p.ends_at), "staff_id": p.staff_id,
             "service_ids": b.service_ids, "has_note": note.is_some(), "group_id": group_id,
             "guest_phone": guest_phone.is_some(),
             "companions": companions.len(),
@@ -1201,11 +1202,11 @@ pub async fn update(
         Action::AppointmentUpdate,
         id,
         Some(json!({
-            "version": version, "starts_at": current.starts_at, "ends_at": current.ends_at,
+            "version": version, "starts_at": rfc3339::format(current.starts_at), "ends_at": rfc3339::format(current.ends_at),
             "staff_id": current.staff_id, "customer_id": current.customer_id,
         })),
         json!({
-            "version": version + 1, "starts_at": p.starts_at, "ends_at": p.ends_at,
+            "version": version + 1, "starts_at": rfc3339::format(p.starts_at), "ends_at": rfc3339::format(p.ends_at),
             "staff_id": p.staff_id, "customer_id": input.customer_id.or(current.customer_id),
             "service_ids": input.service_ids, "note_changed": note.is_some(),
             "companions": new_companions.as_ref().map(Vec::len),
@@ -1456,10 +1457,10 @@ pub async fn move_group(
             Action::AppointmentUpdate,
             *member,
             Some(json!({
-                "version": row.version, "starts_at": row.starts_at, "ends_at": row.ends_at,
+                "version": row.version, "starts_at": rfc3339::format(row.starts_at), "ends_at": rfc3339::format(row.ends_at),
             })),
             json!({
-                "version": row.version + 1, "starts_at": p.starts_at, "ends_at": p.ends_at,
+                "version": row.version + 1, "starts_at": rfc3339::format(p.starts_at), "ends_at": rfc3339::format(p.ends_at),
                 "group_move": {"group_id": group, "from": id},
             }),
             None,
