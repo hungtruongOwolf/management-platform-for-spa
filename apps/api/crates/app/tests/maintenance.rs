@@ -190,7 +190,7 @@ async fn the_daily_check_reports_a_drifted_copy(owner: PgPool) -> TestResult {
     let checks: i64 = sqlx::query_scalar("SELECT count(*) FROM app.invariant_violations()")
         .fetch_one(&app)
         .await?;
-    assert_eq!(checks, 11, "every check reports, drift or not");
+    assert_eq!(checks, 13, "every check reports, drift or not");
     Ok(())
 }
 

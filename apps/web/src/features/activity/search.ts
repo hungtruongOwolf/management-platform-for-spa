@@ -14,6 +14,7 @@ export const ACTIVITY_KINDS = [
   "payroll",
   "settings",
   "accounts",
+  "lucky_draw",
   "other",
 ] as const satisfies readonly ActivityKind[];
 

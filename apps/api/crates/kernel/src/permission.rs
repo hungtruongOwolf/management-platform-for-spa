@@ -74,6 +74,8 @@ permissions! {
     AuditRead => "audit.read",
     // Spa-local switch (ADR-0022): who recorded / changed a record, on the record itself.
     RecordHistoryRead => "record.history.read",
+    // "Vòng quay may mắn" (spec lucky-draw): the owner's draws, participants, prizes and spins.
+    LuckyDrawManage => "lucky_draw.manage",
     SupportGrantManage => "support_grant.manage",
     PlatformTenantManage => "platform.tenant.manage",
 }

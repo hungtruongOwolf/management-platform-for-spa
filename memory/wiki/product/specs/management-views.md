@@ -317,6 +317,7 @@ EM: "cái vụ ai làm đó tôi không cần show đâu… chủ spa có thể 
 | Lương `payroll` | `staff.pay_update`, `payroll.rules_update`, `payroll.close` |
 | Danh mục & cài đặt `settings` | `catalog.category_*`, `catalog.service_*`, `catalog.plan_*`, `appointment.settings` |
 | Tài khoản & bảo mật `accounts` | `staff.account_link`, `staff.login_create`, `staff.login_password_reset`, `staff.login_role`, `account.password_change`, `account.password_reset_requested`, `account.password_reset_dismissed`, các `account.*_by_platform`, `role.permissions_changed`, `role.permissions_reset`, `feature.changed`, `tenant.created`, `tenant.suspended`, `tenant.unsuspended`, `tenant.owner_mfa_changed` |
+| Vòng quay may mắn `lucky_draw` (0055, [spec lucky-draw](lucky-draw.md)) | `lucky_draw.create`, `lucky_draw.rename`, `lucky_draw.delete`, `lucky_draw.participants_add`, `lucky_draw.participant_update`, `lucky_draw.participant_delete`, `lucky_draw.prize_create`, `lucky_draw.prize_update`, `lucky_draw.prize_delete`, `lucky_draw.spin`, `lucky_draw.forfeit` |
 | Khác `other` | key cũ không còn trong code (câu chung, không lỗi) |
 
 **11.5 Bộ lọc** (trên URL: `from`, `to`, `actor`, `kind`; chỉ id / mã, không tên, không SĐT): khoảng ngày (mặc định **7 ngày gần nhất**, tối đa 366), người làm (mọi tài khoản của spa: chủ spa, nhân viên có đăng nhập, người đã nghỉ có nhãn "(đã nghỉ)", cộng "Đội vận hành", "Hệ thống"), loại việc.

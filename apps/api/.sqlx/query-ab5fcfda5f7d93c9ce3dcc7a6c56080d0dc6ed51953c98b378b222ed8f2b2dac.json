@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO app.lucky_draw_participant\n             (id, tenant_id, draw_id, name, gender, position, created_by)\n           SELECT i, $1, $2, n, g, p, $7\n           FROM unnest($3::uuid[], $4::text[], $5::text[], $6::int4[]) AS t(i, n, g, p)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray",
+        "TextArray",
+        "TextArray",
+        "Int4Array",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ab5fcfda5f7d93c9ce3dcc7a6c56080d0dc6ed51953c98b378b222ed8f2b2dac"
+}

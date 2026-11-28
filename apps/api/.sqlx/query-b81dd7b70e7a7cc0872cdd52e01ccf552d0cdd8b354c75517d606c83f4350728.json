@@ -1,0 +1,116 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT q.id, q.name, q.description, q.eligible, q.quantity, q.position, q.version,\n                  count(r.id) FILTER (WHERE r.forfeited_at IS NULL) AS \"awarded!\",\n                  count(r.id) AS \"results!\"\n           FROM app.lucky_draw_prize q\n           LEFT JOIN app.lucky_draw_result r\n             ON r.tenant_id = q.tenant_id AND r.draw_id = q.draw_id AND r.prize_id = q.id\n           WHERE q.tenant_id = $1 AND q.draw_id = $2 AND q.id = $3\n           GROUP BY q.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_prize",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_prize",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_prize",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "eligible",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_prize",
+            "name": "eligible"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "quantity",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_prize",
+            "name": "quantity"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_prize",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "app.lucky_draw_prize",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "awarded!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "results!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "b81dd7b70e7a7cc0872cdd52e01ccf552d0cdd8b354c75517d606c83f4350728"
+}

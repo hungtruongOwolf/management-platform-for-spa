@@ -38,12 +38,14 @@ pub enum ActivityKind {
     Settings,
     /// Tài khoản & bảo mật: logins, passwords, roles, what the platform team did.
     Accounts,
+    /// Vòng quay may mắn: draws, participants, prizes, spins, forfeits.
+    LuckyDraw,
     /// A legacy action no code writes any more.
     Other,
 }
 
 impl ActivityKind {
-    pub const ALL: [ActivityKind; 9] = [
+    pub const ALL: [ActivityKind; 10] = [
         ActivityKind::FrontDesk,
         ActivityKind::Packages,
         ActivityKind::Appointments,
@@ -52,6 +54,7 @@ impl ActivityKind {
         ActivityKind::Payroll,
         ActivityKind::Settings,
         ActivityKind::Accounts,
+        ActivityKind::LuckyDraw,
         ActivityKind::Other,
     ];
 }
@@ -132,6 +135,9 @@ pub enum SubjectKind {
     Account,
     Role,
     Spa,
+    /// A lucky draw ("Vòng quay may mắn"), by its name; a deleted one by the name its delete
+    /// recorded.
+    LuckyDraw,
 }
 
 /// The record an entry is about, resolved when read (a rename shows the current name).
@@ -219,7 +225,9 @@ pub struct ActivityEntry {
     /// Extra context by action: `staff.adjustment` → `bonus` | `penalty`; `payroll.close`,
     /// `evaluation.record` → the month (`YYYY-MM`); `feature.changed` → the feature key;
     /// `customer.follow_up` → the outcome; `staff.login_create` → the role;
-    /// `visit.create` → `backdated` when recorded for a past day.
+    /// `visit.create` → `backdated` when recorded for a past day; `lucky_draw.participant_*` →
+    /// the person's name, `lucky_draw.prize_*` → the prize's, `lucky_draw.spin` /
+    /// `lucky_draw.forfeit` → the winner's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// What the person typed as the reason (void, cancel, discount, override, extension; the
