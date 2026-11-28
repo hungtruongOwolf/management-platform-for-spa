@@ -776,10 +776,10 @@ textarea::-webkit-resizer {
   }
 
   /* The list: RowMenu's surface. As wide as its select, and like `.row-menu` never under 200px; a
-   * narrow select's list may grow to 20rem for its longest row, never past the screen (8px each
-   * side). Without that room on the right it opens leftwards from the select's right edge (the
+   * narrow select's list may grow to 20rem for its longest row, never wider than the screen less
+   * 16px. Without that room on the right it opens leftwards from the select's right edge (the
    * browser's fallback positions). At most ~8 rows tall, then it scrolls inside; less when the
-   * room above / below the select is smaller. */
+   * room above / below the select is smaller (without calc-size(), the browser's `stretch` alone). */
   select:not([multiple], [size])::picker(select) {
     min-inline-size: max(anchor-size(self-inline), min(200px, 100vw - 16px));
     max-inline-size: min(max(anchor-size(self-inline), 20rem), 100vw - 16px);
@@ -842,11 +842,11 @@ textarea::-webkit-resizer {
     white-space: normal;
     cursor: pointer;
   }
-  :where(select:not([multiple], [size])) option:enabled:is(:hover, :active) {
+  :where(select:not([multiple], [size])) option:enabled:not(:checked):is(:hover, :active) {
     background: var(--surface-2);
   }
   /* The keyboard's row: the hover fill under the app's inset ring (styles.css, rows sit edge to
-   * edge). */
+   * edge); the current value keeps its own fill (below). */
   :where(select:not([multiple], [size])) option:focus-visible {
     background: var(--surface-2);
   }
@@ -882,6 +882,7 @@ textarea::-webkit-resizer {
     font-size: var(--fs-sm);
     font-weight: 600;
     line-height: 18px;
+    white-space: normal;
   }
   :where(select:not([multiple], [size])) optgroup > option {
     margin-inline-start: calc(var(--fs-sm) / 2 - 10px);
