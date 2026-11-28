@@ -1253,9 +1253,10 @@ name = "lucky_draw"
 version = "0.1.0"
 dependencies = [
  "axum",
- "chrono",
  "getrandom 0.4.3",
  "identity",
+ "jiff",
+ "jiff-sqlx",
  "kernel",
  "serde",
  "serde_json",
