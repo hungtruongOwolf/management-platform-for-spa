@@ -1,7 +1,8 @@
 //! Wire types of the appointments API (spec appointments.md).
 
 use crate::dto::{VisitDto, VisitLineCreate, VisitPackageSaleCreate};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use sales::dto::{PaymentCreate, ServiceDiscountCreate};
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -31,7 +32,7 @@ pub struct AppointmentCreate {
     /// On the spa's slot grid, inside opening hours; today up to 90 days ahead. A past day, or a
     /// slot of today already over (the slot under way is fine), is `422 appointment.in_the_past`
     /// for everyone: a service already done is a back-dated visit.
-    pub starts_at: DateTime<Utc>,
+    pub starts_at: Timestamp,
     /// Default: the services' exact durations (untimed alone = 60). 5 – 480 minutes.
     pub duration_min: Option<u32>,
     /// Booking note, ≤ 500 characters. Not for health data.
@@ -57,7 +58,7 @@ pub struct GroupPersonCreate {
     pub service_ids: Vec<Uuid>,
     pub staff_id: Option<Uuid>,
     /// Default: the group's `starts_at`. Must be on the same business day.
-    pub starts_at: Option<DateTime<Utc>>,
+    pub starts_at: Option<Timestamp>,
     /// Default: this person's services' exact durations.
     pub duration_min: Option<u32>,
 }
@@ -68,7 +69,7 @@ pub struct GroupPersonCreate {
 #[serde(deny_unknown_fields)]
 pub struct AppointmentGroupCreate {
     /// Shared start, same rules as `POST /appointments`.
-    pub starts_at: DateTime<Utc>,
+    pub starts_at: Timestamp,
     /// Booking note for everyone, ≤ 500 characters. Not for health data.
     pub note: Option<String>,
     /// 1–6 people; an existing customer appears at most once. With no `companions`, at least 2.
@@ -116,7 +117,7 @@ where
 #[derive(Debug, Default, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AppointmentUpdate {
-    pub starts_at: Option<DateTime<Utc>>,
+    pub starts_at: Option<Timestamp>,
     pub duration_min: Option<u32>,
     /// Absent = unchanged, null = no preferred technician (not allowed once arrived).
     #[serde(default, deserialize_with = "present")]
@@ -138,7 +139,7 @@ pub struct AppointmentUpdate {
 #[serde(deny_unknown_fields)]
 pub struct AppointmentGroupMove {
     /// The new start of `{id}`; every other member still booked shifts by the same amount.
-    pub starts_at: DateTime<Utc>,
+    pub starts_at: Timestamp,
 }
 
 /// `POST /appointments/{id}/move-group` → 200.
@@ -173,7 +174,7 @@ pub struct AppointmentClose {
 pub struct AppointmentComplete {
     /// When the service happened. Default: arrival time, else the booked start if already
     /// past, else now. Same day rules as `POST /visits` (owner may back-date).
-    pub check_in_at: Option<DateTime<Utc>>,
+    pub check_in_at: Option<Timestamp>,
     pub note: Option<String>,
     pub lines: Vec<VisitLineCreate>,
     #[serde(default)]
@@ -192,9 +193,9 @@ pub struct AppointmentComplete {
 #[serde(deny_unknown_fields)]
 pub struct CalendarQuery {
     /// First business day `YYYY-MM-DD`; default today.
-    pub from: Option<NaiveDate>,
+    pub from: Option<Date>,
     /// Last business day (inclusive); default `from`. At most 14 days.
-    pub to: Option<NaiveDate>,
+    pub to: Option<Date>,
     /// `true`: each appointment says whether it was edited (`edited`, ADR-0022), for callers
     /// with `record.history.read`; the list view asks, the day and week grids do not.
     pub marks: Option<bool>,
@@ -206,9 +207,9 @@ pub struct CalendarQuery {
 #[serde(deny_unknown_fields)]
 pub struct MyCalendarQuery {
     /// First business day `YYYY-MM-DD`; default today.
-    pub from: Option<NaiveDate>,
+    pub from: Option<Date>,
     /// Last business day (inclusive); default `from`. At most 14 days.
-    pub to: Option<NaiveDate>,
+    pub to: Option<Date>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, ToSchema, PartialEq, Eq)]
@@ -269,9 +270,11 @@ pub struct AppointmentDto {
     pub group_id: Option<Uuid>,
     /// Companions known only by a note (never customers, never served or charged).
     pub companions: Vec<String>,
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub business_date: Date,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub starts_at: Timestamp,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub ends_at: Timestamp,
     pub duration_min: i64,
     /// Null for a newcomer not yet linked to a customer record.
     pub customer_id: Option<Uuid>,
@@ -287,15 +290,18 @@ pub struct AppointmentDto {
     pub note: Option<String>,
     /// Why it was cancelled / missed.
     pub status_reason: Option<String>,
-    pub arrived_at: Option<DateTime<Utc>>,
-    pub closed_at: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub arrived_at: Option<Timestamp>,
+    #[serde(serialize_with = "kernel::time::rfc3339::serialize_option")]
+    pub closed_at: Option<Timestamp>,
     pub visit_id: Option<Uuid>,
     pub payment_state: PaymentStateDto,
     /// Collected by the visit (after discount); 0 until done.
     pub paid_amount: i64,
     /// Send back as `If-Match` when editing.
     pub version: i64,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub created_at: Timestamp,
     /// "Đã sửa" (ADR-0022 D9): moved or given another technician since it was booked. Only for
     /// callers with `record.history.read`, on `GET /appointments?marks=true`, `GET
     /// /appointments/{id}` and the answers of the appointment actions; absent otherwise.
@@ -312,9 +318,9 @@ pub struct CalendarTechnician {
 /// `GET /appointments`: the spa's grid and its appointments over `from..=to`.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CalendarDto {
-    pub from: NaiveDate,
-    pub to: NaiveDate,
-    pub today: NaiveDate,
+    pub from: Date,
+    pub to: Date,
+    pub today: Date,
     /// "HH:MM", spa time.
     pub opens_at: String,
     pub closes_at: String,
@@ -339,11 +345,13 @@ pub struct CalendarDto {
 pub struct CalendarVisitDto {
     pub id: Uuid,
     pub phase: PhaseDto,
-    pub business_date: NaiveDate,
+    pub business_date: Date,
     /// The service time (`check_in_at`).
-    pub starts_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub starts_at: Timestamp,
     /// `starts_at` + the services' exact durations (untimed alone = 60), 5 min – 8 h.
-    pub ends_at: DateTime<Utc>,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub ends_at: Timestamp,
     pub duration_min: i64,
     pub customer_id: Uuid,
     pub customer_name: String,
@@ -382,9 +390,11 @@ pub struct MyEntryService {
 pub struct MyCalendarEntry {
     pub id: Uuid,
     pub kind: MyEntryKind,
-    pub business_date: NaiveDate,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub business_date: Date,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub starts_at: Timestamp,
+    #[serde(with = "kernel::time::rfc3339")]
+    pub ends_at: Timestamp,
     pub duration_min: i64,
     pub phase: PhaseDto,
     pub customer_name: String,
@@ -402,9 +412,9 @@ pub struct MyCalendarEntry {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MyCalendarData {
-    pub from: NaiveDate,
-    pub to: NaiveDate,
-    pub today: NaiveDate,
+    pub from: Date,
+    pub to: Date,
+    pub today: Date,
     /// "HH:MM", spa time.
     pub opens_at: String,
     pub closes_at: String,

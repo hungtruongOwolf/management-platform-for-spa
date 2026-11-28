@@ -16,7 +16,8 @@ use super::dto::{
 };
 use super::repo::{self, AppointmentInsert, AppointmentRow, Reschedule};
 use crate::dto::VisitCreate;
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use jiff::civil::Date;
+use jiff::{SignedDuration, Timestamp};
 use kernel::audit::{self, Action, AuditEntry};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
@@ -51,21 +52,21 @@ struct Spa {
     settings: CalendarSettings,
     technicians: Vec<CalendarTechnician>,
     /// The clock of this use case: the server's, except for operator back-fill (`*_as_of`).
-    now: DateTime<Utc>,
+    now: Timestamp,
 }
 
 impl Spa {
-    fn today(&self) -> NaiveDate {
-        self.profile.business_date.as_naive()
+    fn today(&self) -> Date {
+        self.profile.business_date.as_date()
     }
 }
 
 async fn spa(tx: &mut TenantTx) -> Result<Spa, AppError> {
-    spa_at(tx, Utc::now()).await
+    spa_at(tx, Timestamp::now()).await
 }
 
 /// [`spa`] with today and "now" taken from `now` (operator back-fill only, see [`book_as_of`]).
-async fn spa_at(tx: &mut TenantTx, now: DateTime<Utc>) -> Result<Spa, AppError> {
+async fn spa_at(tx: &mut TenantTx, now: Timestamp) -> Result<Spa, AppError> {
     let profile = kernel::tenant::profile_as_of(tx, now).await?;
     let (hours, slot) = repo::calendar_settings(tx).await?;
     // Columns: who serves customers, by login role, never by position text (ADR-0019 D14).
@@ -108,9 +109,9 @@ fn slot_error(e: SlotError) -> AppError {
 
 /// Where a booking sits once its time and technician are decided.
 struct Placement {
-    business_date: NaiveDate,
-    starts_at: DateTime<Utc>,
-    ends_at: DateTime<Utc>,
+    business_date: Date,
+    starts_at: Timestamp,
+    ends_at: Timestamp,
     staff_id: Option<Uuid>,
 }
 
@@ -118,13 +119,13 @@ struct Placement {
 /// is refused for everyone, the owner too (EM 2026-11-07): a service already done is a back-dated
 /// visit ("nhập bù" at Quầy), not an appointment. Appointments already on a past day still follow
 /// the closed-day rule for every change (`lock_open`). An earlier time of today: [`check_time`].
-fn check_day(spa: &Spa, day: NaiveDate) -> Result<(), AppError> {
+fn check_day(spa: &Spa, day: Date) -> Result<(), AppError> {
     if day < spa.today() {
         return Err(AppError::Unprocessable {
             code: "appointment.in_the_past",
         });
     }
-    if day > spa.today() + Duration::days(domain::MAX_DAYS_AHEAD) {
+    if day > spa.today() + jiff::ToSpan::days(domain::MAX_DAYS_AHEAD) {
         return Err(invalid("starts_at", "too_far"));
     }
     Ok(())
@@ -135,7 +136,7 @@ fn check_day(spa: &Spa, day: NaiveDate) -> Result<(), AppError> {
 /// still bookable (19:00 at 19:08 with 30-minute slots: the customer is arriving). Before this rule
 /// only the day was checked, so a 10:00 booking was created at 19:08 the same day. A service
 /// already done is a visit recorded at Quầy ("Đổi giờ / nhập bù").
-fn check_time(spa: &Spa, starts_at: DateTime<Utc>, now: DateTime<Utc>) -> Result<(), AppError> {
+fn check_time(spa: &Spa, starts_at: Timestamp, now: Timestamp) -> Result<(), AppError> {
     if domain::slot_is_over(starts_at, now, spa.settings.slot_minutes) {
         return Err(AppError::Unprocessable {
             code: "appointment.in_the_past",
@@ -146,12 +147,12 @@ fn check_time(spa: &Spa, starts_at: DateTime<Utc>, now: DateTime<Utc>) -> Result
 
 fn place(
     spa: &Spa,
-    starts_at: DateTime<Utc>,
+    starts_at: Timestamp,
     minutes: u32,
     staff_id: Option<Uuid>,
 ) -> Result<Placement, AppError> {
     let (ends_at, business_date) =
-        domain::place(starts_at, minutes, spa.profile.timezone, spa.settings)
+        domain::place(starts_at, minutes, &spa.profile.timezone, spa.settings)
             .map_err(slot_error)?;
     Ok(Placement {
         business_date,
@@ -263,13 +264,13 @@ fn phase_dto(p: Phase) -> PhaseDto {
 fn dto(
     r: AppointmentRow,
     services: Vec<AppointmentServiceDto>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<AppointmentDto, AppError> {
     let status = parse_status(&r.status)?;
-    let duration_min = (r.ends_at - r.starts_at).num_minutes();
+    let duration_min = r.ends_at.duration_since(r.starts_at).as_mins();
     let visit = r
         .visit_check_in_at
-        .map(|at| (at, r.visit_status.as_deref() == Some("voided")));
+        .map(|at| (at.to_jiff(), r.visit_status.as_deref() == Some("voided")));
     let phase = domain::appointment_phase(status, visit, duration_min, now);
     let paid = r.sale_total.unwrap_or(0);
     let payment_state = match status {
@@ -305,8 +306,8 @@ fn dto(
         services,
         note: r.note,
         status_reason: r.status_reason,
-        arrived_at: r.arrived_at,
-        closed_at: r.closed_at,
+        arrived_at: r.arrived_at.map(jiff_sqlx::Timestamp::to_jiff),
+        closed_at: r.closed_at.map(jiff_sqlx::Timestamp::to_jiff),
         visit_id: r.visit_id,
         version: r.version,
         created_at: r.created_at,
@@ -319,8 +320,8 @@ fn dto(
 async fn load(
     tx: &mut TenantTx,
     id: Option<Uuid>,
-    from: Option<NaiveDate>,
-    to: Option<NaiveDate>,
+    from: Option<Date>,
+    to: Option<Date>,
     with_edited: bool,
 ) -> Result<Vec<AppointmentDto>, AppError> {
     let rows = repo::appointments(tx, id, from, to, with_edited).await?;
@@ -337,7 +338,7 @@ async fn load(
                 duration_min: s.duration_min,
             });
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     rows.into_iter()
         .map(|r| {
             let s = services.remove(&r.id).unwrap_or_default();
@@ -350,8 +351,8 @@ async fn load(
 async fn walk_ins(
     tx: &mut TenantTx,
     spa: &Spa,
-    from: NaiveDate,
-    to: NaiveDate,
+    from: Date,
+    to: Date,
 ) -> Result<Vec<CalendarVisitDto>, AppError> {
     let rows = repo::walk_ins(tx, spa.profile.branch.as_uuid(), from, to).await?;
     let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
@@ -359,7 +360,7 @@ async fn walk_ins(
     for l in repo::visit_lines(tx, &ids).await? {
         lines.entry(l.visit_id).or_default().push(l);
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut out = Vec::with_capacity(rows.len());
     for r in rows {
         // Every visit has a line; one without would have no column to sit in.
@@ -372,7 +373,7 @@ async fn walk_ins(
         };
         let durations: Vec<Option<i32>> = ls.iter().map(|l| l.duration_min).collect();
         let minutes = domain::visit_minutes(&durations);
-        let ends_at = r.check_in_at + Duration::minutes(i64::from(minutes));
+        let ends_at = r.check_in_at + SignedDuration::from_mins(i64::from(minutes));
         let voided = r.status == "voided";
         let paid = r.sale_total.unwrap_or(0);
         let payment_state = if voided {
@@ -470,7 +471,7 @@ pub async fn calendar(
     if to < from {
         return Err(invalid("to", "before_from"));
     }
-    if (to - from).num_days() >= domain::MAX_RANGE_DAYS {
+    if i64::from((to - from).get_days()) >= domain::MAX_RANGE_DAYS {
         return Err(invalid("to", "range_too_long"));
     }
     // "Đã sửa" only for the list view that asks (`marks=true`) and those who may see it: the day
@@ -489,10 +490,10 @@ pub async fn calendar(
         from,
         to,
         today: spa.today(),
-        opens_at: spa.settings.open.format("%H:%M").to_string(),
-        closes_at: spa.settings.close.format("%H:%M").to_string(),
+        opens_at: spa.settings.open.strftime("%H:%M").to_string(),
+        closes_at: spa.settings.close.strftime("%H:%M").to_string(),
         slot_minutes: spa.settings.slot_minutes,
-        time_zone: spa.profile.timezone.name().to_owned(),
+        time_zone: spa.profile.zone_name().to_owned(),
         technicians: spa.technicians,
         max_per_slot: max_per_slot.and_then(|m| u32::try_from(m).ok()),
         appointments,
@@ -523,13 +524,13 @@ pub async fn my_calendar(
     let profile = kernel::tenant::profile(&mut tx).await?;
     let (hours, slot) = repo::calendar_settings(&mut tx).await?;
     let settings = CalendarSettings::from_settings(hours.as_ref(), slot.as_ref());
-    let today = profile.business_date.as_naive();
+    let today = profile.business_date.as_date();
     let from = query.from.unwrap_or(today);
     let to = query.to.unwrap_or(from);
     if to < from {
         return Err(invalid("to", "before_from"));
     }
-    if (to - from).num_days() >= domain::MAX_RANGE_DAYS {
+    if i64::from((to - from).get_days()) >= domain::MAX_RANGE_DAYS {
         return Err(invalid("to", "range_too_long"));
     }
     let booked = repo::my_appointments(&mut tx, staff, from, to).await?;
@@ -558,14 +559,14 @@ pub async fn my_calendar(
         None => Ok(None),
     };
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut entries = Vec::with_capacity(booked.len() + served.len());
     for a in booked {
         let status = parse_status(&a.status)?;
-        let duration_min = (a.ends_at - a.starts_at).num_minutes();
+        let duration_min = a.ends_at.duration_since(a.starts_at).as_mins();
         let visit = a
             .visit_check_in_at
-            .map(|at| (at, a.visit_status.as_deref() == Some("voided")));
+            .map(|at| (at.to_jiff(), a.visit_status.as_deref() == Some("voided")));
         entries.push(MyCalendarEntry {
             phase: phase_dto(domain::appointment_phase(status, visit, duration_min, now)),
             services: booked_services.remove(&a.id).unwrap_or_default(),
@@ -585,7 +586,7 @@ pub async fn my_calendar(
         let ls = lines.remove(&v.id).unwrap_or_default();
         let durations: Vec<Option<i32>> = ls.iter().map(|l| l.duration_min).collect();
         let minutes = domain::visit_minutes(&durations);
-        let ends_at = v.check_in_at + Duration::minutes(i64::from(minutes));
+        let ends_at = v.check_in_at + SignedDuration::from_mins(i64::from(minutes));
         entries.push(MyCalendarEntry {
             id: v.id,
             kind: MyEntryKind::Visit,
@@ -615,8 +616,8 @@ pub async fn my_calendar(
             from,
             to,
             today,
-            opens_at: settings.open.format("%H:%M").to_string(),
-            closes_at: settings.close.format("%H:%M").to_string(),
+            opens_at: settings.open.strftime("%H:%M").to_string(),
+            closes_at: settings.close.strftime("%H:%M").to_string(),
             slot_minutes: settings.slot_minutes,
             entries,
         }),
@@ -756,7 +757,7 @@ struct Booking<'a> {
     who: Who,
     service_ids: &'a [Uuid],
     staff_id: Option<Uuid>,
-    starts_at: DateTime<Utc>,
+    starts_at: Timestamp,
     duration_min: Option<u32>,
 }
 
@@ -783,7 +784,7 @@ async fn insert_booking(
     note: Option<&str>,
     group_id: Option<Uuid>,
     companions: &[String],
-) -> Result<(Uuid, NaiveDate), AppError> {
+) -> Result<(Uuid, Date), AppError> {
     let customer_id = match &b.who {
         Who::Customer(id) => Some(
             crm::service::brief_in(tx, *id)
@@ -871,7 +872,7 @@ pub async fn book(
     request_hash: [u8; 32],
     input: &AppointmentCreate,
 ) -> Result<(u16, Value), AppError> {
-    book_as_of(pool, actor, key, request_hash, input, Utc::now()).await
+    book_as_of(pool, actor, key, request_hash, input, Timestamp::now()).await
 }
 
 /// [`book`] with `now` as the server clock: "today", the past-slot rule and the 90-day horizon
@@ -883,7 +884,7 @@ pub async fn book_as_of(
     key: Uuid,
     request_hash: [u8; 32],
     input: &AppointmentCreate,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::AppointmentManage)?;
     let phone_rule = if input.group_with.is_some() {
@@ -1032,7 +1033,7 @@ async fn join_group(
     spa: &Spa,
     host: Uuid,
     who: &Who,
-) -> Result<(Uuid, NaiveDate), AppError> {
+) -> Result<(Uuid, Date), AppError> {
     let row = lock_open(tx, actor, spa, host).await?;
     let group = match row.group_id {
         Some(g) => {
@@ -1130,7 +1131,7 @@ pub async fn update(
         None => None,
     };
     let minutes = match (input.duration_min, &services) {
-        (None, None) => u32::try_from((current.ends_at - current.starts_at).num_minutes())
+        (None, None) => u32::try_from(current.ends_at.duration_since(current.starts_at).as_mins())
             .map_err(|_| AppError::Internal("appointment duration".into()))?,
         (requested, Some(s)) => {
             let d: Vec<Option<i32>> = s.iter().map(|x| x.2).collect();
@@ -1153,7 +1154,7 @@ pub async fn update(
     // A customer already here keeps the time the desk sets; a booking still waiting cannot move
     // into a slot that is over.
     if !arrived && p.starts_at != current.starts_at {
-        check_time(&spa, p.starts_at, Utc::now())?;
+        check_time(&spa, p.starts_at, Timestamp::now())?;
     }
     // The person's other bookings are checked only when this one moves or gets its customer: an
     // overlap saved before the rule existed must not stop a change of technician or note.
@@ -1301,7 +1302,8 @@ pub async fn undo_arrival(
         Action::AppointmentUndoArrival,
         id,
         Some(
-            json!({"status": "arrived", "arrived_at": current.arrived_at,
+            json!({"status": "arrived",
+                    "arrived_at": current.arrived_at.map(|at| kernel::time::rfc3339::format(at.to_jiff())),
                     "staff_id": current.staff_id}),
         ),
         json!({"status": "booked", "staff_id": current.staff_id}),
@@ -1392,8 +1394,8 @@ pub async fn move_group(
         // Joined a group between the read and the lock: its version moved on.
         return Err(AppError::StaleVersion);
     }
-    let delta = input.starts_at - anchor_starts;
-    let now = Utc::now();
+    let delta = input.starts_at.duration_since(anchor_starts);
+    let now = Timestamp::now();
     let mut moving = Vec::new();
     let mut staying = Vec::new();
     for (member, row) in members {
@@ -1409,12 +1411,12 @@ pub async fn move_group(
     // Later bookings first when moving later (earlier first when moving earlier): a member never
     // lands on a technician's slot another member of the group still holds before it moves.
     moving.sort_by_key(|(member, row)| (row.starts_at, *member));
-    if delta > Duration::zero() {
+    if delta > SignedDuration::ZERO {
         moving.reverse();
     }
     let mut moved = Vec::with_capacity(moving.len());
     for (member, row) in &moving {
-        let minutes = u32::try_from((row.ends_at - row.starts_at).num_minutes())
+        let minutes = u32::try_from(row.ends_at.duration_since(row.starts_at).as_mins())
             .map_err(|_| AppError::Internal("appointment duration".into()))?;
         let p = place(&spa, row.starts_at + delta, minutes, row.staff_id)
             .map_err(|e| in_member(*member, e))?;
@@ -1490,7 +1492,7 @@ pub async fn close(
     outcome: Outcome,
     reason: Option<&str>,
 ) -> Result<AppointmentDto, AppError> {
-    close_as_of(pool, actor, id, outcome, reason, Utc::now()).await
+    close_as_of(pool, actor, id, outcome, reason, Timestamp::now()).await
 }
 
 /// [`close`] with `now` as the server clock (the closed-day rule and "the start has passed").
@@ -1502,7 +1504,7 @@ pub async fn close_as_of(
     id: Uuid,
     outcome: Outcome,
     reason: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<AppointmentDto, AppError> {
     actor.require(Permission::AppointmentManage)?;
     let reason = kernel::corrections::reason(reason)?;
@@ -1574,7 +1576,7 @@ pub async fn complete(
         request_hash,
         id,
         input,
-        Utc::now(),
+        Timestamp::now(),
     )
     .await
 }
@@ -1591,7 +1593,7 @@ pub async fn complete_as_of(
     request_hash: [u8; 32],
     id: Uuid,
     input: AppointmentComplete,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::AppointmentManage)?;
     actor.require(Permission::VisitRecord)?;
@@ -1629,11 +1631,16 @@ pub async fn complete_as_of(
         visit.companions.clone_from(&current.companions);
     }
     if visit.check_in_at.is_none() {
-        visit.check_in_at = Some(current.arrived_at.unwrap_or(if current.starts_at <= now {
-            current.starts_at
-        } else {
-            now
-        }));
+        visit.check_in_at = Some(
+            current
+                .arrived_at
+                .map(jiff_sqlx::Timestamp::to_jiff)
+                .unwrap_or(if current.starts_at <= now {
+                    current.starts_at
+                } else {
+                    now
+                }),
+        );
     }
     let order = crate::service::parse(actor, &visit)?;
     let visit_id = crate::service::record_in(&mut tx, cipher, actor, order, now).await?;

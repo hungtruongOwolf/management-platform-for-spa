@@ -21,7 +21,8 @@ use crate::dto::{
 };
 use crate::repo::{self, LineInsert, LineRow, VisitInsert, VisitRow};
 use catalog::{PriceLookupError, PriceVariant};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use kernel::audit::{self, Action, AuditEntry, REDACTED};
 use kernel::crypto::FieldCipher;
 use kernel::idempotency::{self, Claim};
@@ -91,7 +92,7 @@ struct PackageSaleOrder {
 /// The request after shape validation; nothing is checked against the database yet.
 pub(crate) struct Order {
     customer_id: Uuid,
-    check_in_at: Option<DateTime<Utc>>,
+    check_in_at: Option<Timestamp>,
     note: Option<String>,
     lines: Vec<LineOrder>,
     /// New money handed over in this request (its method is the desk's choice).
@@ -114,7 +115,7 @@ pub(crate) struct Order {
 #[derive(Debug, Clone, Copy)]
 struct Replaces {
     visit_id: Uuid,
-    business_date: NaiveDate,
+    business_date: Date,
 }
 
 /// A saved visit that an addition appends to (locked, current and authorized by the caller).
@@ -122,7 +123,7 @@ struct Replaces {
 struct Existing {
     id: Uuid,
     customer_id: Uuid,
-    business_date: NaiveDate,
+    business_date: Date,
     next_position: i32,
 }
 
@@ -425,7 +426,16 @@ pub async fn record(
     request_hash: [u8; 32],
     input: &VisitCreate,
 ) -> Result<(u16, Value), AppError> {
-    record_as_of(pool, cipher, actor, key, request_hash, input, Utc::now()).await
+    record_as_of(
+        pool,
+        cipher,
+        actor,
+        key,
+        request_hash,
+        input,
+        Timestamp::now(),
+    )
+    .await
 }
 
 /// [`record`] with `now` as the server clock: the visit lands on the business day of `now`, and
@@ -439,7 +449,7 @@ pub async fn record_as_of(
     key: Uuid,
     request_hash: [u8; 32],
     input: &VisitCreate,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::VisitRecord)?;
     let order = parse(actor, input)?;
@@ -468,7 +478,7 @@ pub(crate) async fn record_in(
     cipher: &FieldCipher,
     actor: &Actor,
     order: Order,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Uuid, AppError> {
     checkout(tx, cipher, actor, order, now, None).await
 }
@@ -489,7 +499,7 @@ async fn price_checkout(
     actor: &Actor,
     order: &Order,
     customer: &crm::service::CustomerBrief,
-    today: NaiveDate,
+    today: Date,
     manager_discount_max_pct: u32,
 ) -> Result<Priced2, AppError> {
     let mut packages = Vec::with_capacity(order.package_sales.len());
@@ -643,11 +653,11 @@ async fn checkout(
     cipher: &FieldCipher,
     actor: &Actor,
     order: Order,
-    now: DateTime<Utc>,
+    now: Timestamp,
     existing: Option<Existing>,
 ) -> Result<Uuid, AppError> {
     let tenant = kernel::tenant::profile_as_of(tx, now).await?;
-    let recorded_on = tenant.business_date.as_naive();
+    let recorded_on = tenant.business_date.as_date();
     let (visit_id, customer_id, today, check_in_at, backdated) = match existing {
         Some(e) => (e.id, e.customer_id, e.business_date, None, false),
         None => {
@@ -656,7 +666,7 @@ async fn checkout(
             let service = domain::service_time(
                 order.check_in_at,
                 now,
-                tenant.timezone,
+                &tenant.timezone,
                 recorded_on,
                 order.correction.is_some() || actor.can(Permission::VisitBackdate),
             )
@@ -1024,7 +1034,7 @@ fn line_dto(l: LineRow) -> Result<VisitLineDto, AppError> {
 enum Selection {
     One(Uuid),
     /// The visits of a business day, latest first; `Some(n)` = only the newest `n`.
-    Day(NaiveDate, Option<u32>),
+    Day(Date, Option<u32>),
 }
 
 /// Visits as a request is answered: with "Đã sửa" for callers who may see it, which counts this
@@ -1160,7 +1170,7 @@ async fn read_visits(
                 package_sales: package_sales.remove(&r.id).unwrap_or_default(),
                 companions: r.companions,
                 void_reason: r.void_reason,
-                voided_at: r.voided_at,
+                voided_at: r.voided_at.map(jiff_sqlx::Timestamp::to_jiff),
                 corrects_visit_id: r.corrects_visit_id,
                 corrected_by_visit_id: r.corrected_by_visit_id,
                 edited: r.edited,
@@ -1207,7 +1217,7 @@ pub async fn for_day(
     pool: &PgPool,
     cipher: &FieldCipher,
     actor: &Actor,
-    day: Option<NaiveDate>,
+    day: Option<Date>,
     limit: Option<u32>,
 ) -> Result<Vec<VisitDto>, AppError> {
     actor.require(Permission::VisitRead)?;
@@ -1217,7 +1227,7 @@ pub async fn for_day(
         None => kernel::tenant::profile(&mut tx)
             .await?
             .business_date
-            .as_naive(),
+            .as_date(),
     };
     let visits = load(&mut tx, cipher, actor, Selection::Day(day, limit), true).await?;
     tx.commit().await?;
@@ -1235,7 +1245,7 @@ pub async fn authorized_then(
     id: Uuid,
     refused: AppError,
 ) -> AppError {
-    authorized_then_as_of(pool, actor, id, refused, Utc::now()).await
+    authorized_then_as_of(pool, actor, id, refused, Timestamp::now()).await
 }
 
 /// [`authorized_then`] with `now` as the server clock (the `*_as_of` use cases).
@@ -1244,7 +1254,7 @@ async fn authorized_then_as_of(
     actor: &Actor,
     id: Uuid,
     refused: AppError,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> AppError {
     let check = async {
         let mut tx = TenantTx::for_actor(pool, actor).await?;
@@ -1252,7 +1262,7 @@ async fn authorized_then_as_of(
         let today = kernel::tenant::profile_as_of(&mut tx, now)
             .await?
             .business_date
-            .as_naive();
+            .as_date();
         kernel::corrections::authorize_void(actor, visit.business_date, today)?;
         tx.commit().await?;
         Ok::<(), AppError>(())
@@ -1335,23 +1345,22 @@ pub async fn update(
     kernel::corrections::authorize_closed_day(
         actor,
         visit.business_date,
-        profile.business_date.as_naive(),
+        profile.business_date.as_date(),
     )?;
     if visit.version != version {
         return Err(AppError::StaleVersion);
     }
     let moved = input.check_in_at.filter(|at| *at != visit.check_in_at);
     if let Some(at) = moved {
-        domain::moved_check_in(at, Utc::now(), profile.timezone, visit.business_date).map_err(
-            |e| match e {
+        domain::moved_check_in(at, Timestamp::now(), &profile.timezone, visit.business_date)
+            .map_err(|e| match e {
                 domain::MoveError::InFuture => AppError::Unprocessable {
                     code: "visit.check_in_in_future",
                 },
                 domain::MoveError::OtherDay => {
                     AppError::Validation(vec![FieldError::new("check_in_at", "not_visit_day")])
                 }
-            },
-        )?;
+            })?;
     }
 
     let mut staff_changes = Vec::with_capacity(input.lines.len());
@@ -1437,7 +1446,7 @@ pub async fn void(
         request_hash,
         id,
         reason,
-        Utc::now(),
+        Timestamp::now(),
     )
     .await
 }
@@ -1456,7 +1465,7 @@ pub async fn void_as_of(
     request_hash: [u8; 32],
     id: Uuid,
     reason: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::RecordVoidSameDay)?;
     let reason = match kernel::corrections::reason(reason) {
@@ -1476,7 +1485,7 @@ pub async fn void_as_of(
     let today = kernel::tenant::profile_as_of(&mut tx, now)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     kernel::corrections::authorize_void(actor, visit.business_date, today)?;
     void_locked(&mut tx, actor, id, &visit, &reason, today).await?;
 
@@ -1501,7 +1510,7 @@ async fn void_locked(
     id: Uuid,
     visit: &repo::LockedVisit,
     reason: &str,
-    today: NaiveDate,
+    today: Date,
 ) -> Result<(), AppError> {
     if !repo::mark_voided(tx, id, reason, actor.user_id.as_uuid()).await? {
         return Err(AppError::Conflict {
@@ -1595,7 +1604,16 @@ pub async fn correct(
     request_hash: [u8; 32],
     request: Correction<'_>,
 ) -> Result<(u16, Value), AppError> {
-    correct_as_of(pool, cipher, actor, key, request_hash, request, Utc::now()).await
+    correct_as_of(
+        pool,
+        cipher,
+        actor,
+        key,
+        request_hash,
+        request,
+        Timestamp::now(),
+    )
+    .await
 }
 
 /// [`correct`] with `now` as the server clock: the closed-day rule and the reversals of the old
@@ -1610,7 +1628,7 @@ pub async fn correct_as_of(
     key: Uuid,
     request_hash: [u8; 32],
     request: Correction<'_>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(u16, Value), AppError> {
     actor.require(Permission::VisitRecord)?;
     actor.require(Permission::RecordVoidSameDay)?;
@@ -1663,7 +1681,7 @@ pub(crate) struct StartedCorrection {
 /// the new checkout in step 2): lock the visit, check it is
 /// the current version, the closed-day rule and `If-Match`, then void it exactly as
 /// `POST /visits/{id}/void` does. The caller holds the permissions and the idempotency claim.
-/// `now` is the server clock (`Utc::now()` except in the `*_as_of` use cases).
+/// `now` is the server clock (`Timestamp::now()` except in the `*_as_of` use cases).
 pub(crate) async fn begin_correction(
     tx: &mut TenantTx,
     cipher: &FieldCipher,
@@ -1671,14 +1689,14 @@ pub(crate) async fn begin_correction(
     id: Uuid,
     version: i64,
     reason: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<StartedCorrection, AppError> {
     let old = repo::lock(tx, id).await?.ok_or(AppError::NotFound)?;
     ensure_current(&old)?;
     let today = kernel::tenant::profile_as_of(tx, now)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     kernel::corrections::authorize_void(actor, old.business_date, today)?;
     if old.version != version {
         return Err(AppError::StaleVersion);
@@ -1701,7 +1719,7 @@ pub(crate) async fn finish_correction(
     mut order: Order,
     new_note: Option<Option<String>>,
     reason: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<VisitCorrected, AppError> {
     let StartedCorrection { id, old, old_note } = started;
     // Like `POST /visits`, the stored response never carries a note.
@@ -1793,7 +1811,7 @@ pub(crate) async fn finish_correction(
 /// Upsell on another day changes that month's commissions (Q-U4): refused once its payroll is
 /// closed (`409 payroll.period_closed`). Takes the month `FOR SHARE`, so a concurrent close
 /// waits for this transaction.
-async fn require_payroll_open(tx: &mut TenantTx, day: NaiveDate) -> Result<(), AppError> {
+async fn require_payroll_open(tx: &mut TenantTx, day: Date) -> Result<(), AppError> {
     hr::period::require_open(tx, hr::month::Month::of(day)).await
 }
 
@@ -1832,7 +1850,7 @@ pub async fn add(
     let today = kernel::tenant::profile(&mut tx)
         .await?
         .business_date
-        .as_naive();
+        .as_date();
     kernel::corrections::authorize_closed_day(actor, visit.business_date, today)?;
     require_payroll_open(&mut tx, visit.business_date).await?;
     let next_position = repo::next_position(&mut tx, id).await?;
@@ -1841,7 +1859,7 @@ pub async fn add(
         cipher,
         actor,
         order,
-        Utc::now(),
+        Timestamp::now(),
         Some(Existing {
             id,
             customer_id: visit.customer_id,
@@ -1929,7 +1947,7 @@ pub async fn convert(
         id,
         request.version,
         &reason,
-        Utc::now(),
+        Timestamp::now(),
     )
     .await?;
     let old = peek_one(&mut tx, cipher, actor, id).await?;
@@ -2042,7 +2060,7 @@ pub async fn convert(
         order,
         None,
         &reason,
-        Utc::now(),
+        Timestamp::now(),
     )
     .await?;
     // What the customer hands over now: the new package plus the one-off lines kept, minus what
