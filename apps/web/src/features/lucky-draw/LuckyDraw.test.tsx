@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
 import { navFor } from "../../app/nav";
+import { GENTLE, SPIN_MS } from "./angles";
 import { D1, detail, person, prize, result } from "./fixtures";
 import { OWNER, fakeApi } from "./testServer";
 
@@ -108,20 +109,21 @@ describe("spin (US4)", () => {
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
-    // The wheel turns at the press, like the prototype: +6 turns in 4.1 s.
+    // The wheel turns at the press: 9 turns in 6 s (EM 2026-11-28: "tầm 6s thôi").
     const disk = diskOf(stage);
-    expect(disk.style.getPropertyValue("transition")).toContain("4100ms");
+    expect(disk.style.getPropertyValue("transition")).toContain(`${String(SPIN_MS)}ms`);
     expect(disk.style.getPropertyPriority("transition")).toBe("important");
     expect(disk.style.transform).not.toBe("rotate(0deg)");
     expect(within(stage).getByRole("button", { name: "Quay" })).toHaveAttribute("aria-busy", "true");
-    await act(() => vi.advanceTimersByTimeAsync(4000));
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS - 100));
     const spin = api.calls.find((c) => c.path.endsWith("/spins"));
     expect(spin?.body).toEqual({ prize_id: "q1" });
     expect(spin?.headers["Idempotency-Key"]).toMatch(/^[0-9a-f-]{36}$/);
     // Answered, but the wheel still turns: nothing shows yet.
     expect(within(stage).getByText("Đang quay…")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
-    expect(screen.getByText("Chưa có ai trúng. Chọn giải rồi bấm “Quay”: người trúng hiện ở đây.")).toBeInTheDocument();
+    // The counts change with the reveal too.
+    expect(screen.getByRole("tab", { name: "Trúng thưởng 0" })).toBeInTheDocument();
     await act(() => vi.advanceTimersByTimeAsync(600));
     const popup = screen.getByRole("dialog", { name: "Chúc mừng" });
     expect(popup).toHaveTextContent("Lượt 1");
@@ -131,7 +133,9 @@ describe("spin (US4)", () => {
     // Not under the wheel (EM): a screen reader hears it from the status line.
     expect(within(stage).getByText("Nguyễn Thị Lan trúng Cổ vai gáy")).toHaveClass("sr-only");
     expect(within(stage).getByRole("button", { name: "Quay tiếp" })).not.toHaveAttribute("aria-busy");
+    fireEvent.click(screen.getByRole("tab", { name: /^Trúng thưởng/ }));
     expect(within(screen.getByRole("list", { name: "Người trúng giải Cổ vai gáy" })).getByText("Nguyễn Thị Lan")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /^Giải thưởng/ }));
     // "Cổ vai gáy" is used up: the stage moved on to the next prize.
     expect(within(screen.getByRole("list", { name: "Chọn giải để quay" })).getByRole("button", { name: /^Gội đầu/ })).toHaveAttribute("aria-pressed", "true");
   });
@@ -140,10 +144,10 @@ describe("spin (US4)", () => {
     const api = fakeApi(OWNER, [DRAW]);
     at(`/vong-quay/${D1}`);
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
-    api.slow((c) => (c.path.endsWith("/spins") ? 7000 : 0));
+    api.slow((c) => (c.path.endsWith("/spins") ? SPIN_MS + 3000 : 0));
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
-    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS + 1000));
     expect(within(stage).getByRole("button", { name: "Quay" })).toHaveAttribute("aria-busy", "true");
     expect(within(stage).getByText("Đang quay…")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
@@ -159,7 +163,7 @@ describe("spin (US4)", () => {
     const button = within(stage).getByRole("button", { name: "Quay" });
     fireEvent.click(button);
     fireEvent.click(button);
-    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS + 600));
     expect(api.calls.filter((c) => c.path.endsWith("/spins"))).toHaveLength(1);
   });
 
@@ -172,10 +176,10 @@ describe("spin (US4)", () => {
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(within(stage).queryByRole("alert")).not.toBeInTheDocument();
-    await act(() => vi.advanceTimersByTimeAsync(3600));
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS));
     expect(within(stage).getByRole("alert")).toHaveTextContent("Chưa quay được, kiểm tra mạng rồi bấm “Quay” lại.");
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
-    await act(() => vi.advanceTimersByTimeAsync(4600));
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS + 600));
     const keys = api.calls.filter((c) => c.path.endsWith("/spins")).map((c) => c.headers["Idempotency-Key"]);
     expect(keys).toHaveLength(2);
     expect(keys[1]).toBe(keys[0]);
@@ -195,11 +199,14 @@ describe("spin (US4)", () => {
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: "Quay" }));
     const disk = diskOf(stage);
-    expect(disk.style.getPropertyValue("transition")).toContain("2500ms");
+    expect(disk.style.getPropertyValue("transition")).toContain(`${String(SPIN_MS)}ms ${GENTLE.ease}`);
     expect(disk.style.getPropertyPriority("transition")).toBe("important");
-    expect(disk.style.transform).toMatch(/^rotate\((\d+(\.\d+)?)deg\)$/);
+    // Gentler: 3 turns (and part of one), not the 9 of the full spin.
+    const deg = Number(/^rotate\((\d+(?:\.\d+)?)deg\)$/.exec(disk.style.transform)?.[1]);
+    expect(deg).toBeGreaterThanOrEqual(GENTLE.turns * 360);
+    expect(deg).toBeLessThan((GENTLE.turns + 1) * 360);
     expect(disk.style.transform).not.toBe("rotate(0deg)");
-    await act(() => vi.advanceTimersByTimeAsync(2000));
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS - 500));
     expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(screen.getByRole("dialog", { name: "Chúc mừng" })).toHaveTextContent("Nguyễn Thị Lan");
@@ -213,7 +220,7 @@ describe("winner popup (EM 2026-11-28)", () => {
     const stage = await screen.findByRole("region", { name: "Vòng quay" });
     vi.useFakeTimers();
     fireEvent.click(within(stage).getByRole("button", { name: /^Quay/ }));
-    await act(() => vi.advanceTimersByTimeAsync(4600));
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS + 600));
     return { api, stage, popup: screen.getByRole("dialog", { name: "Chúc mừng" }) };
   }
 
@@ -221,7 +228,7 @@ describe("winner popup (EM 2026-11-28)", () => {
     const { api, popup } = await spunOnce();
     fireEvent.click(within(popup).getByRole("button", { name: "Quay tiếp" }));
     expect(screen.queryByRole("dialog", { name: "Chúc mừng" })).not.toBeInTheDocument();
-    await act(() => vi.advanceTimersByTimeAsync(4600));
+    await act(() => vi.advanceTimersByTimeAsync(SPIN_MS + 600));
     expect(api.calls.filter((c) => c.path.endsWith("/spins")).map((c) => c.body)).toEqual([{ prize_id: "q1" }, { prize_id: "q2" }]);
     expect(screen.getByRole("dialog", { name: "Chúc mừng" })).toHaveTextContent("Lượt 2");
   });
@@ -280,7 +287,7 @@ describe("winners list (EM 2026-11-28: cards grouped by prize)", () => {
       status: "in_progress",
     });
     fakeApi(OWNER, [won]);
-    at(`/vong-quay/${D1}`);
+    at(`/vong-quay/${D1}?tab=trung`);
     const card = await screen.findByRole("region", { name: "Danh sách trúng thưởng" });
     const groups = within(card).getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
     expect(groups).toEqual(["Cổ vai gáy", "Gội đầu"]);
@@ -305,7 +312,7 @@ describe("forfeit (US5)", () => {
     });
     const api = fakeApi(OWNER, [won]);
     const user = userEvent.setup();
-    at(`/vong-quay/${D1}`);
+    at(`/vong-quay/${D1}?tab=trung`);
     const winners = await screen.findByRole("list", { name: "Người trúng giải Cổ vai gáy" });
     await user.click(within(winners).getByRole("button", { name: "Thao tác với lượt 1, Nguyễn Thị Lan" }));
     await user.click(screen.getByRole("menuitem", { name: "Vắng mặt, trả giải" }));
@@ -321,6 +328,7 @@ describe("forfeit (US5)", () => {
     expect(row).toHaveClass("is-absent");
     expect(within(row).getByText("Vắng mặt")).toBeInTheDocument();
     expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /^Giải thưởng/ }));
     expect(within(screen.getByRole("list", { name: "Chọn giải để quay" })).getByRole("button", { name: /^Cổ vai gáy/ })).toHaveTextContent("Còn 1/1 suất");
   });
 });
@@ -329,7 +337,7 @@ describe("participants (US2)", () => {
   it("paste: lists every bad line and sends nothing until they are fixed (AC2.2)", async () => {
     const api = fakeApi(OWNER, [detail()]);
     const user = userEvent.setup();
-    at(`/vong-quay/${D1}`);
+    at(`/vong-quay/${D1}?tab=nguoi`);
     await user.click(await screen.findByRole("button", { name: "Dán danh sách" }));
     const sheet = await screen.findByRole("dialog", { name: "Dán danh sách người tham gia" });
     const box = within(sheet).getByLabelText("Danh sách");
@@ -357,13 +365,13 @@ describe("participants (US2)", () => {
         { name: "Lê Thu Hà", gender: "female" },
       ],
     });
-    expect(screen.getByRole("table", { name: "Danh sách người tham gia" })).toHaveTextContent("Lê Thu Hà");
+    expect(screen.getByRole("list", { name: "Danh sách người tham gia" })).toHaveTextContent("Lê Thu Hà");
   });
 
   it("paste: a long list goes in batches of 500, one after another", async () => {
     const api = fakeApi(OWNER, [detail()]);
     const user = userEvent.setup();
-    at(`/vong-quay/${D1}`);
+    at(`/vong-quay/${D1}?tab=nguoi`);
     await user.click(await screen.findByRole("button", { name: "Dán danh sách" }));
     const sheet = await screen.findByRole("dialog", { name: "Dán danh sách người tham gia" });
     await user.click(within(sheet).getByLabelText("Danh sách"));
@@ -374,7 +382,9 @@ describe("participants (US2)", () => {
     });
     const posts = api.calls.filter((c) => c.method === "POST");
     expect(posts.map((c) => (c.body as { participants: unknown[] }).participants.length)).toEqual([500, 500, 100]);
-    expect(screen.getByText("Hiện thêm (1.000 dòng nữa)")).toBeInTheDocument();
+    // All 1.100 in the panel, which scrolls inside (no "Hiện thêm" any more, EM 2026-11-28); jsdom
+    // has no IntersectionObserver, so useGrowing draws every row (its steps: useGrowing.test.tsx).
+    expect(within(screen.getByRole("list", { name: "Danh sách người tham gia" })).getAllByRole("listitem")).toHaveLength(1100);
   });
 
   it("says what the server refused: a program already full (participants too_many)", async () => {
@@ -385,7 +395,7 @@ describe("participants (US2)", () => {
         : undefined,
     );
     const user = userEvent.setup();
-    at(`/vong-quay/${D1}`);
+    at(`/vong-quay/${D1}?tab=nguoi`);
     await user.click(await screen.findByRole("button", { name: "Dán danh sách" }));
     const sheet = await screen.findByRole("dialog", { name: "Dán danh sách người tham gia" });
     await user.click(within(sheet).getByLabelText("Danh sách"));
@@ -403,26 +413,26 @@ describe("participants (US2)", () => {
     });
     fakeApi(OWNER, [won]);
     const user = userEvent.setup();
-    at(`/vong-quay/${D1}`);
-    const table = await screen.findByRole("table", { name: "Danh sách người tham gia" });
-    expect(within(table).queryByRole("button", { name: "Thao tác với Trần Văn Minh" })).not.toBeInTheDocument();
-    expect(within(table).getByRole("button", { name: "Thao tác với Nguyễn Thị Lan" })).toBeInTheDocument();
-    expect(within(table).getByText("Đã trúng: Gội đầu")).toBeInTheDocument();
+    at(`/vong-quay/${D1}?tab=nguoi`);
+    const people = await screen.findByRole("list", { name: "Danh sách người tham gia" });
+    expect(within(people).queryByRole("button", { name: "Thao tác với Trần Văn Minh" })).not.toBeInTheDocument();
+    expect(within(people).getByRole("button", { name: "Thao tác với Nguyễn Thị Lan" })).toBeInTheDocument();
+    expect(within(people).getByText("Đã trúng: Gội đầu")).toBeInTheDocument();
     const chips = screen.getByRole("group", { name: "Lọc người tham gia" });
     await user.click(within(chips).getByRole("button", { name: "Nữ 2" }));
-    expect(screen.getByRole("table", { name: "Danh sách người tham gia" })).not.toHaveTextContent("Trần Văn Minh");
+    expect(screen.getByRole("list", { name: "Danh sách người tham gia" })).not.toHaveTextContent("Trần Văn Minh");
     await user.click(within(chips).getByRole("button", { name: "Tất cả 4" }));
     await user.type(screen.getByRole("searchbox", { name: "Tìm theo họ tên" }), "thu ha");
     await waitFor(() => {
-      expect(screen.getByRole("table", { name: "Danh sách người tham gia" })).not.toHaveTextContent("Nguyễn Thị Lan");
+      expect(screen.getByRole("list", { name: "Danh sách người tham gia" })).not.toHaveTextContent("Nguyễn Thị Lan");
     });
-    expect(screen.getByRole("table", { name: "Danh sách người tham gia" })).toHaveTextContent("Lê Thu Hà");
+    expect(screen.getByRole("list", { name: "Danh sách người tham gia" })).toHaveTextContent("Lê Thu Hà");
   });
 
   it("add one: Nữ / Nam must be chosen; the sheet stays open for the next name", async () => {
     const api = fakeApi(OWNER, [detail()]);
     const user = userEvent.setup();
-    at(`/vong-quay/${D1}`);
+    at(`/vong-quay/${D1}?tab=nguoi`);
     await user.click(await screen.findByRole("button", { name: "Thêm người" }));
     const sheet = await screen.findByRole("dialog", { name: "Thêm người tham gia" });
     await user.type(within(sheet).getByLabelText("Họ tên"), "Ngô Mai");
@@ -519,6 +529,42 @@ describe("program (US1, US7)", () => {
       expect(open).toHaveFocus();
     });
     expect(screen.queryByRole("dialog", { name: "Tri ân 20/11" })).not.toBeInTheDocument();
+  });
+
+  it("the side column's tabs move with ← →, keep the choice in the URL, and show their counts", async () => {
+    fakeApi(OWNER, [DRAW]);
+    const user = userEvent.setup();
+    at(`/vong-quay/${D1}`);
+    const prizesTab = await screen.findByRole("tab", { name: "Giải thưởng 2" });
+    expect(prizesTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "Giải thưởng 2" })).toContainElement(screen.getByRole("list", { name: "Chọn giải để quay" }));
+    await user.click(prizesTab);
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: "Trúng thưởng 0" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Trúng thưởng 0" })).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{End}");
+    expect(screen.getByRole("tab", { name: "Người tham gia 4" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("list", { name: "Danh sách người tham gia" })).toBeInTheDocument();
+    expect(window.location.href).not.toContain("tab="); // memory history: the router holds it
+  });
+
+  it("a finished program has no summary card on top: the winners are in their tab, the summary behind a button", async () => {
+    const done = detail({
+      ...DRAW,
+      participants: DRAW.participants.map((p) => (p.id === "p1" ? { ...p, result_id: "r1" } : p)),
+      prizes: [prize("q1", "Cổ vai gáy", { eligible: "female", quantity: 1, remaining: 0, awarded: 1, eligible_count: 1 })],
+      results: [result("r1", 1, "q1", "p1")],
+      status: "finished",
+      finished: true,
+    });
+    fakeApi(OWNER, [done]);
+    const user = userEvent.setup();
+    at(`/vong-quay/${D1}?tab=trung`);
+    expect(await screen.findByRole("list", { name: "Người trúng giải Cổ vai gáy" })).toHaveTextContent("Nguyễn Thị Lan");
+    expect(screen.queryByRole("heading", { name: "Tổng kết chương trình" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Nguyễn Thị Lan")).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Xem tổng kết" }));
+    expect(await screen.findByRole("dialog", { name: "Tổng kết chương trình" })).toBeInTheDocument();
   });
 
   it("an unknown program says so, with the way back", async () => {

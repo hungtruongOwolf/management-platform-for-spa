@@ -5,41 +5,40 @@
  */
 
 @layer components {
+  /*
+   * --- Page layout (EM 2026-11-28: "vòng quay to hơn chiếm phần lớn chủ đạo của trang") ---------
+   * The program fills the content area's width (not the shell's 1240px reading column) and, on a
+   * wide screen, exactly the viewport's height: the stage takes the larger share with the wheel as
+   * big as that height allows, the side column (tabs) a fixed width. Lists scroll inside their panel;
+   * the page itself never scrolls there. Narrower: one column, stage then side card, page scrolls.
+   */
+  /* The page's own width, and the container its layout queries (a container cannot query
+   * itself, so it is the shell's content box around the page). */
+  .shell-content:has(.ld-page) {
+    max-width: none;
+    container: ld-page / inline-size;
+  }
+  @media (min-width: 768px) {
+    .shell-content:has(.ld-page) {
+      padding-bottom: 28px;
+    }
+  }
   .ld-page {
     display: grid;
     min-width: 0;
     align-content: start;
-    gap: 20px;
-    container-type: inline-size;
+    gap: 16px;
   }
   .ld-grid {
     display: grid;
     min-width: 0;
     grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-    gap: 20px;
-  }
-  .ld-side {
-    display: grid;
-    min-width: 0;
-    align-content: start;
-    gap: 20px;
-  }
-  /* Two columns once the content is wide enough for the stage beside the cards (1280 with the
-   * sidebar); at 1024 the sidebar leaves ~700px, where one column reads better. */
-  @container (min-width: 880px) {
-    .ld-grid {
-      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-    }
+    gap: 16px;
   }
 
   /* --- Stage: the wheel on the chrome's maroon (spec §5) --------------------------------------- */
   .ld-stage {
-    display: grid;
     min-width: 0;
-    justify-items: center;
-    align-content: start;
-    gap: 16px;
     padding: 20px 0 24px;
     border-radius: var(--radius-lg);
     box-shadow:
@@ -47,14 +46,61 @@
       var(--shadow-2);
     text-align: center;
   }
-  .ld-stage > :not(.ld-wheel) {
-    width: 100%;
-    padding-inline: 16px;
-  }
   @media (min-width: 640px) {
     .ld-stage {
-      padding: 24px 20px 28px;
+      padding: 20px;
     }
+  }
+  /* Stacked by default: prize, wheel, button. */
+  .ld-stage-grid {
+    display: grid;
+    height: 100%;
+    min-height: 0;
+    grid-template-areas:
+      "prize"
+      "wheel"
+      "actions"
+      "extra";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto;
+    justify-items: center;
+    gap: 16px;
+  }
+  .ld-stage-prize {
+    display: grid;
+    width: 100%;
+    grid-area: prize;
+    justify-items: center;
+    gap: 4px;
+    padding-inline: 16px;
+  }
+  .ld-wheel-slot {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    grid-area: wheel;
+    place-items: center;
+    /* A size container has no content size: it must take its grid area's. */
+    align-self: stretch;
+    justify-self: stretch;
+  }
+  .ld-stage-actions {
+    display: grid;
+    width: 100%;
+    grid-area: actions;
+    justify-items: center;
+    gap: 8px;
+    padding-inline: 16px;
+  }
+  .ld-stage-extra {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    grid-area: extra;
+    grid-template-rows: minmax(0, 1fr);
+    align-self: stretch;
   }
   .ld-stage-skeleton {
     min-height: 560px;
@@ -62,11 +108,6 @@
   }
   .ld-stage:empty {
     min-height: 560px;
-  }
-  .ld-stage-prize {
-    display: grid;
-    justify-items: center;
-    gap: 4px;
   }
   .ld-stage-label,
   .ld-stage-hint {
@@ -88,21 +129,19 @@
     color: var(--chrome-text-muted);
     font-size: var(--fs-sm);
   }
+  /* The presentation's prize picker: the app's native select (its open list is styled app-wide in
+   * components.css), only sized and placed here. */
   .ld-stage-pick {
     display: grid;
-    justify-items: center;
+    width: min(100%, 22rem);
     gap: 6px;
     color: var(--chrome-text-muted);
     font-size: var(--fs-label);
     font-weight: 500;
+    text-align: left;
   }
   .ld-stage-pick select {
-    width: min(100%, 22rem);
-  }
-  .ld-stage-actions {
-    display: grid;
-    justify-items: center;
-    gap: 8px;
+    width: 100%;
   }
   .ld-stage-actions .btn-lg {
     min-width: min(100%, 13rem);
@@ -119,6 +158,179 @@
   }
   .ld-stage-status .alert {
     text-align: left;
+  }
+
+  /* --- Side column: one card, three tabs, each list scrolls inside ------------------------------ */
+  .ld-side {
+    display: flex;
+    min-width: 0;
+    height: min(40rem, 82svh);
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    container: ld-side / inline-size;
+  }
+  .ld-side-skeleton {
+    height: min(40rem, 82svh);
+    border-radius: var(--radius-lg);
+  }
+  /* Three tabs on one line, never wrapped (EM: polish): compact labels (--fs-sm) with the count as
+   * a small badge, sharing the column's width. The column is wide enough for them on every desktop
+   * (≥ 25rem, below); a narrower card (phones) puts each count under its label (further below). */
+  .ld-tabs {
+    display: flex;
+    flex-shrink: 0;
+    padding: 0 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ld-tabs > [role="tab"] {
+    display: inline-flex;
+    flex: 1 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 6px;
+    font-size: var(--fs-sm);
+    white-space: nowrap;
+  }
+  /* The tab's two buttons share one row. */
+  .ld-panel-head .button-row > .btn {
+    flex: 1 1 auto;
+    padding-inline: 10px;
+  }
+  .ld-tab-count {
+    padding: 0 5px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    line-height: 18px;
+  }
+  .ld-tabpanel {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+  /* The tab's actions and filters stay put above its list. */
+  .ld-panel-head {
+    display: grid;
+    flex-shrink: 0;
+    gap: 12px;
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ld-panel-head:empty {
+    display: none;
+  }
+  .ld-scroll {
+    /* The containing block of the visually hidden texts inside (absolute): otherwise they hang
+     * below the list and stretch the page (design-system "the page scrolls as one"). */
+    position: relative;
+    min-height: 0;
+    flex: 1;
+    padding: 12px 16px 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Four chips sized to their content, each on one line (never wrapped), sharing the row's
+   * width; a card narrower than they need (a 360px phone) scrolls the row sideways. */
+  .ld-filter {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ld-filter > button {
+    flex: 1 0 auto;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 8px;
+    font-size: var(--fs-label);
+    white-space: nowrap;
+  }
+  .ld-filter + .search-field {
+    flex: none;
+  }
+  /* A side card narrower than the desktop's 25rem (phones; the query reads its content box, inside
+   * the border): three equal tabs, each label on one line with its count under it; the chips a
+   * little tighter, so the four still fit a 390px phone (a 360px one scrolls them sideways). */
+  @container ld-side (max-width: 24rem) {
+    .ld-tabs {
+      gap: 0;
+    }
+    .ld-tabs > [role="tab"] {
+      min-width: 0;
+      min-height: 56px;
+      flex: 1 1 0;
+      flex-direction: column;
+      gap: 2px;
+      padding: 4px 2px;
+    }
+    .ld-filter > button {
+      gap: 3px;
+      padding: 0 6px;
+      font-size: var(--fs-sm);
+    }
+    .ld-filter .ld-chip-count {
+      padding: 0 4px;
+    }
+  }
+
+  /* Wide screens: the page fits the viewport, the stage is a size container for its wheel. */
+  @container ld-page (min-width: 880px) {
+    /* The screen under the top bar, less the shell's 28px above and below (set above); never
+     * under 30rem: on a very short window the page scrolls rather than crush the lists. */
+    .ld-page {
+      height: max(30rem, calc(100dvh - var(--topbar-h) - 56px));
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .ld-grid {
+      min-height: 0;
+      /* 25rem: the three tabs and the four filter chips each fit on one line. */
+      grid-template-columns: minmax(0, 1fr) clamp(25rem, 34%, 28rem);
+    }
+    .ld-side,
+    .ld-side-skeleton {
+      height: auto;
+    }
+    .ld-stage-skeleton {
+      min-height: 0;
+    }
+    .ld-stage {
+      min-height: 0;
+      padding: 16px;
+      container: ld-stage / size;
+    }
+    .ld-stage-grid {
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+    .ld-wheel-slot {
+      container-type: size;
+    }
+    /* As large as the slot allows, by its width or its height (the frame is 466 × 481). */
+    .ld-wheel-slot > .ld-wheel {
+      width: min(100cqw, 100cqh * 466 / 481);
+    }
+  }
+  /* A stage at least as wide as tall: the wheel takes its full height, the prize and the button
+   * beside it (from a square on, that gives a bigger wheel than stacking them above and below).
+   * The page's stage only: the presentation has its own (below). */
+  @container ld-stage (min-aspect-ratio: 1 / 1) {
+    .ld-grid .ld-stage-grid {
+      grid-template-areas:
+        "wheel ."
+        "wheel prize"
+        "wheel actions"
+        "wheel extra"
+        "wheel .";
+      /* The wheel's column is as wide as its full height allows (cq units of the stage), the rest
+       * (at least 10rem) goes to the prize and the button. */
+      grid-template-columns: min(100cqw - 10rem - 20px, 100cqh * 466 / 481) minmax(10rem, 1fr);
+      grid-template-rows: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
+      column-gap: 20px;
+    }
   }
 
   /* Buttons on the maroon: the primary turns cream (a maroon button would vanish into it), the
@@ -252,26 +464,50 @@
   }
 
   /* --- Lists ------------------------------------------------------------------------------------ */
-  .ld-count {
-    margin-left: 4px;
-    color: var(--text-muted);
-    font-weight: 500;
+  /* Participants: two-line rows (number · name, then gender and status), drawn lazily. */
+  .ld-people {
+    display: grid;
   }
-  .ld-people-tools {
-    display: flex;
+  .ld-person {
+    display: grid;
+    min-height: 60px;
+    grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 61px;
+  }
+  .ld-person:last-child {
+    border-bottom: 0;
+  }
+  /* The end marker of a list drawn in steps (useGrowing): seen near the bottom, the next step. */
+  .ld-more {
+    height: 1px;
+  }
+  .ld-person-n {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+    text-align: right;
+  }
+  .ld-person-main {
+    display: grid;
     min-width: 0;
+    gap: 4px;
+  }
+  .ld-person-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .ld-person-meta {
+    display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  /* Phones: the chips scroll sideways in their own row (.chip-row), never the page. */
-  .ld-people-tools > .segmented {
-    min-width: 0;
-    max-width: 100%;
+    gap: 4px 6px;
   }
   .ld-chip-count {
-    padding: 0 8px;
+    padding: 0 5px;
     border-radius: var(--radius-pill);
     background: var(--surface-2);
     font-size: var(--fs-xs);
@@ -393,10 +629,6 @@
     display: grid;
     gap: 16px;
   }
-  .ld-summary-heading {
-    font-size: var(--fs-base);
-    font-weight: 600;
-  }
 
   /* --- Sheets ------------------------------------------------------------------------------------ */
   textarea.ld-paste {
@@ -415,7 +647,11 @@
     gap: 2px;
   }
 
-  /* --- Presentation: the stage over the whole screen (US7) ---------------------------------------- */
+  /*
+   * --- Presentation: the stage over the whole screen (US7) ----------------------------------------
+   * Even 24px gutters all round; the wheel fits the screen (never scrolls, EM 2026-11-28); beside it
+   * the prize, the button and the winners, whose panel scrolls inside. Phones: stacked.
+   */
   .ld-present {
     width: 100%;
     max-width: none;
@@ -424,7 +660,7 @@
     padding: 0;
     margin: 0;
     border: 0;
-    overflow: auto;
+    overflow: hidden;
     inset: 0;
   }
   .ld-present[open] {
@@ -450,58 +686,57 @@
     overflow-wrap: anywhere;
   }
   .ld-present .ld-stage {
-    /* "safe": a stage taller than the screen (the summary at the end) overflows downwards, where
-     * the presentation scrolls, never above its top. */
-    align-content: safe center;
-    padding-top: 0;
+    min-height: 0;
+    padding: 0 24px 24px;
     border-radius: 0;
     background: none;
     box-shadow: none;
+    container: ld-stage / size;
   }
-  .ld-present .ld-wheel {
-    width: min(100%, 62dvh);
+  .ld-present .ld-stage-grid {
+    grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 32%);
+  }
+  .ld-present .ld-wheel-slot {
+    container-type: size;
+  }
+  .ld-present .ld-wheel-slot > .ld-wheel {
+    width: min(100cqw, 100cqh * 466 / 481);
+  }
+  @container ld-stage (min-aspect-ratio: 5 / 4) {
+    .ld-present .ld-stage-grid {
+      grid-template-areas:
+        "wheel prize"
+        "wheel actions"
+        "wheel extra";
+      /* Even gutters: the wheel as large as the screen's height allows, from the left edge; the
+       * prize, the button and the winners take the rest. */
+      grid-template-columns: min(100cqw - 20rem - 24px, 100cqh * 466 / 481) minmax(20rem, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr);
+      align-items: start;
+      column-gap: 24px;
+    }
   }
   .ld-present .ld-stage-name {
     font-size: var(--fs-xl);
     line-height: 32px;
   }
-  .ld-present-summary {
-    display: grid;
-    width: 100%;
-    gap: 8px;
-    padding: 16px;
+  .ld-present-wins {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex-direction: column;
+    overflow: hidden;
     border-radius: var(--radius-lg);
     background: var(--surface);
     color: var(--text);
     text-align: left;
   }
-  /* A TV or a projector: the wheel on the left, the prize, button and result beside it. */
-  @media (min-width: 1024px) and (orientation: landscape) {
-    .ld-present .ld-stage {
-      grid-template-columns: auto minmax(20rem, 28rem);
-      grid-template-areas:
-        "wheel prize"
-        "wheel actions"
-        "wheel extra";
-      justify-content: center;
-      align-items: safe center;
-      column-gap: 48px;
-    }
-    .ld-present .ld-wheel {
-      width: min(52vw, 80dvh);
-      grid-area: wheel;
-    }
-    .ld-present .ld-stage-prize {
-      grid-area: prize;
-      align-self: end;
-    }
-    .ld-present .ld-stage-actions {
-      grid-area: actions;
-    }
-    .ld-present .ld-present-summary {
-      grid-area: extra;
-      align-self: start;
-    }
+  .ld-present-wins-title {
+    flex-shrink: 0;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--fs-md);
+    font-weight: 600;
   }
 
   /* --- Winner popup (WinnerDialog): centred on every screen, over the presentation too ---------- */

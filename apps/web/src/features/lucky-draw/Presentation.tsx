@@ -1,9 +1,9 @@
 import { useEffect, useEffectEvent, useId, type RefObject } from "react";
 import { useModalDialog } from "../../components/useModalDialog";
 import { Stage } from "./Stage";
-import { SummaryBody } from "./Summary";
 import type { LuckyDrawDetail, Prize } from "./types";
 import type { Spin } from "./useSpin";
+import { PrizeHeading, WinRow, winsByPrize } from "./WinRow";
 
 /**
  * "Trình chiếu" (US7): the stage over the whole screen for a TV or a projector. A modal dialog
@@ -61,13 +61,42 @@ export function Presentation({
         </button>
       </div>
       <Stage draw={draw} prize={prize} spin={spin} pick={onPick} buttonRef={buttonRef}>
-        {draw.finished && !spin.busy && (
-          <div className="ld-present-summary">
-            <h3 className="ld-summary-heading">Tổng kết chương trình</h3>
-            <SummaryBody draw={draw} headingLevel={4} />
-          </div>
-        )}
+        <PresentationWins draw={draw} fresh={spin.shownId} />
       </Stage>
     </dialog>
+  );
+}
+
+/**
+ * The winners beside the wheel on the screen the room watches: a fixed panel that scrolls inside
+ * (EM 2026-11-28), grouped by prize like the page's list, without the row menus.
+ */
+function PresentationWins({ draw, fresh }: { draw: LuckyDrawDetail; fresh: string | null }) {
+  const id = useId();
+  const groups = winsByPrize(draw);
+  return (
+    <section className="ld-present-wins" aria-labelledby={`${id}-title`}>
+      <h3 id={`${id}-title`} className="ld-present-wins-title">
+        Danh sách trúng thưởng
+      </h3>
+      <div className="ld-scroll" role="region" aria-labelledby={`${id}-title`} tabIndex={0}>
+        {groups.length === 0 ? (
+          <p className="empty-note">Chưa có ai trúng.</p>
+        ) : (
+          <div className="ld-groups">
+            {groups.map(({ prize, wins }) => (
+              <section key={prize.id} className="ld-group" aria-label={prize.name}>
+                <PrizeHeading prize={prize} level={4} />
+                <ul className="ld-wins">
+                  {wins.map((w) => (
+                    <WinRow key={w.result.id} win={w} fresh={w.result.id === fresh} />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
